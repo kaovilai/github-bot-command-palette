@@ -1,6 +1,9 @@
 # GitHub Bot Command Palette
 
 Chrome extension that injects contextual action buttons for CI/bot slash commands on GitHub PR pages.
+> **Example - in action**
+> <img width="1367" height="1247" alt="image" src="https://github.com/user-attachments/assets/00b4a745-c7e5-4cb8-9d8d-deba16b562b3" />
+
 
 ## Installation
 
