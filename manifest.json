@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub Bot Command Palette",
+  "version": "1.0.0",
+  "description": "Inject contextual action buttons for CI/bot slash commands on GitHub PR pages",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://github.com/*", "https://raw.githubusercontent.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["prow-plugin-map.js", "config-manager.js", "content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "settings.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

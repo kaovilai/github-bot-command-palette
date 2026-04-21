@@ -1,0 +1,27 @@
+{
+  "name": "github-bot-command-palette",
+  "version": "1.0.0",
+  "description": "Chrome extension that injects contextual action buttons for CI/bot slash commands on GitHub PR pages.",
+  "main": "config-manager.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kaovilai/github-bot-command-palette.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/kaovilai/github-bot-command-palette/issues"
+  },
+  "homepage": "https://github.com/kaovilai/github-bot-command-palette#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1"
+  }
+}

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Bot Command Palette — Settings</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg2: #f6f8fa;
+      --border: #d0d7de;
+      --text: #1f2328;
+      --text-muted: #656d76;
+      --primary: #0969da;
+      --danger: #cf222e;
+      --success: #1a7f37;
+      --warning: #9a6700;
+      --radius: 6px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --bg2: #161b22;
+        --border: #30363d;
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --primary: #58a6ff;
+        --danger: #f85149;
+        --success: #3fb950;
+        --warning: #d29922;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      max-width: 900px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    h2 { font-size: 18px; margin: 24px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 14px; margin: 16px 0 8px; }
+    .subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+    .section { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+    label { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 8px; cursor: pointer; }
+    label.block { display: block; font-weight: 600; margin-bottom: 4px; }
+    input[type="text"], textarea, select {
+      padding: 6px 10px; font-size: 13px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg); color: var(--text); width: 100%;
+    }
+    input[type="text"]:focus, textarea:focus, select:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(9,105,218,0.15);
+    }
+    textarea { min-height: 60px; resize: vertical; font-family: monospace; }
+    select { width: auto; min-width: 160px; }
+    .btn {
+      display: inline-flex; align-items: center; padding: 5px 14px; font-size: 13px;
+      font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg2); color: var(--text); cursor: pointer; gap: 4px;
+    }
+    .btn:hover { background: var(--border); }
+    .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .btn-danger:hover { opacity: 0.9; }
+    .btn-sm { padding: 2px 8px; font-size: 12px; }
+    .btn-group { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider {
+      position: absolute; inset: 0; background: var(--border); border-radius: 11px;
+      cursor: pointer; transition: 0.2s;
+    }
+    .toggle .slider::before {
+      content: ''; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%; transition: 0.2s;
+    }
+    .toggle input:checked + .slider { background: var(--primary); }
+    .toggle input:checked + .slider::before { transform: translateX(18px); }
+    .profile-card {
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 12px;
+      margin-bottom: 8px; background: var(--bg);
+    }
+    .profile-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .profile-name { font-weight: 600; font-size: 14px; }
+    .profile-desc { font-size: 12px; color: var(--text-muted); }
+    .profile-patterns { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+    .cmd-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+    .cmd-table th { text-align: left; font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+    .cmd-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+    .badge {
+      display: inline-block; padding: 1px 6px; font-size: 11px; border-radius: 10px;
+      font-weight: 500;
+    }
+    .badge-success { background: #dafbe1; color: var(--success); }
+    .badge-danger { background: #ffebe9; color: var(--danger); }
+    .badge-warning { background: #fff8c5; color: var(--warning); }
+    .badge-primary { background: #ddf4ff; color: var(--primary); }
+    .badge-neutral { background: var(--bg2); color: var(--text-muted); }
+    .status { font-size: 13px; padding: 8px; border-radius: var(--radius); margin-top: 8px; display: none; }
+    .status-success { background: #dafbe1; color: var(--success); display: block; }
+    .status-error { background: #ffebe9; color: var(--danger); display: block; }
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;
+    }
+    .modal h3 { margin-top: 0; }
+    .form-row { margin-bottom: 12px; }
+    .form-row label.block { margin-bottom: 4px; }
+    .inline-fields { display: flex; gap: 8px; }
+    .inline-fields > * { flex: 1; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>GitHub Bot Command Palette</h1>
+  <p class="subtitle">Configure bot profiles and slash commands for GitHub PRs</p>
+
+  <h2>Global Settings</h2>
+  <div class="section" id="global-settings">
+    <label>
+      <span class="toggle"><input type="checkbox" id="opt-enabled"><span class="slider"></span></span>
+      Extension Enabled
+    </label>
+    <label>
+      <span class="toggle"><input type="checkbox" id="opt-confirm"><span class="slider"></span></span>
+      Confirm before posting commands
+    </label>
+    <label>
+      <span class="toggle"><input type="checkbox" id="opt-autosubmit"><span class="slider"></span></span>
+      Auto-submit commands (fills + clicks submit)
+    </label>
+    <label>
+      <span class="toggle"><input type="checkbox" id="opt-failtests"><span class="slider"></span></span>
+      Show buttons only for failed tests
+    </label>
+    <div class="form-row" style="margin-top:12px">
+      <label class="block">Theme</label>
+      <select id="opt-theme">
+        <option value="auto">Auto (match GitHub)</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="block">Button Position</label>
+      <select id="opt-position">
+        <option value="above-comment-box">Above comment box</option>
+        <option value="floating">Floating</option>
+        <option value="inline-checks">Inline with checks</option>
+      </select>
+    </div>
+  </div>
+
+  <h2>Prow Plugin Config Sources</h2>
+  <div class="section">
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+      Configure where to fetch Prow plugin config. Commands are filtered based on which plugins are enabled for each repo.
+    </p>
+    <div class="form-row">
+      <label class="block">Plugin Filter Mode</label>
+      <select id="opt-pluginfilter">
+        <option value="disabled">Disabled (show all commands)</option>
+        <option value="filter">Filter (hide commands for disabled plugins)</option>
+        <option value="indicate">Indicate (dim commands for disabled plugins)</option>
+      </select>
+    </div>
+    <div id="plugin-sources-list"></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btn-add-source">+ Add Source</button>
+      <select id="preset-select" style="font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text)">
+        <option value="">Add from Preset...</option>
+      </select>
+    </div>
+    <div id="source-test-result" class="status" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Source Editor Modal -->
+  <div class="modal-overlay" id="source-modal">
+    <div class="modal">
+      <h3 id="source-modal-title">Edit Plugin Config Source</h3>
+      <div class="form-row">
+        <label class="block">Name</label>
+        <input type="text" id="src-name" placeholder="OpenShift CI">
+      </div>
+      <div class="form-row">
+        <label class="block">Format</label>
+        <select id="src-format">
+          <option value="sharded">Sharded (per-repo directories)</option>
+          <option value="monolithic">Monolithic (single file)</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="block">Config Repository (org/repo)</label>
+        <input type="text" id="src-configrepo" placeholder="openshift/release">
+      </div>
+      <div class="form-row">
+        <label class="block">Branch</label>
+        <input type="text" id="src-branch" placeholder="master">
+      </div>
+      <div class="form-row" id="src-path-row">
+        <label class="block">Base Path (sharded: directory containing org/ subdirs)</label>
+        <input type="text" id="src-pathtemplate" placeholder="core-services/prow/02_config">
+      </div>
+      <div class="form-row hidden" id="src-file-row">
+        <label class="block">File Path (monolithic: path to plugins.yaml)</label>
+        <input type="text" id="src-filepath" placeholder="config/prow/plugins.yaml">
+      </div>
+      <div class="form-row">
+        <label class="block">Cache TTL (minutes)</label>
+        <input type="text" id="src-ttl" placeholder="60" style="width:80px">
+      </div>
+      <label>
+        <span class="toggle"><input type="checkbox" id="src-enabled"><span class="slider"></span></span>
+        Enabled
+      </label>
+      <div class="form-row" style="margin-top:12px">
+        <label class="block">Test Fetch (enter an org/repo to test)</label>
+        <div class="inline-fields">
+          <input type="text" id="src-test-repo" placeholder="openshift/oadp-operator">
+          <button class="btn btn-sm" id="btn-test-source">Test Fetch</button>
+        </div>
+        <div id="src-test-inline" class="status" style="margin-top:6px"></div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btn-save-source">Save</button>
+        <button class="btn" id="btn-cancel-source">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>Bot Profiles</h2>
+  <div id="profiles-list"></div>
+  <div class="btn-group">
+    <button class="btn btn-primary" id="btn-add-profile">+ Add Profile</button>
+  </div>
+
+  <h2>Import / Export</h2>
+  <div class="section">
+    <div class="btn-group" style="margin-top:0">
+      <button class="btn" id="btn-export">Export Config (JSON)</button>
+      <button class="btn" id="btn-import">Import Config</button>
+      <button class="btn btn-danger" id="btn-reset">Reset to Defaults</button>
+    </div>
+    <input type="file" id="import-file" accept=".json" class="hidden">
+    <div id="status-msg" class="status"></div>
+  </div>
+
+  <!-- Profile Editor Modal -->
+  <div class="modal-overlay" id="profile-modal">
+    <div class="modal">
+      <h3 id="modal-title">Edit Profile</h3>
+      <div class="form-row">
+        <label class="block">Profile Name</label>
+        <input type="text" id="pf-name">
+      </div>
+      <div class="form-row">
+        <label class="block">Description</label>
+        <input type="text" id="pf-desc">
+      </div>
+      <div class="form-row">
+        <label class="block">Repo Patterns (one per line, supports * glob)</label>
+        <textarea id="pf-patterns" placeholder="openshift/*&#10;kubernetes/*&#10;*"></textarea>
+      </div>
+      <label>
+        <span class="toggle"><input type="checkbox" id="pf-enabled"><span class="slider"></span></span>
+        Enabled
+      </label>
+
+      <h3>Global Commands</h3>
+      <div id="pf-global-cmds"></div>
+      <button class="btn btn-sm" id="btn-add-global-cmd">+ Add Command</button>
+
+      <h3>Check Commands</h3>
+      <div id="pf-check-cmds"></div>
+      <button class="btn btn-sm" id="btn-add-check-cmd">+ Add Check Command</button>
+
+      <h3>Dynamic Commands</h3>
+      <div id="pf-dynamic-cmds"></div>
+      <button class="btn btn-sm" id="btn-add-dynamic-cmd">+ Add Dynamic Command</button>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btn-save-profile">Save</button>
+        <button class="btn" id="btn-cancel-profile">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Editor Modal -->
+  <div class="modal-overlay" id="cmd-modal">
+    <div class="modal">
+      <h3>Edit Command</h3>
+      <div class="form-row">
+        <label class="block">Label</label>
+        <input type="text" id="cmd-label" placeholder="LGTM">
+      </div>
+      <div class="form-row">
+        <label class="block">Command</label>
+        <input type="text" id="cmd-command" placeholder="/lgtm">
+      </div>
+      <div class="form-row">
+        <label class="block">Description</label>
+        <input type="text" id="cmd-description" placeholder="Looks good to me">
+      </div>
+      <div class="inline-fields">
+        <div class="form-row">
+          <label class="block">Style</label>
+          <select id="cmd-style">
+            <option value="neutral">Neutral</option>
+            <option value="primary">Primary (Blue)</option>
+            <option value="success">Success (Green)</option>
+            <option value="danger">Danger (Red)</option>
+            <option value="warning">Warning (Orange)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="block">Shortcut</label>
+          <input type="text" id="cmd-shortcut" placeholder="Alt+L">
+        </div>
+      </div>
+      <label>
+        <span class="toggle"><input type="checkbox" id="cmd-confirm"><span class="slider"></span></span>
+        Require confirmation
+      </label>
+      <label>
+        <span class="toggle"><input type="checkbox" id="cmd-hasinput"><span class="slider"></span></span>
+        Has text input
+      </label>
+      <label>
+        <span class="toggle"><input type="checkbox" id="cmd-hasjobpicker"><span class="slider"></span></span>
+        Has job picker (dropdown of CI jobs from PR page)
+      </label>
+      <div id="cmd-input-fields" class="hidden">
+        <div class="form-row">
+          <label class="block">Input Placeholder</label>
+          <input type="text" id="cmd-inputplaceholder" placeholder="username">
+        </div>
+        <div class="form-row">
+          <label class="block">Command Template (use {input})</label>
+          <input type="text" id="cmd-template" placeholder="/cc @{input}">
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btn-save-cmd">Save Command</button>
+        <button class="btn" id="btn-cancel-cmd">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

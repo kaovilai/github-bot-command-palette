@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "profile-tide-prow-universal",
+      "name": "Tide/Prow — Universal",
+      "description": "Common Prow/Tide slash commands for any repo",
+      "enabled": true,
+      "repoPatterns": ["*"],
+      "globalCommands": [
+        { "id": "cmd-lgtm", "label": "LGTM", "command": "/lgtm", "description": "Looks good to me", "style": "success", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "Alt+L" },
+        { "id": "cmd-lgtm-cancel", "label": "Cancel LGTM", "command": "/lgtm cancel", "description": "Cancel LGTM", "style": "danger", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-approve", "label": "Approve", "command": "/approve", "description": "Approve PR", "style": "success", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "Alt+A" },
+        { "id": "cmd-approve-cancel", "label": "Cancel Approve", "command": "/approve cancel", "description": "Cancel approval", "style": "danger", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-hold", "label": "Hold", "command": "/hold", "description": "Place hold on PR", "style": "warning", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-hold-cancel", "label": "Cancel Hold", "command": "/hold cancel", "description": "Remove hold", "style": "neutral", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-retest", "label": "Retest", "command": "/retest", "description": "Retest all failed tests", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "Alt+R" },
+        { "id": "cmd-retest-required", "label": "Retest Required", "command": "/retest-required", "description": "Retest required tests", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-cc", "label": "CC User", "command": "/cc", "description": "CC a user", "style": "neutral", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "username", "commandTemplate": "/cc @{input}", "shortcut": "" },
+        { "id": "cmd-uncc", "label": "UnCC User", "command": "/uncc", "description": "Remove CC", "style": "neutral", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "username", "commandTemplate": "/uncc @{input}", "shortcut": "" }
+      ],
+      "checkCommands": [
+        { "id": "cmd-retest-this", "label": "Retest This", "command": "/retest", "description": "Retest this specific check", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }
+      ],
+      "dynamicCommands": []
+    },
+    {
+      "id": "profile-prow-openshift-release",
+      "name": "Prow — OpenShift Release",
+      "description": "Extra commands for openshift/release repo (pj-rehearse)",
+      "enabled": true,
+      "repoPatterns": ["openshift/release"],
+      "globalCommands": [
+        { "id": "cmd-rehearse-ack", "label": "Rehearse ACK", "command": "/pj-rehearse ack", "description": "Acknowledge rehearsal", "style": "warning", "requireConfirm": true, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-rehearse-test", "label": "Rehearse Test...", "command": "/pj-rehearse", "description": "Rehearse specific test", "style": "primary", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "test-job-name", "commandTemplate": "/pj-rehearse {input}", "shortcut": "" },
+        { "id": "cmd-rehearse-all", "label": "Rehearse All", "command": "/pj-rehearse", "description": "Rehearse all tests", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }
+      ],
+      "checkCommands": [],
+      "dynamicCommands": [
+        {
+          "id": "dyn-rehearse-check",
+          "label": "Rehearse",
+          "commandExpression": "\"/pj-rehearse \" + testName",
+          "injectAt": "failed-checks",
+          "style": "primary"
+        }
+      ]
+    },
+    {
+      "id": "profile-mergify",
+      "name": "Mergify",
+      "description": "Mergify bot commands",
+      "enabled": false,
+      "repoPatterns": ["*"],
+      "globalCommands": [
+        { "id": "cmd-mergify-requeue", "label": "Requeue", "command": "/mergify requeue", "description": "Requeue in merge queue", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-mergify-refresh", "label": "Refresh", "command": "/mergify refresh", "description": "Refresh Mergify status", "style": "neutral", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }
+      ],
+      "checkCommands": [],
+      "dynamicCommands": []
+    },
+    {
+      "id": "profile-changesets",
+      "name": "Changesets Bot",
+      "description": "Changesets bot commands",
+      "enabled": false,
+      "repoPatterns": ["*"],
+      "globalCommands": [
+        { "id": "cmd-changeset", "label": "Changeset", "command": "/changeset", "description": "Create changeset", "style": "primary", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "patch|minor|major", "commandTemplate": "/changeset {input}", "shortcut": "" }
+      ],
+      "checkCommands": [],
+      "dynamicCommands": []
+    }
+  ],
+  "repoOverrides": [],
+  "globalSettings": {
+    "enabled": true,
+    "buttonPosition": "above-comment-box",
+    "theme": "auto",
+    "confirmBeforePost": false,
+    "showOnlyFailedTests": true,
+    "autoSubmit": false
+  }
+}

@@ -1,0 +1,484 @@
+/* GitHub Bot Command Palette — Styles */
+
+:root {
+  --ghbcp-bg: #ffffff;
+  --ghbcp-bg-secondary: #f6f8fa;
+  --ghbcp-border: #d0d7de;
+  --ghbcp-text: #1f2328;
+  --ghbcp-text-muted: #656d76;
+  --ghbcp-btn-bg: #f6f8fa;
+  --ghbcp-btn-border: #d0d7de;
+  --ghbcp-btn-hover: #eaeef2;
+  --ghbcp-success: #1a7f37;
+  --ghbcp-success-bg: #dafbe1;
+  --ghbcp-danger: #cf222e;
+  --ghbcp-danger-bg: #ffebe9;
+  --ghbcp-warning: #9a6700;
+  --ghbcp-warning-bg: #fff8c5;
+  --ghbcp-primary: #0969da;
+  --ghbcp-primary-bg: #ddf4ff;
+  --ghbcp-toast-bg: #1f2328;
+  --ghbcp-toast-text: #ffffff;
+  --ghbcp-popover-bg: #ffffff;
+  --ghbcp-popover-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+}
+
+[data-color-mode="dark"],
+[data-dark-theme="dark"],
+[data-dark-theme="dark_dimmed"],
+[data-dark-theme="dark_high_contrast"],
+html[data-color-mode="dark"] {
+  --ghbcp-bg: #0d1117;
+  --ghbcp-bg-secondary: #161b22;
+  --ghbcp-border: #30363d;
+  --ghbcp-text: #e6edf3;
+  --ghbcp-text-muted: #8b949e;
+  --ghbcp-btn-bg: #21262d;
+  --ghbcp-btn-border: #30363d;
+  --ghbcp-btn-hover: #30363d;
+  --ghbcp-success: #3fb950;
+  --ghbcp-success-bg: #0d2818;
+  --ghbcp-danger: #f85149;
+  --ghbcp-danger-bg: #3d1117;
+  --ghbcp-warning: #d29922;
+  --ghbcp-warning-bg: #2e1800;
+  --ghbcp-primary: #58a6ff;
+  --ghbcp-primary-bg: #0c2d6b;
+  --ghbcp-toast-bg: #e6edf3;
+  --ghbcp-toast-text: #0d1117;
+  --ghbcp-popover-bg: #161b22;
+  --ghbcp-popover-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-mode="light"]) {
+    --ghbcp-bg: #0d1117;
+    --ghbcp-bg-secondary: #161b22;
+    --ghbcp-border: #30363d;
+    --ghbcp-text: #e6edf3;
+    --ghbcp-text-muted: #8b949e;
+    --ghbcp-btn-bg: #21262d;
+    --ghbcp-btn-border: #30363d;
+    --ghbcp-btn-hover: #30363d;
+    --ghbcp-success: #3fb950;
+    --ghbcp-success-bg: #0d2818;
+    --ghbcp-danger: #f85149;
+    --ghbcp-danger-bg: #3d1117;
+    --ghbcp-warning: #d29922;
+    --ghbcp-warning-bg: #2e1800;
+    --ghbcp-primary: #58a6ff;
+    --ghbcp-primary-bg: #0c2d6b;
+    --ghbcp-toast-bg: #e6edf3;
+    --ghbcp-toast-text: #0d1117;
+    --ghbcp-popover-bg: #161b22;
+    --ghbcp-popover-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Command Bar */
+.ghbcp-command-bar {
+  background: var(--ghbcp-bg-secondary);
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  animation: ghbcp-fadein 0.2s ease-in;
+}
+
+@keyframes ghbcp-fadein {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ghbcp-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ghbcp-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ghbcp-bar-icon {
+  font-size: 14px;
+}
+
+.ghbcp-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ghbcp-refresh-btn {
+  background: none;
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  color: var(--ghbcp-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.ghbcp-refresh-btn:hover {
+  color: var(--ghbcp-primary);
+  border-color: var(--ghbcp-primary);
+}
+
+.ghbcp-spinning {
+  animation: ghbcp-spin 0.6s linear infinite;
+}
+
+@keyframes ghbcp-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ghbcp-config-link {
+  color: var(--ghbcp-text-muted);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 2px 4px;
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  transition: color 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+
+.ghbcp-config-link:hover {
+  color: var(--ghbcp-primary);
+  border-color: var(--ghbcp-primary);
+}
+
+.ghbcp-btn-plugin-disabled {
+  opacity: 0.35;
+  position: relative;
+}
+
+.ghbcp-btn-plugin-disabled::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    rgba(128, 128, 128, 0.12) 3px,
+    rgba(128, 128, 128, 0.12) 6px
+  );
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.ghbcp-cmd-group {
+  margin-bottom: 6px;
+}
+
+.ghbcp-cmd-group:last-child {
+  margin-bottom: 0;
+}
+
+.ghbcp-group-label {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--ghbcp-text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.ghbcp-btn-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Buttons */
+.ghbcp-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  line-height: 20px;
+  white-space: nowrap;
+  border: 1px solid var(--ghbcp-btn-border);
+  border-radius: 6px;
+  background: var(--ghbcp-btn-bg);
+  color: var(--ghbcp-text);
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease;
+  min-height: 28px;
+  min-width: 44px;
+  justify-content: center;
+}
+
+.ghbcp-btn:hover {
+  background: var(--ghbcp-btn-hover);
+}
+
+.ghbcp-btn:active {
+  transform: scale(0.97);
+}
+
+.ghbcp-btn-success {
+  background: var(--ghbcp-success-bg);
+  color: var(--ghbcp-success);
+  border-color: var(--ghbcp-success);
+}
+
+.ghbcp-btn-success:hover {
+  background: var(--ghbcp-success);
+  color: #fff;
+}
+
+.ghbcp-btn-danger {
+  background: var(--ghbcp-danger-bg);
+  color: var(--ghbcp-danger);
+  border-color: var(--ghbcp-danger);
+}
+
+.ghbcp-btn-danger:hover {
+  background: var(--ghbcp-danger);
+  color: #fff;
+}
+
+.ghbcp-btn-warning {
+  background: var(--ghbcp-warning-bg);
+  color: var(--ghbcp-warning);
+  border-color: var(--ghbcp-warning);
+}
+
+.ghbcp-btn-warning:hover {
+  background: var(--ghbcp-warning);
+  color: #fff;
+}
+
+.ghbcp-btn-primary {
+  background: var(--ghbcp-primary-bg);
+  color: var(--ghbcp-primary);
+  border-color: var(--ghbcp-primary);
+}
+
+.ghbcp-btn-primary:hover {
+  background: var(--ghbcp-primary);
+  color: #fff;
+}
+
+/* Check buttons inline */
+.ghbcp-check-btns {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.ghbcp-check-btns .ghbcp-btn {
+  font-size: 11px;
+  padding: 1px 8px;
+  min-height: 24px;
+}
+
+/* Review toolbar */
+.ghbcp-review-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  background: var(--ghbcp-bg-secondary);
+  margin-bottom: 8px;
+  animation: ghbcp-fadein 0.2s ease-in;
+}
+
+/* Job picker dropdown */
+.ghbcp-job-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 101;
+  width: 380px;
+  max-width: 90vw;
+  background: var(--ghbcp-popover-bg);
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 8px;
+  box-shadow: var(--ghbcp-popover-shadow);
+  margin-top: 4px;
+  animation: ghbcp-fadein 0.15s ease-in;
+  overflow: hidden;
+}
+
+.ghbcp-job-picker-search {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: none;
+  border-bottom: 1px solid var(--ghbcp-border);
+  background: var(--ghbcp-bg);
+  color: var(--ghbcp-text);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ghbcp-job-picker-search:focus {
+  box-shadow: inset 0 -2px 0 var(--ghbcp-primary);
+}
+
+.ghbcp-job-picker-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.ghbcp-job-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ghbcp-job-picker-item:hover {
+  background: var(--ghbcp-btn-hover);
+}
+
+.ghbcp-job-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ghbcp-job-dot-failed {
+  background: var(--ghbcp-danger);
+}
+
+.ghbcp-job-dot-pending {
+  background: var(--ghbcp-warning);
+}
+
+.ghbcp-job-dot-passed {
+  background: var(--ghbcp-success);
+}
+
+.ghbcp-job-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghbcp-job-picker-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--ghbcp-text-muted);
+  text-align: center;
+}
+
+/* Input popover */
+.ghbcp-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: var(--ghbcp-popover-bg);
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  box-shadow: var(--ghbcp-popover-shadow);
+  margin-top: 4px;
+  animation: ghbcp-fadein 0.15s ease-in;
+}
+
+.ghbcp-popover-input {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  background: var(--ghbcp-bg);
+  color: var(--ghbcp-text);
+  outline: none;
+  min-width: 160px;
+}
+
+.ghbcp-popover-input:focus {
+  border-color: var(--ghbcp-primary);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+}
+
+.ghbcp-popover-post {
+  font-size: 11px;
+  padding: 2px 10px;
+}
+
+.ghbcp-popover-cancel {
+  font-size: 11px;
+  padding: 2px 6px;
+  min-width: auto;
+}
+
+/* Toast */
+.ghbcp-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10000;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  background: var(--ghbcp-toast-bg);
+  color: var(--ghbcp-toast-text);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  max-width: 400px;
+}
+
+.ghbcp-toast-show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ghbcp-toast-success {
+  background: var(--ghbcp-success);
+  color: #fff;
+}
+
+.ghbcp-toast-error {
+  background: var(--ghbcp-danger);
+  color: #fff;
+}
+
+.ghbcp-toast-warning {
+  background: var(--ghbcp-warning);
+  color: #fff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .ghbcp-command-bar {
+    padding: 6px 8px;
+  }
+
+  .ghbcp-btn {
+    min-height: 44px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .ghbcp-btn-wrap {
+    gap: 6px;
+  }
+}
