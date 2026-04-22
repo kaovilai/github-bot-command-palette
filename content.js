@@ -111,6 +111,9 @@
       jobs = jobs.filter(j => j.status === 'pending');
     }
 
+    const selected = new Set();
+    const template = command.commandTemplate || '/test {input}';
+
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker';
 
@@ -123,27 +126,66 @@
     const list = document.createElement('div');
     list.className = 'ghbcp-job-picker-list';
 
-    function renderJobs(filter) {
+    const footer = document.createElement('div');
+    footer.className = 'ghbcp-job-picker-footer';
+
+    const selectAllLabel = document.createElement('label');
+    selectAllLabel.className = 'ghbcp-job-picker-select-all';
+    const selectAllCb = document.createElement('input');
+    selectAllCb.type = 'checkbox';
+    selectAllLabel.appendChild(selectAllCb);
+    selectAllLabel.appendChild(document.createTextNode(' Select All'));
+    footer.appendChild(selectAllLabel);
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'ghbcp-job-picker-count';
+    footer.appendChild(countSpan);
+
+    const submitBtn = document.createElement('button');
+    submitBtn.className = 'ghbcp-btn ghbcp-btn-primary ghbcp-job-picker-submit';
+    submitBtn.disabled = true;
+    footer.appendChild(submitBtn);
+
+    function updateFooter() {
+      const n = selected.size;
+      countSpan.textContent = n + ' selected';
+      submitBtn.textContent = (command.label || 'Run') + ' Selected' + (n > 0 ? ' (' + n + ')' : '');
+      submitBtn.disabled = n === 0;
+      const visibleItems = list.querySelectorAll('.ghbcp-job-picker-item');
+      const visibleNames = Array.from(visibleItems).map(el => el.dataset.jobName);
+      const allVisible = visibleNames.length > 0 && visibleNames.every(n => selected.has(n));
+      selectAllCb.checked = allVisible;
+      selectAllCb.indeterminate = !allVisible && visibleNames.some(n => selected.has(n));
+    }
+
+    function renderJobs(searchFilter) {
       list.innerHTML = '';
-      const filtered = filter
-        ? jobs.filter(j => j.name.toLowerCase().includes(filter.toLowerCase()))
+      const filtered = searchFilter
+        ? jobs.filter(j => j.name.toLowerCase().includes(searchFilter.toLowerCase()))
         : jobs;
 
       if (filtered.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'ghbcp-job-picker-empty';
-        empty.textContent = filter ? 'No matching jobs' : 'No CI jobs found on this page';
+        empty.textContent = searchFilter ? 'No matching jobs' : 'No CI jobs found on this page';
         list.appendChild(empty);
+        updateFooter();
         return;
       }
 
-      // Sort: failed first, then pending, then passed
       const order = { failed: 0, pending: 1, passed: 2 };
       filtered.sort((a, b) => order[a.status] - order[b.status]);
 
       for (const job of filtered) {
         const item = document.createElement('div');
-        item.className = 'ghbcp-job-picker-item';
+        item.className = 'ghbcp-job-picker-item' + (selected.has(job.name) ? ' selected' : '');
+        item.dataset.jobName = job.name;
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'ghbcp-job-picker-checkbox';
+        cb.checked = selected.has(job.name);
+        item.appendChild(cb);
 
         const dot = document.createElement('span');
         dot.className = `ghbcp-job-dot ghbcp-job-dot-${job.status}`;
@@ -157,34 +199,66 @@
         item.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const template = command.commandTemplate || '/test {input}';
-          const cmdText = CM.sanitizeCommand(template.replace('{input}', job.name));
-
-          if (command.requireConfirm || config.globalSettings.confirmBeforePost) {
-            if (!confirm(`Post "${cmdText}"?`)) return;
+          if (selected.has(job.name)) {
+            selected.delete(job.name);
+            item.classList.remove('selected');
+            cb.checked = false;
+          } else {
+            selected.add(job.name);
+            item.classList.add('selected');
+            cb.checked = true;
           }
-
-          fillComment(cmdText);
-          picker.remove();
+          updateFooter();
         });
 
         list.appendChild(item);
       }
+      updateFooter();
     }
+
+    selectAllCb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      const visibleItems = list.querySelectorAll('.ghbcp-job-picker-item');
+      if (selectAllCb.checked) {
+        visibleItems.forEach(el => {
+          selected.add(el.dataset.jobName);
+          el.classList.add('selected');
+          el.querySelector('.ghbcp-job-picker-checkbox').checked = true;
+        });
+      } else {
+        visibleItems.forEach(el => {
+          selected.delete(el.dataset.jobName);
+          el.classList.remove('selected');
+          el.querySelector('.ghbcp-job-picker-checkbox').checked = false;
+        });
+      }
+      updateFooter();
+    });
+
+    submitBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (selected.size === 0) return;
+      const names = Array.from(selected).map(n => CM.sanitizeCommand(n));
+      const cmdText = template.replace('{input}', names.join(' '));
+
+      if (command.requireConfirm || config.globalSettings.confirmBeforePost) {
+        if (!confirm(`Post:\n${cmdText}`)) return;
+      }
+
+      fillComment(cmdText);
+      picker.remove();
+    });
 
     searchInput.addEventListener('input', () => renderJobs(searchInput.value));
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') picker.remove();
-      if (e.key === 'Enter') {
-        const firstItem = list.querySelector('.ghbcp-job-picker-item');
-        if (firstItem) firstItem.click();
-      }
     });
 
     picker.appendChild(list);
+    picker.appendChild(footer);
     renderJobs('');
 
-    // Close on outside click
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
         picker.remove();

@@ -382,6 +382,52 @@ html[data-color-mode="dark"] {
   text-align: center;
 }
 
+.ghbcp-job-picker-item.selected {
+  background: rgba(9, 105, 218, 0.08);
+}
+
+.ghbcp-job-picker-checkbox {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.ghbcp-job-picker-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ghbcp-border);
+  background: var(--ghbcp-bg);
+  font-size: 12px;
+}
+
+.ghbcp-job-picker-select-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.ghbcp-job-picker-count {
+  flex: 1;
+  color: var(--ghbcp-text-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ghbcp-job-picker-submit {
+  padding: 3px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ghbcp-job-picker-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Input popover */
 .ghbcp-popover {
   position: absolute;
