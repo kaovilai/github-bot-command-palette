@@ -128,6 +128,7 @@ GHBCP.ConfigManager = (() => {
       branch: 'master',
       pathTemplate: 'core-services/prow/02_config',
       filePath: '',
+      presubmitsBasePath: 'ci-operator/jobs',
       cacheTTLMinutes: 60
     },
     {

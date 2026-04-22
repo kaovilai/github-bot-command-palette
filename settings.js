@@ -571,6 +571,7 @@
     document.getElementById('src-branch').value = s.branch;
     document.getElementById('src-pathtemplate').value = s.pathTemplate || '';
     document.getElementById('src-filepath').value = s.filePath || '';
+    document.getElementById('src-presubmitspath').value = s.presubmitsBasePath || '';
     document.getElementById('src-ttl').value = s.cacheTTLMinutes || 60;
     document.getElementById('src-enabled').checked = s.enabled;
     document.getElementById('src-test-inline').className = 'status';
@@ -609,6 +610,7 @@
     document.getElementById('src-branch').value = preset.branch;
     document.getElementById('src-pathtemplate').value = preset.pathTemplate;
     document.getElementById('src-filepath').value = preset.filePath;
+    document.getElementById('src-presubmitspath').value = preset.presubmitsBasePath || '';
     document.getElementById('src-ttl').value = preset.cacheTTLMinutes;
     toggleSourceFields();
     document.getElementById('preset-select').value = '';
@@ -628,6 +630,7 @@
       branch: document.getElementById('src-branch').value.trim() || 'master',
       pathTemplate: document.getElementById('src-pathtemplate').value.trim(),
       filePath: document.getElementById('src-filepath').value.trim(),
+      presubmitsBasePath: document.getElementById('src-presubmitspath').value.trim(),
       cacheTTLMinutes: parseInt(document.getElementById('src-ttl').value) || 60
     };
 

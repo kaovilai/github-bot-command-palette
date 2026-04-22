@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Inject contextual action buttons for CI/bot slash commands on GitHub PR pages",
   "permissions": ["storage", "activeTab"],
-  "host_permissions": ["https://github.com/*", "https://raw.githubusercontent.com/*"],
+  "host_permissions": ["https://github.com/*", "https://raw.githubusercontent.com/*", "https://api.github.com/*"],
   "background": {
     "service_worker": "background.js"
   },

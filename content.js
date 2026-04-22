@@ -5,6 +5,7 @@
   let currentRepo = null;
   let debounceTimer = null;
   let lastPluginData = null;
+  let lastPresubmitJobs = null;
 
   function detectRepo() {
     const match = window.location.pathname.match(/^\/([^/]+\/[^/]+)/);
@@ -18,6 +19,14 @@
   function getPRNumber() {
     const match = window.location.pathname.match(/\/pull\/(\d+)/);
     return match ? match[1] : null;
+  }
+
+  function detectTargetBranch() {
+    const baseRef = document.querySelector('.base-ref a, .base-ref span.css-truncate-target');
+    if (baseRef) return baseRef.textContent.trim();
+    const branchLabel = document.querySelector('[data-testid="head-ref-selector"] + span, .commit-ref');
+    if (branchLabel) return branchLabel.textContent.trim();
+    return null;
   }
 
   function getGitHubTheme() {
@@ -99,16 +108,44 @@
     return names;
   }
 
-  function showTestJobPicker(command, context, anchorBtn) {
+  async function fetchPresubmitJobs() {
+    if (!CM.isContextValid() || !currentRepo) return null;
+    try {
+      const resp = await chrome.runtime.sendMessage({
+        action: 'getPresubmitJobs',
+        repo: currentRepo,
+        branch: detectTargetBranch(),
+        prNumber: getPRNumber()
+      });
+      return resp && resp.jobs ? resp.jobs : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function showTestJobPicker(command, context, anchorBtn) {
     const existing = document.querySelector('.ghbcp-job-picker');
     if (existing) existing.remove();
 
+    const usePresubmits = (command.commandTemplate || '').startsWith('/test');
     const filter = command.jobPickerFilter || 'all';
-    let jobs = scrapeCheckNames();
-    if (filter === 'failed') {
-      jobs = jobs.filter(j => j.status === 'failed');
-    } else if (filter === 'pending') {
-      jobs = jobs.filter(j => j.status === 'pending');
+    let jobs;
+
+    if (usePresubmits && lastPresubmitJobs && lastPresubmitJobs.length > 0) {
+      jobs = lastPresubmitJobs.map(j => ({
+        name: j.name,
+        status: j.optional ? 'pending' : 'passed',
+        context: j.context
+      }));
+    }
+
+    if (!jobs) {
+      jobs = scrapeCheckNames();
+      if (filter === 'failed') {
+        jobs = jobs.filter(j => j.status === 'failed');
+      } else if (filter === 'pending') {
+        jobs = jobs.filter(j => j.status === 'pending');
+      }
     }
 
     const selected = new Set();
@@ -240,7 +277,7 @@
       e.stopPropagation();
       if (selected.size === 0) return;
       const names = Array.from(selected).map(n => CM.sanitizeCommand(n));
-      const cmdText = template.replace('{input}', names.join(' '));
+      const cmdText = names.map(n => template.replace('{input}', n)).join('\n');
 
       if (command.requireConfirm || config.globalSettings.confirmBeforePost) {
         if (!confirm(`Post:\n${cmdText}`)) return;
@@ -611,6 +648,12 @@
       const btnContainer = document.createElement('span');
       btnContainer.className = 'ghbcp-check-btns';
 
+      let rerunJobName = null;
+      if (lastPresubmitJobs) {
+        const match = lastPresubmitJobs.find(j => j.context === checkName);
+        if (match) rerunJobName = match.name;
+      }
+
       const context = {
         testName: checkName,
         checkName,
@@ -620,7 +663,16 @@
 
       for (const profile of profiles) {
         for (const cmd of profile.checkCommands) {
-          btnContainer.appendChild(createButton(cmd, context));
+          if (rerunJobName) {
+            const testCmd = Object.assign({}, cmd, {
+              command: '/test ' + rerunJobName,
+              label: 'Test This',
+              description: '/test ' + rerunJobName
+            });
+            btnContainer.appendChild(createButton(testCmd, context));
+          } else {
+            btnContainer.appendChild(createButton(cmd, context));
+          }
         }
 
         for (const dyn of profile.dynamicCommands) {
@@ -808,6 +860,8 @@
     } else {
       lastPluginData = null;
     }
+
+    lastPresubmitJobs = await fetchPresubmitJobs();
 
     const extraCommands = CM.getExtraCommands(config, currentRepo);
 

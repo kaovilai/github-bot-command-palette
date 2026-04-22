@@ -4,6 +4,8 @@ importScripts('vendor/js-yaml.min.js');
 const STORAGE_KEY = 'ghbcp_config';
 const CACHE_KEY = 'ghbcp_plugin_cache';
 
+const PRESUBMITS_CACHE_KEY = 'ghbcp_presubmits_cache';
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getEnabledPlugins') {
     handleGetEnabledPlugins(msg.repo, false).then(sendResponse);
@@ -15,6 +17,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'testPluginSource') {
     handleTestSource(msg.source, msg.testRepo).then(sendResponse);
+    return true;
+  }
+  if (msg.action === 'getPresubmitJobs') {
+    handleGetPresubmitJobs(msg.repo, msg.branch, msg.forceRefresh, msg.prNumber).then(sendResponse);
     return true;
   }
 });
@@ -183,6 +189,92 @@ function buildConfigFileUrl(source, org, repoName) {
     return `https://github.com/${source.configRepo}/blob/${source.branch}/${basePath}/${org}/${repoName}/_pluginconfig.yaml`;
   } else {
     return `https://github.com/${source.configRepo}/blob/${source.branch}/${source.filePath}`;
+  }
+}
+
+async function getPresubmitsCache() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(PRESUBMITS_CACHE_KEY, result => {
+      resolve(result[PRESUBMITS_CACHE_KEY] || {});
+    });
+  });
+}
+
+async function setPresubmitsCache(cache) {
+  return new Promise(resolve => {
+    chrome.storage.local.set({ [PRESUBMITS_CACHE_KEY]: cache }, resolve);
+  });
+}
+
+async function resolveBaseBranch(repo, prNumber, hintBranch) {
+  if (hintBranch) return hintBranch;
+  if (!prNumber) return null;
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${repo}/pulls/${prNumber}`, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.base && data.base.ref ? data.base.ref : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
+  const config = await getConfig();
+  if (!config || !config.pluginConfigSources) {
+    return { jobs: null };
+  }
+
+  const source = config.pluginConfigSources.find(s => s.enabled && s.presubmitsBasePath);
+  if (!source) return { jobs: null };
+
+  const resolvedBranch = await resolveBaseBranch(repo, prNumber, branch);
+  if (!resolvedBranch) return { jobs: null };
+
+  const [org, repoName] = repo.split('/');
+  const cacheKey = `${repo}/${resolvedBranch}`;
+  const cache = await getPresubmitsCache();
+  const ttlMs = (source.cacheTTLMinutes || 60) * 60 * 1000;
+
+  if (!forceRefresh && cache[cacheKey] && cache[cacheKey].fetchedAt && (Date.now() - cache[cacheKey].fetchedAt < ttlMs)) {
+    return { jobs: cache[cacheKey].jobs || null };
+  }
+
+  try {
+    const basePath = source.presubmitsBasePath.replace(/\/$/, '');
+    const fileName = `${org}-${repoName}-${resolvedBranch}-presubmits.yaml`;
+    const url = `https://raw.githubusercontent.com/${source.configRepo}/${source.branch}/${basePath}/${org}/${repoName}/${fileName}`;
+
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const yamlText = await resp.text();
+    const parsed = jsyaml.load(yamlText);
+
+    const jobs = [];
+    if (parsed && parsed.presubmits) {
+      const entries = parsed.presubmits[repo] || [];
+      for (const entry of entries) {
+        if (entry.rerun_command) {
+          const name = entry.rerun_command.replace(/^\/test\s+/, '');
+          jobs.push({
+            name,
+            context: entry.context || '',
+            always_run: entry.always_run || false,
+            optional: entry.optional || false
+          });
+        }
+      }
+    }
+
+    cache[cacheKey] = { fetchedAt: Date.now(), jobs };
+    await setPresubmitsCache(cache);
+    return { jobs };
+  } catch (err) {
+    cache[cacheKey] = { fetchedAt: Date.now(), jobs: null, error: err.message };
+    await setPresubmitsCache(cache);
+    return { jobs: null };
   }
 }
 
