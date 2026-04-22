@@ -24,6 +24,7 @@ GHBCP.ConfigManager = (() => {
       requireConfirm: opts.requireConfirm || false,
       hasInput: opts.hasInput || false,
       hasJobPicker: opts.hasJobPicker || false,
+      jobPickerFilter: opts.jobPickerFilter || 'all',
       inputPlaceholder: opts.inputPlaceholder || '',
       commandTemplate: opts.commandTemplate || '',
       shortcut: opts.shortcut || ''
@@ -49,6 +50,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Retest', '/retest', 'primary', { shortcut: 'Alt+R', description: 'Retest all failed tests' }),
           cmd('Retest Required', '/retest-required', 'primary', { description: 'Retest required tests' }),
           cmd('Test...', '/test', 'primary', { hasJobPicker: true, commandTemplate: '/test {input}', description: 'Trigger a specific CI job', shortcut: 'Alt+T' }),
+          cmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override {input}', description: 'Override a failed CI check', shortcut: 'Alt+O' }),
           cmd('CC User', '/cc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/cc @{input}', description: 'CC a user' }),
           cmd('UnCC User', '/uncc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/uncc @{input}', description: 'Remove CC' })
         ],

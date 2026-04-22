@@ -31,6 +31,7 @@
             mkCmd('Retest', '/retest', 'primary', { shortcut: 'Alt+R' }),
             mkCmd('Retest Required', '/retest-required', 'primary'),
             mkCmd('Test...', '/test', 'primary', { hasJobPicker: true, commandTemplate: '/test {input}', shortcut: 'Alt+T' }),
+            mkCmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override {input}', shortcut: 'Alt+O' }),
             mkCmd('CC User', '/cc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/cc @{input}' }),
             mkCmd('UnCC User', '/uncc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/uncc @{input}' })
           ],
@@ -115,6 +116,7 @@
       id: generateId(), label, command, description: opts.description || command,
       style: style || 'neutral', requireConfirm: opts.requireConfirm || false,
       hasInput: opts.hasInput || false, hasJobPicker: opts.hasJobPicker || false,
+      jobPickerFilter: opts.jobPickerFilter || 'all',
       inputPlaceholder: opts.inputPlaceholder || '',
       commandTemplate: opts.commandTemplate || '', shortcut: opts.shortcut || ''
     };
@@ -350,6 +352,7 @@
     document.getElementById('cmd-confirm').checked = cmd.requireConfirm;
     document.getElementById('cmd-hasinput').checked = cmd.hasInput;
     document.getElementById('cmd-hasjobpicker').checked = cmd.hasJobPicker || false;
+    document.getElementById('cmd-jobpickerfilter').value = cmd.jobPickerFilter || 'all';
     document.getElementById('cmd-inputplaceholder').value = cmd.inputPlaceholder || '';
     document.getElementById('cmd-template').value = cmd.commandTemplate || '';
     toggleInputFields();
@@ -425,6 +428,7 @@
       requireConfirm: document.getElementById('cmd-confirm').checked,
       hasInput: document.getElementById('cmd-hasinput').checked,
       hasJobPicker: document.getElementById('cmd-hasjobpicker').checked,
+      jobPickerFilter: document.getElementById('cmd-jobpickerfilter').value,
       inputPlaceholder: document.getElementById('cmd-inputplaceholder').value.trim(),
       commandTemplate: document.getElementById('cmd-template').value.trim()
     };

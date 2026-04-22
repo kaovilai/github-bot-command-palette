@@ -103,7 +103,13 @@
     const existing = document.querySelector('.ghbcp-job-picker');
     if (existing) existing.remove();
 
-    const jobs = scrapeCheckNames();
+    const filter = command.jobPickerFilter || 'all';
+    let jobs = scrapeCheckNames();
+    if (filter === 'failed') {
+      jobs = jobs.filter(j => j.status === 'failed');
+    } else if (filter === 'pending') {
+      jobs = jobs.filter(j => j.status === 'pending');
+    }
 
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker';
