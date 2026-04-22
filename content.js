@@ -68,7 +68,7 @@
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        const isFailed = item.querySelector('.octicon-x') !== null;
+        const isFailed = item.querySelector('.octicon-x-circle-fill') !== null;
         const isPending = item.querySelector('.octicon-dot-fill') !== null;
         const status = isFailed ? 'failed' : isPending ? 'pending' : 'passed';
         names.push({ name, status });
@@ -88,7 +88,7 @@
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        const isFailed = row.querySelector('.octicon-x, .color-fg-danger, [data-conclusion="failure"]') ||
+        const isFailed = row.querySelector('.octicon-x-circle-fill, .color-fg-danger, [data-conclusion="failure"]') ||
                          row.classList.contains('bg-danger');
         const isPending = row.querySelector('.octicon-dot-fill, .color-fg-attention, [data-conclusion="pending"]');
         const status = isFailed ? 'failed' : isPending ? 'pending' : 'passed';
@@ -522,7 +522,7 @@
     for (const row of checkRows) {
       if (row.dataset.ghbcpInjected === 'true') continue;
 
-      const isFailed = row.querySelector('.octicon-x') !== null ||
+      const isFailed = row.querySelector('.octicon-x-circle-fill') !== null ||
                        row.querySelector('.color-fg-danger, [data-conclusion="failure"]') !== null;
 
       if (!isFailed) continue;
