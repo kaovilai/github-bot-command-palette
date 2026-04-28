@@ -663,16 +663,13 @@
 
       for (const profile of profiles) {
         for (const cmd of profile.checkCommands) {
-          if (rerunJobName) {
-            const testCmd = Object.assign({}, cmd, {
-              command: '/test ' + rerunJobName,
-              label: 'Test This',
-              description: '/test ' + rerunJobName
-            });
-            btnContainer.appendChild(createButton(testCmd, context));
-          } else {
-            btnContainer.appendChild(createButton(cmd, context));
-          }
+          const jobName = rerunJobName || checkName;
+          const testCmd = Object.assign({}, cmd, {
+            command: '/test ' + jobName,
+            label: 'Test This',
+            description: '/test ' + jobName
+          });
+          btnContainer.appendChild(createButton(testCmd, context));
         }
 
         for (const dyn of profile.dynamicCommands) {
