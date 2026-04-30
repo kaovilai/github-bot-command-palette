@@ -105,6 +105,61 @@ GHBCP.ConfigManager = (() => {
         ],
         checkCommands: [],
         dynamicCommands: []
+      },
+      {
+        id: 'profile-dependabot',
+        name: 'Dependabot',
+        description: 'GitHub Dependabot dependency update commands',
+        enabled: false,
+        repoPatterns: ['*'],
+        globalCommands: [
+          cmd('Rebase', '@dependabot rebase', 'primary', { description: 'Rebase this PR' }),
+          cmd('Recreate', '@dependabot recreate', 'warning', { description: 'Close and recreate this PR' }),
+          cmd('Merge', '@dependabot merge', 'success', { description: 'Merge after CI passes' }),
+          cmd('Squash & Merge', '@dependabot squash and merge', 'success', { description: 'Squash and merge after CI passes' }),
+          cmd('Cancel Merge', '@dependabot cancel merge', 'danger', { description: 'Cancel a pending merge' }),
+          cmd('Reopen', '@dependabot reopen', 'primary', { description: 'Reopen a closed PR' }),
+          cmd('Close', '@dependabot close', 'danger', { description: 'Close this PR' }),
+          cmd('Ignore Major', '@dependabot ignore this major version', 'warning', { requireConfirm: true, description: 'Ignore this major version' }),
+          cmd('Ignore Minor', '@dependabot ignore this minor version', 'warning', { requireConfirm: true, description: 'Ignore this minor version' }),
+          cmd('Ignore Dependency', '@dependabot ignore this dependency', 'danger', { requireConfirm: true, description: 'Ignore this dependency entirely' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
+      },
+      {
+        id: 'profile-claude',
+        name: 'Claude',
+        description: 'Claude Code AI assistant commands',
+        enabled: false,
+        repoPatterns: ['*'],
+        globalCommands: [
+          cmd('Ask Claude...', '@claude', 'primary', { hasInput: true, inputPlaceholder: 'instruction', commandTemplate: '@claude {input}', description: 'Ask Claude a free-form question or instruction' }),
+          cmd('Review PR', '@claude review this PR', 'primary', { description: 'Ask Claude to review this PR' }),
+          cmd('Fix This', '@claude fix this', 'warning', { description: 'Ask Claude to fix issues' }),
+          cmd('Implement...', '@claude implement', 'primary', { hasInput: true, inputPlaceholder: 'description', commandTemplate: '@claude implement {input}', description: 'Ask Claude to implement something' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
+      },
+      {
+        id: 'profile-coderabbitai',
+        name: 'CodeRabbit AI',
+        description: 'CodeRabbit AI code review bot commands',
+        enabled: false,
+        repoPatterns: ['*'],
+        globalCommands: [
+          cmd('Full Review', '@coderabbitai full review', 'primary', { description: 'Request a full code review' }),
+          cmd('Review', '@coderabbitai review', 'primary', { description: 'Request an incremental review' }),
+          cmd('Summary', '@coderabbitai summary', 'neutral', { description: 'Generate PR summary' }),
+          cmd('Docstrings', '@coderabbitai generate docstrings', 'neutral', { description: 'Generate docstrings for changes' }),
+          cmd('Resolve', '@coderabbitai resolve', 'success', { description: 'Resolve all CodeRabbit comments' }),
+          cmd('Pause', '@coderabbitai pause', 'warning', { description: 'Pause reviews on this PR' }),
+          cmd('Resume', '@coderabbitai resume', 'primary', { description: 'Resume reviews on this PR' }),
+          cmd('Help', '@coderabbitai help', 'neutral', { description: 'Show CodeRabbit help' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
       }
     ],
     repoOverrides: [],

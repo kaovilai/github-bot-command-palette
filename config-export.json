@@ -70,6 +70,61 @@
       ],
       "checkCommands": [],
       "dynamicCommands": []
+    },
+    {
+      "id": "profile-dependabot",
+      "name": "Dependabot",
+      "description": "GitHub Dependabot dependency update commands",
+      "enabled": false,
+      "repoPatterns": ["*"],
+      "globalCommands": [
+        { "id": "cmd-dependabot-rebase", "label": "Rebase", "command": "@dependabot rebase", "description": "Rebase this PR", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-recreate", "label": "Recreate", "command": "@dependabot recreate", "description": "Close and recreate this PR", "style": "warning", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-merge", "label": "Merge", "command": "@dependabot merge", "description": "Merge after CI passes", "style": "success", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-squash", "label": "Squash & Merge", "command": "@dependabot squash and merge", "description": "Squash and merge after CI passes", "style": "success", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-cancel-merge", "label": "Cancel Merge", "command": "@dependabot cancel merge", "description": "Cancel a pending merge", "style": "danger", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-reopen", "label": "Reopen", "command": "@dependabot reopen", "description": "Reopen a closed PR", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-close", "label": "Close", "command": "@dependabot close", "description": "Close this PR", "style": "danger", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-ignore-major", "label": "Ignore Major", "command": "@dependabot ignore this major version", "description": "Ignore this major version", "style": "warning", "requireConfirm": true, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-ignore-minor", "label": "Ignore Minor", "command": "@dependabot ignore this minor version", "description": "Ignore this minor version", "style": "warning", "requireConfirm": true, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-dependabot-ignore-dep", "label": "Ignore Dependency", "command": "@dependabot ignore this dependency", "description": "Ignore this dependency entirely", "style": "danger", "requireConfirm": true, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }
+      ],
+      "checkCommands": [],
+      "dynamicCommands": []
+    },
+    {
+      "id": "profile-claude",
+      "name": "Claude",
+      "description": "Claude Code AI assistant commands",
+      "enabled": false,
+      "repoPatterns": ["*"],
+      "globalCommands": [
+        { "id": "cmd-claude-ask", "label": "Ask Claude...", "command": "@claude", "description": "Ask Claude a free-form question or instruction", "style": "primary", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "instruction", "commandTemplate": "@claude {input}", "shortcut": "" },
+        { "id": "cmd-claude-review", "label": "Review PR", "command": "@claude review this PR", "description": "Ask Claude to review this PR", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-claude-fix", "label": "Fix This", "command": "@claude fix this", "description": "Ask Claude to fix issues", "style": "warning", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-claude-implement", "label": "Implement...", "command": "@claude implement", "description": "Ask Claude to implement something", "style": "primary", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "description", "commandTemplate": "@claude implement {input}", "shortcut": "" }
+      ],
+      "checkCommands": [],
+      "dynamicCommands": []
+    },
+    {
+      "id": "profile-coderabbitai",
+      "name": "CodeRabbit AI",
+      "description": "CodeRabbit AI code review bot commands",
+      "enabled": false,
+      "repoPatterns": ["*"],
+      "globalCommands": [
+        { "id": "cmd-coderabbit-full-review", "label": "Full Review", "command": "@coderabbitai full review", "description": "Request a full code review", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-coderabbit-review", "label": "Review", "command": "@coderabbitai review", "description": "Request an incremental review", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-coderabbit-summary", "label": "Summary", "command": "@coderabbitai summary", "description": "Generate PR summary", "style": "neutral", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-coderabbit-docstrings", "label": "Docstrings", "command": "@coderabbitai generate docstrings", "description": "Generate docstrings for changes", "style": "neutral", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-coderabbit-resolve", "label": "Resolve", "command": "@coderabbitai resolve", "description": "Resolve all CodeRabbit comments", "style": "success", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-coderabbit-pause", "label": "Pause", "command": "@coderabbitai pause", "description": "Pause reviews on this PR", "style": "warning", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-coderabbit-resume", "label": "Resume", "command": "@coderabbitai resume", "description": "Resume reviews on this PR", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
+        { "id": "cmd-coderabbit-help", "label": "Help", "command": "@coderabbitai help", "description": "Show CodeRabbit help", "style": "neutral", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }
+      ],
+      "checkCommands": [],
+      "dynamicCommands": []
     }
   ],
   "repoOverrides": [],

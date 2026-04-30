@@ -78,6 +78,58 @@
             mkCmd('Changeset', '/changeset', 'primary', { hasInput: true, inputPlaceholder: 'patch|minor|major', commandTemplate: '/changeset {input}' })
           ],
           checkCommands: [], dynamicCommands: []
+        },
+        {
+          id: 'profile-dependabot',
+          name: 'Dependabot',
+          description: 'GitHub Dependabot dependency update commands',
+          enabled: false,
+          repoPatterns: ['*'],
+          globalCommands: [
+            mkCmd('Rebase', '@dependabot rebase', 'primary', { description: 'Rebase this PR' }),
+            mkCmd('Recreate', '@dependabot recreate', 'warning', { description: 'Close and recreate this PR' }),
+            mkCmd('Merge', '@dependabot merge', 'success', { description: 'Merge after CI passes' }),
+            mkCmd('Squash & Merge', '@dependabot squash and merge', 'success', { description: 'Squash and merge after CI passes' }),
+            mkCmd('Cancel Merge', '@dependabot cancel merge', 'danger', { description: 'Cancel a pending merge' }),
+            mkCmd('Reopen', '@dependabot reopen', 'primary', { description: 'Reopen a closed PR' }),
+            mkCmd('Close', '@dependabot close', 'danger', { description: 'Close this PR' }),
+            mkCmd('Ignore Major', '@dependabot ignore this major version', 'warning', { requireConfirm: true, description: 'Ignore this major version' }),
+            mkCmd('Ignore Minor', '@dependabot ignore this minor version', 'warning', { requireConfirm: true, description: 'Ignore this minor version' }),
+            mkCmd('Ignore Dependency', '@dependabot ignore this dependency', 'danger', { requireConfirm: true, description: 'Ignore this dependency entirely' })
+          ],
+          checkCommands: [], dynamicCommands: []
+        },
+        {
+          id: 'profile-claude',
+          name: 'Claude',
+          description: 'Claude Code AI assistant commands',
+          enabled: false,
+          repoPatterns: ['*'],
+          globalCommands: [
+            mkCmd('Ask Claude...', '@claude', 'primary', { hasInput: true, inputPlaceholder: 'instruction', commandTemplate: '@claude {input}', description: 'Ask Claude a free-form question or instruction' }),
+            mkCmd('Review PR', '@claude review this PR', 'primary', { description: 'Ask Claude to review this PR' }),
+            mkCmd('Fix This', '@claude fix this', 'warning', { description: 'Ask Claude to fix issues' }),
+            mkCmd('Implement...', '@claude implement', 'primary', { hasInput: true, inputPlaceholder: 'description', commandTemplate: '@claude implement {input}', description: 'Ask Claude to implement something' })
+          ],
+          checkCommands: [], dynamicCommands: []
+        },
+        {
+          id: 'profile-coderabbitai',
+          name: 'CodeRabbit AI',
+          description: 'CodeRabbit AI code review bot commands',
+          enabled: false,
+          repoPatterns: ['*'],
+          globalCommands: [
+            mkCmd('Full Review', '@coderabbitai full review', 'primary', { description: 'Request a full code review' }),
+            mkCmd('Review', '@coderabbitai review', 'primary', { description: 'Request an incremental review' }),
+            mkCmd('Summary', '@coderabbitai summary', 'neutral', { description: 'Generate PR summary' }),
+            mkCmd('Docstrings', '@coderabbitai generate docstrings', 'neutral', { description: 'Generate docstrings for changes' }),
+            mkCmd('Resolve', '@coderabbitai resolve', 'success', { description: 'Resolve all CodeRabbit comments' }),
+            mkCmd('Pause', '@coderabbitai pause', 'warning', { description: 'Pause reviews on this PR' }),
+            mkCmd('Resume', '@coderabbitai resume', 'primary', { description: 'Resume reviews on this PR' }),
+            mkCmd('Help', '@coderabbitai help', 'neutral', { description: 'Show CodeRabbit help' })
+          ],
+          checkCommands: [], dynamicCommands: []
         }
       ],
       repoOverrides: [],
