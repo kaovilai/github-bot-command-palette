@@ -100,6 +100,7 @@
     .badge-warning { background: #fff8c5; color: var(--warning); }
     .badge-primary { background: #ddf4ff; color: var(--primary); }
     .badge-neutral { background: var(--bg2); color: var(--text-muted); }
+    .shortcut-badge { font-family: monospace; font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
     .status { font-size: 13px; padding: 8px; border-radius: var(--radius); margin-top: 8px; display: none; }
     .status-success { background: #dafbe1; color: var(--success); display: block; }
     .status-error { background: #ffebe9; color: var(--danger); display: block; }
@@ -328,6 +329,7 @@
         <div class="form-row">
           <label class="block">Shortcut</label>
           <input type="text" id="cmd-shortcut" placeholder="Alt+L">
+          <small style="color:var(--text-muted);font-size:11px;margin-top:2px;display:block">Format: Alt+L, Ctrl+Shift+R, etc. GitHub uses single-key shortcuts (L, A, R, E) — use a modifier to avoid conflicts. Active outside text fields on PR pages.</small>
         </div>
       </div>
       <label>

@@ -213,8 +213,8 @@
           </div>
         </div>
         <table class="cmd-table">
-          <tr><th>Label</th><th>Command</th><th>Style</th><th>Input</th></tr>
-          ${p.globalCommands.map(c => `<tr><td>${esc(c.label)}</td><td><code>${esc(c.command)}</code></td><td>${styleBadge(c.style)}</td><td>${c.hasInput ? '✓' : ''}</td></tr>`).join('')}
+          <tr><th>Label</th><th>Command</th><th>Style</th><th>Shortcut</th></tr>
+          ${p.globalCommands.map(c => `<tr><td>${esc(c.label)}</td><td><code>${esc(c.command)}</code></td><td>${styleBadge(c.style)}</td><td>${c.shortcut ? `<span class="shortcut-badge">${esc(c.shortcut)}</span>` : ''}</td></tr>`).join('')}
         </table>
       `;
       container.appendChild(card);
@@ -286,6 +286,7 @@
         <span>${styleBadge(c.style)}</span>
         <strong style="font-size:12px">${esc(c.label)}</strong>
         <code style="font-size:11px;color:var(--text-muted)">${esc(c.command)}</code>
+        ${c.shortcut ? `<span class="shortcut-badge">${esc(c.shortcut)}</span>` : ''}
         <span style="flex:1"></span>
         <button class="btn btn-sm" data-edit-cmd="${type}:${i}">Edit</button>
         <button class="btn btn-sm btn-danger" data-del-cmd="${type}:${i}">✕</button>
