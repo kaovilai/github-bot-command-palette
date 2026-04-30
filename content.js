@@ -668,10 +668,18 @@
           const jobName = rerunJobName || checkName;
           const testCmd = Object.assign({}, cmd, {
             command: '/test ' + jobName,
-            label: 'Test This',
+            label: 'Test',
             description: '/test ' + jobName
           });
           btnContainer.appendChild(createButton(testCmd, context));
+
+          const overrideCmd = Object.assign({}, cmd, {
+            command: '/override ' + checkName,
+            label: 'Override',
+            description: '/override ' + checkName,
+            style: 'warning'
+          });
+          btnContainer.appendChild(createButton(overrideCmd, context));
         }
 
         for (const dyn of profile.dynamicCommands) {
