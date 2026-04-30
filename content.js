@@ -413,15 +413,18 @@
     textarea.dispatchEvent(new Event('change', { bubbles: true }));
 
     if (config.globalSettings.autoSubmit) {
-      setTimeout(() => {
+      const trySubmit = (attempts) => {
         const submitBtn = findSubmitButton(textarea);
         if (submitBtn) {
           submitBtn.click();
           showToast(`Posted ${cmdText}`, 'success');
+        } else if (attempts > 0) {
+          setTimeout(() => trySubmit(attempts - 1), 100);
         } else {
           showToast(`Filled: ${cmdText} (submit manually)`, 'warning');
         }
-      }, 100);
+      };
+      setTimeout(() => trySubmit(5), 100);
     } else {
       showToast(`Filled: ${cmdText}`, 'success');
     }
@@ -463,13 +466,12 @@
 
     const form = textarea.closest('form');
     if (form) {
-      const btn = form.querySelector('button[type="submit"]:not([disabled]), button.btn-primary[type="submit"]');
+      const btn = form.querySelector('button.btn-primary[type="submit"]:not([disabled])');
       if (btn) return btn;
     }
     const selectors = [
-      'button[data-disable-with="Comment"]',
-      'button.btn-primary[type="submit"]',
-      '.js-new-comment-form button[type="submit"]'
+      '.js-new-comment-form button.btn-primary[type="submit"]:not([disabled])',
+      'button.btn-primary[type="submit"]:not([name="comment_and_close"]):not([disabled])'
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
