@@ -1,9 +1,48 @@
 # GitHub Bot Command Palette
 
 Chrome extension that injects contextual action buttons for CI/bot slash commands on GitHub PR pages.
-> **Example - in action**
-> <img width="1367" height="1247" alt="image" src="https://github.com/user-attachments/assets/00b4a745-c7e5-4cb8-9d8d-deba16b562b3" />
 
+## Screenshots
+
+### Command Bar
+
+One-click buttons for `/lgtm`, `/approve`, `/hold`, `/retest`, and more — injected above the GitHub comment box:
+
+![Command bar with all buttons](screenshots/02-command-bar-in-context.png)
+
+All buttons with keyboard shortcuts, color-coded by action type:
+
+![Command bar buttons](screenshots/01-command-bar.png)
+
+### Override & Test Job Picker
+
+Click **Override...** or **Test...** to open a searchable picker showing all CI jobs from the PR — select multiple, then fire them at once:
+
+**Override picker** (9 failing rehearsal jobs, multi-select):
+
+![Override job picker](screenshots/14-override-dropdown-jobs.png)
+
+**Test picker** (45 available jobs to retest):
+
+![Test job picker](screenshots/15-test-dropdown-jobs.png)
+
+### Failing CI Checks
+
+Extension scrapes the Checks section to populate the job pickers:
+
+![Failing checks section](screenshots/12-checks-section.png)
+
+### Settings Page
+
+Full profile management — enable/disable profiles, configure commands, set keyboard shortcuts:
+
+![Settings page](screenshots/06-settings-page.png)
+
+Bot profile detail view with all commands, styles, and shortcuts:
+
+![Bot profiles](screenshots/07-settings-page-scroll.png)
+
+---
 
 ## Installation
 
