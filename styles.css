@@ -332,6 +332,7 @@ html[data-color-mode="dark"] {
 .ghbcp-job-picker-list {
   max-height: 280px;
   overflow-y: auto;
+  overflow-x: auto;
   padding: 4px 0;
 }
 
@@ -370,8 +371,6 @@ html[data-color-mode="dark"] {
 }
 
 .ghbcp-job-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

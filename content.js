@@ -223,7 +223,11 @@
     function renderJobs(searchFilter) {
       list.innerHTML = '';
       const filtered = searchFilter
-        ? jobs.filter(j => j.name.toLowerCase().includes(searchFilter.toLowerCase()))
+        ? jobs.filter(j => {
+            const name = j.name.toLowerCase();
+            const terms = searchFilter.toLowerCase().match(/"[^"]*"|\S+/g) || [];
+            return terms.every(t => name.includes(t.replace(/^"|"$/g, '')));
+          })
         : jobs;
 
       if (filtered.length === 0) {
