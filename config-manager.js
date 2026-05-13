@@ -4,7 +4,16 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
+  const BUILTIN_PROFILE_IDS = new Set([
+    'profile-tide-prow-universal',
+    'profile-prow-openshift-release',
+    'profile-mergify',
+    'profile-changesets',
+    'profile-dependabot',
+    'profile-claude',
+    'profile-coderabbitai'
+  ]);
 
   function generateId() {
     return crypto.randomUUID ? crypto.randomUUID() :
@@ -210,16 +219,43 @@ GHBCP.ConfigManager = (() => {
     return regex.test(str);
   }
 
+  function migrateConfig(config) {
+    if (!config.version || config.version >= SCHEMA_VERSION) return config;
+    const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    const defaultMap = new Map(defaults.profiles.map(p => [p.id, p]));
+    for (let i = 0; i < config.profiles.length; i++) {
+      const p = config.profiles[i];
+      if (BUILTIN_PROFILE_IDS.has(p.id) && defaultMap.has(p.id)) {
+        const updated = defaultMap.get(p.id);
+        updated.enabled = p.enabled;
+        config.profiles[i] = updated;
+      }
+    }
+    for (const [id, dp] of defaultMap) {
+      if (!config.profiles.some(p => p.id === id)) {
+        config.profiles.push(dp);
+      }
+    }
+    config.version = SCHEMA_VERSION;
+    config._migrated = true;
+    return config;
+  }
+
   async function getConfig() {
     if (!isContextValid()) return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     return new Promise(resolve => {
       try {
-        chrome.storage.sync.get(STORAGE_KEY, result => {
+        chrome.storage.sync.get(STORAGE_KEY, async result => {
           if (chrome.runtime.lastError) {
             resolve(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
             return;
           }
-          resolve(result[STORAGE_KEY] || JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
+          let config = result[STORAGE_KEY] || JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+          if (config.version < SCHEMA_VERSION) {
+            config = migrateConfig(config);
+            try { await saveConfig(config); } catch (e) { /* best effort */ }
+          }
+          resolve(config);
         });
       } catch (e) {
         resolve(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));

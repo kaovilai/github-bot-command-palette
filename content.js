@@ -865,6 +865,10 @@
     if (!isPRPage()) return;
 
     config = await CM.getConfig();
+    if (config._migrated) {
+      showToast('Bot Commands updated to v' + config.version + ' — built-in profiles refreshed', 'success');
+      delete config._migrated;
+    }
     if (!config.globalSettings.enabled) return;
 
     currentRepo = detectRepo();

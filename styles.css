@@ -302,7 +302,7 @@ html[data-color-mode="dark"] {
   top: 100%;
   left: 0;
   z-index: 101;
-  width: 380px;
+  width: 600px;
   max-width: 90vw;
   background: var(--ghbcp-popover-bg);
   border: 1px solid var(--ghbcp-border);
