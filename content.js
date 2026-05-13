@@ -108,6 +108,29 @@
     return names;
   }
 
+  function scrapeRehearsalNames() {
+    const names = [];
+    const seen = new Set();
+    const comments = document.querySelectorAll('.timeline-comment, .js-comment-container, [id^="issuecomment-"]');
+    for (const comment of comments) {
+      const body = comment.querySelector('.comment-body, .js-comment-body, .markdown-body');
+      if (!body) continue;
+      if (!body.textContent.includes('REHEARSALNOTIFIER')) continue;
+      const table = body.querySelector('table');
+      if (!table) continue;
+      const rows = table.querySelectorAll('tbody tr');
+      for (const row of rows) {
+        const cell = row.querySelector('td');
+        if (!cell) continue;
+        const name = cell.textContent.trim();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        names.push({ name, status: 'pending' });
+      }
+    }
+    return names;
+  }
+
   async function fetchPresubmitJobs() {
     if (!CM.isContextValid() || !currentRepo) return null;
     try {
@@ -131,7 +154,9 @@
     const filter = command.jobPickerFilter || 'all';
     let jobs;
 
-    if (usePresubmits && lastPresubmitJobs && lastPresubmitJobs.length > 0) {
+    if (command.jobSource === 'rehearsals') {
+      jobs = scrapeRehearsalNames();
+    } else if (usePresubmits && lastPresubmitJobs && lastPresubmitJobs.length > 0) {
       jobs = lastPresubmitJobs.map(j => ({
         name: j.name,
         status: j.optional ? 'pending' : 'passed',
@@ -277,7 +302,9 @@
       e.stopPropagation();
       if (selected.size === 0) return;
       const names = Array.from(selected).map(n => CM.sanitizeCommand(n));
-      const cmdText = names.map(n => template.replace('{input}', n)).join('\n');
+      const cmdText = command.joinMode === 'single-command'
+        ? template.replace('{input}', names.join(' '))
+        : names.map(n => template.replace('{input}', n)).join('\n');
 
       if (command.requireConfirm || config.globalSettings.confirmBeforePost) {
         if (!confirm(`Post:\n${cmdText}`)) return;

@@ -32,7 +32,7 @@
       "repoPatterns": ["openshift/release"],
       "globalCommands": [
         { "id": "cmd-rehearse-ack", "label": "Rehearse ACK", "command": "/pj-rehearse ack", "description": "Acknowledge rehearsal", "style": "warning", "requireConfirm": true, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
-        { "id": "cmd-rehearse-test", "label": "Rehearse Test...", "command": "/pj-rehearse", "description": "Rehearse specific test", "style": "primary", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "test-job-name", "commandTemplate": "/pj-rehearse {input}", "shortcut": "" },
+        { "id": "cmd-rehearse-test", "label": "Rehearse...", "command": "/pj-rehearse", "description": "Rehearse specific tests from REHEARSALNOTIFIER", "style": "primary", "requireConfirm": false, "hasInput": false, "hasJobPicker": true, "jobSource": "rehearsals", "joinMode": "single-command", "inputPlaceholder": "", "commandTemplate": "/pj-rehearse {input}", "shortcut": "" },
         { "id": "cmd-rehearse-all", "label": "Rehearse All", "command": "/pj-rehearse", "description": "Rehearse all tests", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }
       ],
       "checkCommands": [],

@@ -25,6 +25,8 @@ GHBCP.ConfigManager = (() => {
       hasInput: opts.hasInput || false,
       hasJobPicker: opts.hasJobPicker || false,
       jobPickerFilter: opts.jobPickerFilter || 'all',
+      jobSource: opts.jobSource || '',
+      joinMode: opts.joinMode || '',
       inputPlaceholder: opts.inputPlaceholder || '',
       commandTemplate: opts.commandTemplate || '',
       shortcut: opts.shortcut || ''
@@ -67,7 +69,7 @@ GHBCP.ConfigManager = (() => {
         repoPatterns: ['openshift/release'],
         globalCommands: [
           cmd('Rehearse ACK', '/pj-rehearse ack', 'warning', { requireConfirm: true, description: 'Acknowledge rehearsal' }),
-          cmd('Rehearse Test...', '/pj-rehearse', 'primary', { hasInput: true, inputPlaceholder: 'test-job-name', commandTemplate: '/pj-rehearse {input}', description: 'Rehearse specific test' }),
+          cmd('Rehearse...', '/pj-rehearse', 'primary', { hasJobPicker: true, jobSource: 'rehearsals', joinMode: 'single-command', commandTemplate: '/pj-rehearse {input}', description: 'Rehearse specific tests from REHEARSALNOTIFIER' }),
           cmd('Rehearse All', '/pj-rehearse', 'primary', { description: 'Rehearse all tests' })
         ],
         checkCommands: [],
