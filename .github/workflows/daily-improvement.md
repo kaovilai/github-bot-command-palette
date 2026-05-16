@@ -2,6 +2,8 @@
 on:
   schedule: daily
   workflow_dispatch:
+  push:
+    branches: [main]
 engine: copilot
 permissions:
   contents: read
