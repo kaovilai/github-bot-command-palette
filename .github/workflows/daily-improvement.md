@@ -31,6 +31,17 @@ max-runs: 30
 
 You are maintaining a Chrome extension that injects contextual action buttons for CI/bot slash commands on GitHub PR pages.
 
+## Pre-flight Checks
+
+Before doing anything, check for existing open PRs and issues:
+
+1. Search for open PRs with label `automation`. If any exist, **stop** — do not create another PR. Post a comment on the existing PR asking if it can be reviewed and merged.
+2. Search for open issues with label `automation`.
+   - If any open issue describes the **same improvement** you are about to propose (same files, same category), **stop** — call `noop` with a message like "Duplicate of #N". Do not create another issue or PR for the same fix.
+   - If an open issue describes a **different** improvement that is actionable now, consider working on that instead.
+
+**Never include `Closes #N` or `Fixes #N` in an issue body** — only use closing keywords in PR descriptions. Using them in issues causes unintended auto-closing of other issues.
+
 ## Your Task
 
 Each run, find up to THREE small, related improvements and bundle them into a single pull request. Since most changes touch shared files like `content.js`, separate PRs would conflict with each other. Group improvements by theme when possible.
