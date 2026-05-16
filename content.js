@@ -181,15 +181,33 @@
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker';
     picker.setAttribute('role', 'dialog');
+    picker.setAttribute('aria-modal', 'true');
     picker.setAttribute('aria-label', 'Select CI jobs to run');
     picker.setAttribute('aria-modal', 'true');
+
+    const header = document.createElement('div');
+    header.className = 'ghbcp-job-picker-header';
 
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.className = 'ghbcp-job-picker-search';
     searchInput.placeholder = 'Search jobs... (' + jobs.length + ' available)';
     searchInput.setAttribute('aria-label', 'Search CI jobs');
-    picker.appendChild(searchInput);
+    header.appendChild(searchInput);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'ghbcp-job-picker-close';
+    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close job picker');
+    closeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      picker.remove();
+      anchorBtn.focus();
+    });
+    header.appendChild(closeBtn);
+
+    picker.appendChild(header);
 
     const list = document.createElement('div');
     list.className = 'ghbcp-job-picker-list';
@@ -329,7 +347,7 @@
 
     searchInput.addEventListener('input', () => renderJobs(searchInput.value));
     searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') picker.remove();
+      if (e.key === 'Escape') { picker.remove(); anchorBtn.focus(); }
     });
 
     picker.appendChild(list);
