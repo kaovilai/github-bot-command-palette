@@ -361,9 +361,7 @@
     }
     setTimeout(() => document.addEventListener('click', onClickOutside), 0);
 
-    anchorBtn.parentElement.style.position = 'relative';
-    anchorBtn.parentElement.appendChild(picker);
-
+    attachOverlay(picker, anchorBtn);
     requestAnimationFrame(() => searchInput.focus());
   }
 
@@ -470,9 +468,7 @@
     }
     setTimeout(() => document.addEventListener('click', onClickOutside), 0);
 
-    anchorBtn.parentElement.style.position = 'relative';
-    anchorBtn.parentElement.appendChild(popover);
-
+    attachOverlay(popover, anchorBtn);
     requestAnimationFrame(() => input.focus());
   }
 
@@ -556,6 +552,11 @@
     return null;
   }
 
+  function attachOverlay(overlay, anchorBtn) {
+    anchorBtn.parentElement.style.position = 'relative';
+    anchorBtn.parentElement.appendChild(overlay);
+  }
+
   function showToast(message, type) {
     const existing = document.querySelector('.ghbcp-toast');
     if (existing) existing.remove();
@@ -575,38 +576,31 @@
     }, 2500);
   }
 
+  function createCommandGroup(name, commands) {
+    const group = document.createElement('div');
+    group.className = 'ghbcp-cmd-group';
+    const groupLabel = document.createElement('span');
+    groupLabel.className = 'ghbcp-group-label';
+    groupLabel.textContent = name;
+    group.appendChild(groupLabel);
+    const btnWrap = document.createElement('div');
+    btnWrap.className = 'ghbcp-btn-wrap';
+    const ctx = { repoName: currentRepo, prNumber: getPRNumber() };
+    for (const cmd of commands) {
+      btnWrap.appendChild(createButton(cmd, ctx));
+    }
+    group.appendChild(btnWrap);
+    return group;
+  }
+
   function buildCommandGroups(profiles, extraCommands) {
     const fragment = document.createDocumentFragment();
     for (const profile of profiles) {
       if (profile.globalCommands.length === 0) continue;
-      const group = document.createElement('div');
-      group.className = 'ghbcp-cmd-group';
-      const groupLabel = document.createElement('span');
-      groupLabel.className = 'ghbcp-group-label';
-      groupLabel.textContent = profile.name;
-      group.appendChild(groupLabel);
-      const btnWrap = document.createElement('div');
-      btnWrap.className = 'ghbcp-btn-wrap';
-      for (const cmd of profile.globalCommands) {
-        btnWrap.appendChild(createButton(cmd, { repoName: currentRepo, prNumber: getPRNumber() }));
-      }
-      group.appendChild(btnWrap);
-      fragment.appendChild(group);
+      fragment.appendChild(createCommandGroup(profile.name, profile.globalCommands));
     }
     if (extraCommands.length > 0) {
-      const group = document.createElement('div');
-      group.className = 'ghbcp-cmd-group';
-      const groupLabel = document.createElement('span');
-      groupLabel.className = 'ghbcp-group-label';
-      groupLabel.textContent = 'Repo Overrides';
-      group.appendChild(groupLabel);
-      const btnWrap = document.createElement('div');
-      btnWrap.className = 'ghbcp-btn-wrap';
-      for (const cmd of extraCommands) {
-        btnWrap.appendChild(createButton(cmd, { repoName: currentRepo, prNumber: getPRNumber() }));
-      }
-      group.appendChild(btnWrap);
-      fragment.appendChild(group);
+      fragment.appendChild(createCommandGroup('Repo Overrides', extraCommands));
     }
     return fragment;
   }
