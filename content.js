@@ -52,6 +52,7 @@
       tooltip += ' — plugin not enabled for this repo';
     }
     btn.title = tooltip;
+    btn.setAttribute('aria-label', tooltip);
     btn.dataset.ghbcpId = command.id;
 
     btn.addEventListener('click', (e) => {
