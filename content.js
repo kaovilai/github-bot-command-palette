@@ -202,7 +202,7 @@
       e.preventDefault();
       e.stopPropagation();
       picker.remove();
-      anchorBtn.focus();
+      if (anchorBtn) anchorBtn.focus();
     });
     header.appendChild(closeBtn);
 
@@ -346,7 +346,7 @@
 
     searchInput.addEventListener('input', () => renderJobs(searchInput.value));
     searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { picker.remove(); anchorBtn.focus(); }
+      if (e.key === 'Escape') { picker.remove(); if (anchorBtn) anchorBtn.focus(); }
     });
 
     picker.appendChild(list);
@@ -553,8 +553,16 @@
   }
 
   function attachOverlay(overlay, anchorBtn) {
-    anchorBtn.parentElement.style.position = 'relative';
-    anchorBtn.parentElement.appendChild(overlay);
+    if (anchorBtn && anchorBtn.parentElement) {
+      anchorBtn.parentElement.style.position = 'relative';
+      anchorBtn.parentElement.appendChild(overlay);
+    } else {
+      // Keyboard shortcut path: no button anchor, attach to command bar or body
+      const bar = document.querySelector('.ghbcp-command-bar');
+      const container = bar || document.body;
+      if (bar) bar.style.position = 'relative';
+      container.appendChild(overlay);
+    }
   }
 
   function showToast(message, type) {
