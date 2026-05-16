@@ -16,6 +16,7 @@ tools:
     toolsets: [repos, issues, pull_requests]
 safe-outputs:
   create-pull-request:
+    max: 1
     title-prefix: "[daily] "
     labels: [automation]
     protected-files: fallback-to-issue
@@ -32,7 +33,7 @@ You are maintaining a Chrome extension that injects contextual action buttons fo
 
 ## Your Task
 
-Each day, pick ONE small, high-value improvement from the categories below. Do not try to do everything — focus on the single most impactful change.
+Each run, find up to THREE small, related improvements and bundle them into a single pull request. Since most changes touch shared files like `content.js`, separate PRs would conflict with each other. Group improvements by theme when possible.
 
 ## Improvement Categories (pick one)
 
@@ -64,16 +65,17 @@ Each day, pick ONE small, high-value improvement from the categories below. Do n
 
 ## Decision Criteria
 
-Pick the category where you can make the most concrete, testable improvement today. Prefer:
+Pick improvements that can be bundled cleanly into one PR. Prefer:
 - Changes that fix actual bugs over style improvements
 - Changes that affect users over internal-only refactors
-- Small PRs over large ones
+- Grouping related changes (e.g., multiple accessibility fixes, or several error handling improvements)
 
 ## Output
 
-If you find a concrete improvement:
-- Create a pull request with the fix
-- PR description should explain what changed and why
+If you find concrete improvements:
+- Create ONE pull request bundling all changes
+- PR description should list each improvement with what changed and why
+- Do NOT create separate PRs for each improvement
 
 If you find an issue that needs human decision-making:
 - Create an issue describing the problem and possible solutions
