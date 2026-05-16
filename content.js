@@ -180,13 +180,14 @@
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker';
     picker.setAttribute('role', 'dialog');
-    picker.setAttribute('aria-label', 'Job Picker');
+    picker.setAttribute('aria-label', 'Select CI jobs to run');
     picker.setAttribute('aria-modal', 'true');
 
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.className = 'ghbcp-job-picker-search';
     searchInput.placeholder = 'Search jobs... (' + jobs.length + ' available)';
+    searchInput.setAttribute('aria-label', 'Search CI jobs');
     picker.appendChild(searchInput);
 
     const list = document.createElement('div');
@@ -255,10 +256,12 @@
         cb.type = 'checkbox';
         cb.className = 'ghbcp-job-picker-checkbox';
         cb.checked = selected.has(job.name);
+        cb.setAttribute('aria-label', `${job.name} (${job.status || 'unknown'})`);
         item.appendChild(cb);
 
         const dot = document.createElement('span');
         dot.className = `ghbcp-job-dot ghbcp-job-dot-${job.status}`;
+        dot.setAttribute('aria-hidden', 'true');
         item.appendChild(dot);
 
         const nameSpan = document.createElement('span');
@@ -374,13 +377,14 @@
     const popover = document.createElement('div');
     popover.className = 'ghbcp-popover';
     popover.setAttribute('role', 'dialog');
-    popover.setAttribute('aria-label', 'Command Input');
+    popover.setAttribute('aria-label', command.label || command.command || 'Command input');
     popover.setAttribute('aria-modal', 'true');
 
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'ghbcp-popover-input';
     input.placeholder = command.inputPlaceholder || 'Enter value...';
+    input.setAttribute('aria-label', command.inputPlaceholder || 'Enter value');
     if (context && context.testName) {
       input.value = context.testName;
     }
@@ -525,6 +529,8 @@
 
     const toast = document.createElement('div');
     toast.className = `ghbcp-toast ghbcp-toast-${type || 'success'}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'polite');
     toast.textContent = message;
     document.body.appendChild(toast);
 
