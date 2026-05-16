@@ -591,7 +591,7 @@
     header.className = 'ghbcp-bar-header';
 
     const headerLeft = document.createElement('span');
-    headerLeft.innerHTML = '<span class="ghbcp-bar-icon">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span>';
+    headerLeft.innerHTML = '<span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span>';
     header.appendChild(headerLeft);
 
     const headerRight = document.createElement('span');
@@ -605,6 +605,7 @@
         refreshBtn.className = 'ghbcp-refresh-btn';
         refreshBtn.innerHTML = '&#8635;';
         refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
+        refreshBtn.setAttribute('aria-label', `Refresh plugin config (cached ${ago} min ago)`);
         refreshBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -625,8 +626,9 @@
         configLink.href = lastPluginData.configFileUrl;
         configLink.target = '_blank';
         configLink.rel = 'noopener';
-        configLink.innerHTML = '&#9881;';
+        configLink.innerHTML = '<span aria-hidden="true">&#9881;</span>';
         configLink.title = 'Edit plugin config on GitHub';
+        configLink.setAttribute('aria-label', 'Edit plugin config on GitHub');
         headerRight.appendChild(configLink);
       }
     }
@@ -836,7 +838,7 @@
 
     const header = document.createElement('div');
     header.className = 'ghbcp-bar-header';
-    header.innerHTML = '<span><span class="ghbcp-bar-icon">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span></span>';
+    header.innerHTML = '<span><span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span></span>';
     bar.appendChild(header);
 
     for (const profile of profiles) {
