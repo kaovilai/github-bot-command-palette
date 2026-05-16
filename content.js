@@ -52,6 +52,7 @@
       tooltip += ' — plugin not enabled for this repo';
     }
     btn.title = tooltip;
+    btn.setAttribute('aria-label', tooltip);
     btn.dataset.ghbcpId = command.id;
 
     btn.addEventListener('click', (e) => {
@@ -178,6 +179,9 @@
 
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker';
+    picker.setAttribute('role', 'dialog');
+    picker.setAttribute('aria-label', 'Job Picker');
+    picker.setAttribute('aria-modal', 'true');
 
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
@@ -369,6 +373,9 @@
 
     const popover = document.createElement('div');
     popover.className = 'ghbcp-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', 'Command Input');
+    popover.setAttribute('aria-modal', 'true');
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -385,6 +392,7 @@
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'ghbcp-btn ghbcp-btn-neutral ghbcp-popover-cancel';
     cancelBtn.textContent = '✕';
+    cancelBtn.setAttribute('aria-label', 'Cancel');
 
     function doPost() {
       const val = input.value.trim();
@@ -537,6 +545,8 @@
     const bar = document.createElement('div');
     bar.className = 'ghbcp-command-bar';
     bar.dataset.ghbcpInjected = 'true';
+    bar.setAttribute('role', 'region');
+    bar.setAttribute('aria-label', 'Bot Commands');
 
     const theme = getGitHubTheme();
     bar.dataset.theme = theme;
@@ -558,6 +568,7 @@
         refreshBtn.className = 'ghbcp-refresh-btn';
         refreshBtn.innerHTML = '&#8635;';
         refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
+        refreshBtn.setAttribute('aria-label', 'Refresh plugin config');
         refreshBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -580,6 +591,7 @@
         configLink.rel = 'noopener';
         configLink.innerHTML = '&#9881;';
         configLink.title = 'Edit plugin config on GitHub';
+        configLink.setAttribute('aria-label', 'Edit plugin config on GitHub');
         headerRight.appendChild(configLink);
       }
     }
@@ -786,6 +798,8 @@
     bar.className = 'ghbcp-command-bar';
     bar.dataset.ghbcpInjected = 'true';
     bar.style.margin = '0 0 8px 0';
+    bar.setAttribute('role', 'region');
+    bar.setAttribute('aria-label', 'Bot Commands');
 
     const header = document.createElement('div');
     header.className = 'ghbcp-bar-header';

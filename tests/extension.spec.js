@@ -32,6 +32,8 @@ test.describe('GitHub Bot Command Palette', () => {
     // Wait for command bar
     const commandBar = page.locator('.ghbcp-command-bar');
     await expect(commandBar).toBeVisible({ timeout: 15000 });
+    await expect(commandBar).toHaveAttribute('role', 'region');
+    await expect(commandBar).toHaveAttribute('aria-label', 'Bot Commands');
     console.log('PASS: Command bar injected');
 
     // The main comment textarea has id="new_comment_field"
@@ -72,6 +74,7 @@ test.describe('GitHub Bot Command Palette', () => {
     // Verify buttons
     const lgtmBtn = page.locator('.ghbcp-btn', { hasText: 'LGTM' }).first();
     await expect(lgtmBtn).toBeVisible();
+    expect(await lgtmBtn.getAttribute('aria-label')).toBeTruthy();
     console.log('PASS: LGTM button visible');
 
     const approveBtn = page.locator('.ghbcp-btn', { hasText: 'Approve' }).first();
@@ -105,7 +108,11 @@ test.describe('GitHub Bot Command Palette', () => {
 
     const popover = page.locator('.ghbcp-popover');
     await expect(popover).toBeVisible({ timeout: 3000 });
+    await expect(popover).toHaveAttribute('role', 'dialog');
+    await expect(popover).toHaveAttribute('aria-modal', 'true');
     console.log('PASS: Input popover visible');
+
+    await expect(page.locator('.ghbcp-popover-cancel')).toHaveAttribute('aria-label', 'Cancel');
 
     await page.locator('.ghbcp-popover-input').fill('testuser');
     await page.locator('.ghbcp-popover-post').click();
@@ -214,7 +221,12 @@ test.describe('GitHub Bot Command Palette', () => {
     console.log(`Refresh button: ${hasRefresh}`);
     console.log(`Configure link: ${hasConfig}`);
 
+    if (hasRefresh) {
+      await expect(refreshBtn).toHaveAttribute('aria-label', 'Refresh plugin config');
+    }
+
     if (hasConfig) {
+      await expect(configLink).toHaveAttribute('aria-label', 'Edit plugin config on GitHub');
       const href = await configLink.getAttribute('href');
       console.log(`Configure link URL: ${href}`);
       expect(href).toContain('github.com/openshift/release');
