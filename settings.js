@@ -1,7 +1,7 @@
 // GitHub Bot Command Palette — Settings Page
 (async () => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
 
   function generateId() {
     return crypto.randomUUID ? crypto.randomUUID() :
@@ -45,9 +45,9 @@
           enabled: true,
           repoPatterns: ['openshift/release'],
           globalCommands: [
-            mkCmd('Rehearse ACK', '/pj-rehearse ack', 'warning', { requireConfirm: true }),
-            mkCmd('Rehearse Test...', '/pj-rehearse', 'primary', { hasInput: true, inputPlaceholder: 'test-job-name', commandTemplate: '/pj-rehearse {input}' }),
-            mkCmd('Rehearse All', '/pj-rehearse', 'primary')
+            mkCmd('Rehearse ACK', '/pj-rehearse ack', 'warning', { requireConfirm: true, description: 'Acknowledge rehearsal' }),
+            mkCmd('Rehearse...', '/pj-rehearse', 'primary', { hasJobPicker: true, jobSource: 'rehearsals', joinMode: 'single-command', commandTemplate: '/pj-rehearse {input}', description: 'Rehearse specific tests from REHEARSALNOTIFIER' }),
+            mkCmd('Rehearse All', '/pj-rehearse', 'primary', { description: 'Rehearse all tests' })
           ],
           checkCommands: [],
           dynamicCommands: [{
@@ -150,6 +150,7 @@
       branch: 'master',
       pathTemplate: 'core-services/prow/02_config',
       filePath: '',
+      presubmitsBasePath: 'ci-operator/jobs',
       cacheTTLMinutes: 60
     },
     {
@@ -169,6 +170,8 @@
       style: style || 'neutral', requireConfirm: opts.requireConfirm || false,
       hasInput: opts.hasInput || false, hasJobPicker: opts.hasJobPicker || false,
       jobPickerFilter: opts.jobPickerFilter || 'all',
+      jobSource: opts.jobSource || '',
+      joinMode: opts.joinMode || '',
       inputPlaceholder: opts.inputPlaceholder || '',
       commandTemplate: opts.commandTemplate || '', shortcut: opts.shortcut || ''
     };
