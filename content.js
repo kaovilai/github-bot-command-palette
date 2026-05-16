@@ -418,6 +418,11 @@
     cancelBtn.textContent = '✕';
     cancelBtn.setAttribute('aria-label', 'Cancel');
 
+    function closePopover() {
+      popover.remove();
+      document.removeEventListener('click', onClickOutside);
+    }
+
     function doPost() {
       const val = input.value.trim();
       if (!val) return;
@@ -429,7 +434,7 @@
       }
 
       fillComment(cmdText);
-      popover.remove();
+      closePopover();
     }
 
     postBtn.addEventListener('click', (e) => {
@@ -444,18 +449,25 @@
         doPost();
       }
       if (e.key === 'Escape') {
-        popover.remove();
+        closePopover();
       }
     });
 
     cancelBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      popover.remove();
+      closePopover();
     });
 
     popover.appendChild(input);
     popover.appendChild(postBtn);
     popover.appendChild(cancelBtn);
+
+    function onClickOutside(e) {
+      if (!popover.contains(e.target) && e.target !== anchorBtn) {
+        closePopover();
+      }
+    }
+    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
 
     anchorBtn.parentElement.style.position = 'relative';
     anchorBtn.parentElement.appendChild(popover);
