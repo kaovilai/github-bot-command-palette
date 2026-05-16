@@ -1,0 +1,81 @@
+---
+on:
+  schedule: daily
+  workflow_dispatch:
+engine: copilot
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+tools:
+  edit:
+  bash: ["git log", "git diff", "git show", "find", "grep", "wc", "cat", "ls", "head", "tail"]
+  github:
+    toolsets: [repos, issues, pull_requests]
+safe-outputs:
+  create-pull-request:
+    title-prefix: "[daily] "
+    labels: [automation]
+    protected-files: fallback-to-issue
+  create-issue:
+    title-prefix: "[daily] "
+    labels: [automation]
+    max: 2
+max-runs: 30
+---
+
+# Daily Repository Improvement
+
+You are maintaining a Chrome extension that injects contextual action buttons for CI/bot slash commands on GitHub PR pages.
+
+## Your Task
+
+Each day, pick ONE small, high-value improvement from the categories below. Do not try to do everything — focus on the single most impactful change.
+
+## Improvement Categories (pick one)
+
+### 1. Code Quality
+- Find code duplication across `content.js`, `popup.js`, `settings.js`, `background.js`, `config-manager.js`
+- Identify functions that are too long or complex and could be simplified
+- Look for hardcoded values that should be configurable
+- Check for missing error handling in async operations
+
+### 2. Documentation
+- Ensure README.md accurately reflects current features
+- Add JSDoc comments to exported functions missing documentation
+- Update or add inline comments where logic is non-obvious
+
+### 3. Test Coverage
+- Review `tests/extension.spec.js` and identify untested user flows
+- Suggest or create new test cases for edge cases
+- Check that test assertions are meaningful (not just "page loads")
+
+### 4. Manifest & Extension Config
+- Review `manifest.json` for deprecated keys or missing best practices
+- Check permissions are minimal (no unnecessary broad permissions)
+- Verify content script matching patterns are correct
+
+### 5. Accessibility & UX
+- Check injected UI elements for accessibility (aria labels, keyboard nav)
+- Look for color contrast issues in injected buttons
+- Ensure extension works with GitHub's dark mode
+
+## Decision Criteria
+
+Pick the category where you can make the most concrete, testable improvement today. Prefer:
+- Changes that fix actual bugs over style improvements
+- Changes that affect users over internal-only refactors
+- Small PRs over large ones
+
+## Output
+
+If you find a concrete improvement:
+- Create a pull request with the fix
+- PR description should explain what changed and why
+
+If you find an issue that needs human decision-making:
+- Create an issue describing the problem and possible solutions
+- Do not make opinionated architectural changes without human input
+
+If everything looks good today:
+- Do nothing. No PR, no issue. Silent success.
