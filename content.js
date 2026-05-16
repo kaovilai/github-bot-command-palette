@@ -183,7 +183,6 @@
     picker.setAttribute('role', 'dialog');
     picker.setAttribute('aria-modal', 'true');
     picker.setAttribute('aria-label', 'Select CI jobs to run');
-    picker.setAttribute('aria-modal', 'true');
 
     const header = document.createElement('div');
     header.className = 'ghbcp-job-picker-header';
