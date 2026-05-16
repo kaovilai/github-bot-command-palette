@@ -52,6 +52,7 @@
       tooltip += ' — plugin not enabled for this repo';
     }
     btn.title = tooltip;
+    btn.setAttribute('aria-label', tooltip);
     btn.dataset.ghbcpId = command.id;
 
     btn.addEventListener('click', (e) => {
@@ -255,6 +256,7 @@
 
         const dot = document.createElement('span');
         dot.className = `ghbcp-job-dot ghbcp-job-dot-${job.status}`;
+        dot.setAttribute('aria-label', job.status);
         item.appendChild(dot);
 
         const nameSpan = document.createElement('span');
@@ -385,6 +387,7 @@
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'ghbcp-btn ghbcp-btn-neutral ghbcp-popover-cancel';
     cancelBtn.textContent = '✕';
+    cancelBtn.setAttribute('aria-label', 'Cancel');
 
     function doPost() {
       const val = input.value.trim();
