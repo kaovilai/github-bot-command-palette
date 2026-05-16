@@ -313,16 +313,39 @@ html[data-color-mode="dark"] {
   overflow: hidden;
 }
 
+.ghbcp-job-picker-header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--ghbcp-border);
+}
+
 .ghbcp-job-picker-search {
-  width: 100%;
+  flex: 1;
   padding: 8px 12px;
   font-size: 13px;
   border: none;
-  border-bottom: 1px solid var(--ghbcp-border);
   background: var(--ghbcp-bg);
   color: var(--ghbcp-text);
   outline: none;
   box-sizing: border-box;
+}
+
+.ghbcp-job-picker-close {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--ghbcp-border);
+  color: var(--ghbcp-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  align-self: stretch;
+}
+
+.ghbcp-job-picker-close:hover {
+  color: var(--ghbcp-text);
+  background: var(--ghbcp-btn-hover);
 }
 
 .ghbcp-job-picker-search:focus {
