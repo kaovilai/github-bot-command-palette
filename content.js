@@ -179,10 +179,14 @@
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker';
 
+    picker.setAttribute('role', 'dialog');
+    picker.setAttribute('aria-label', 'Select CI jobs to run');
+
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.className = 'ghbcp-job-picker-search';
     searchInput.placeholder = 'Search jobs... (' + jobs.length + ' available)';
+    searchInput.setAttribute('aria-label', 'Search CI jobs');
     picker.appendChild(searchInput);
 
     const list = document.createElement('div');
@@ -251,10 +255,12 @@
         cb.type = 'checkbox';
         cb.className = 'ghbcp-job-picker-checkbox';
         cb.checked = selected.has(job.name);
+        cb.setAttribute('aria-label', job.name + ' (' + job.status + ')');
         item.appendChild(cb);
 
         const dot = document.createElement('span');
         dot.className = `ghbcp-job-dot ghbcp-job-dot-${job.status}`;
+        dot.setAttribute('aria-hidden', 'true');
         item.appendChild(dot);
 
         const nameSpan = document.createElement('span');
@@ -369,11 +375,14 @@
 
     const popover = document.createElement('div');
     popover.className = 'ghbcp-popover';
+    popover.setAttribute('role', 'dialog');
+    popover.setAttribute('aria-label', command.label || 'Enter command value');
 
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'ghbcp-popover-input';
     input.placeholder = command.inputPlaceholder || 'Enter value...';
+    input.setAttribute('aria-label', command.inputPlaceholder || 'Enter value');
     if (context && context.testName) {
       input.value = context.testName;
     }
@@ -385,6 +394,7 @@
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'ghbcp-btn ghbcp-btn-neutral ghbcp-popover-cancel';
     cancelBtn.textContent = '✕';
+    cancelBtn.setAttribute('aria-label', 'Cancel');
 
     function doPost() {
       const val = input.value.trim();
@@ -517,6 +527,8 @@
 
     const toast = document.createElement('div');
     toast.className = `ghbcp-toast ghbcp-toast-${type || 'success'}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'polite');
     toast.textContent = message;
     document.body.appendChild(toast);
 
