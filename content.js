@@ -42,6 +42,7 @@
 
   function createButton(command, context) {
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = `ghbcp-btn ghbcp-btn-${command.style || 'neutral'}`;
     if (command._pluginDisabled) {
       btn.classList.add('ghbcp-btn-plugin-disabled');
@@ -208,6 +209,7 @@
     footer.appendChild(countSpan);
 
     const submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
     submitBtn.className = 'ghbcp-btn ghbcp-btn-primary ghbcp-job-picker-submit';
     submitBtn.disabled = true;
     footer.appendChild(submitBtn);
@@ -388,10 +390,12 @@
     }
 
     const postBtn = document.createElement('button');
+    postBtn.type = 'button';
     postBtn.className = 'ghbcp-btn ghbcp-btn-primary ghbcp-popover-post';
     postBtn.textContent = 'Post';
 
     const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
     cancelBtn.className = 'ghbcp-btn ghbcp-btn-neutral ghbcp-popover-cancel';
     cancelBtn.textContent = '✕';
     cancelBtn.setAttribute('aria-label', 'Cancel');
@@ -567,6 +571,7 @@
       if (lastPluginData.cachedAt) {
         const ago = Math.round((Date.now() - lastPluginData.cachedAt) / 60000);
         const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
         refreshBtn.className = 'ghbcp-refresh-btn';
         refreshBtn.innerHTML = '&#8635;';
         refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
