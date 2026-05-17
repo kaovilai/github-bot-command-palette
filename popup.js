@@ -1,14 +1,8 @@
 // GitHub Bot Command Palette — Popup
 (async () => {
   const CM = GHBCP.ConfigManager;
+  const esc = CM.escapeHtml;
   const contentDiv = document.getElementById('content');
-
-  function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str == null ? '' : String(str);
-    return d.innerHTML;
-  }
-
   let currentTab = null;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
