@@ -2,7 +2,6 @@
 (async () => {
   const CM = GHBCP.ConfigManager;
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 2;
   const PRESET_SOURCES = CM.PRESET_SOURCES;
 
   function generateId() {
@@ -24,10 +23,14 @@
   let editingCmdIndex = -1;
 
   async function loadConfig() {
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
       chrome.storage.sync.get(STORAGE_KEY, result => {
-        config = result[STORAGE_KEY] || defaultConfig();
-        resolve();
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          config = result[STORAGE_KEY] || defaultConfig();
+          resolve();
+        }
       });
     });
   }
@@ -150,7 +153,7 @@
 
   function esc(str) {
     const d = document.createElement('div');
-    d.textContent = str;
+    d.textContent = str == null ? '' : String(str);
     return d.innerHTML;
   }
 
@@ -616,7 +619,12 @@
   });
 
   // Init
-  await loadConfig();
+  try {
+    await loadConfig();
+  } catch (err) {
+    showStatus('Failed to load settings: ' + err.message, 'error');
+    config = defaultConfig();
+  }
   renderGlobalSettings();
   bindGlobalSettings();
   renderProfiles();
