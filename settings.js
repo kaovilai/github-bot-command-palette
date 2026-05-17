@@ -1,16 +1,7 @@
 // GitHub Bot Command Palette — Settings Page
 (async () => {
   const CM = GHBCP.ConfigManager;
-  const STORAGE_KEY = 'ghbcp_config';
-  const PRESET_SOURCES = CM.PRESET_SOURCES;
-
-  function generateId() {
-    return crypto.randomUUID ? crypto.randomUUID() :
-      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-      });
-  }
+  const { generateId, escapeHtml: esc, STORAGE_KEY, PRESET_SOURCES } = CM;
 
   function defaultConfig() {
     return JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG));
@@ -149,12 +140,6 @@
         }
       });
     });
-  }
-
-  function esc(str) {
-    const d = document.createElement('div');
-    d.textContent = str == null ? '' : String(str);
-    return d.innerHTML;
   }
 
   function openProfileEditor(index) {

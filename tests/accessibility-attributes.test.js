@@ -36,10 +36,8 @@ test('job picker list has role=list and items have role=listitem', () => {
   assert.match(contentJs, /item\.setAttribute\('role', 'listitem'\)/);
 });
 
-test('popup.js defines an esc() HTML escape helper', () => {
-  assert.match(popupJs, /function esc\(str\)/);
-  assert.match(popupJs, /d\.textContent/);
-  assert.match(popupJs, /return d\.innerHTML/);
+test('popup.js uses CM.escapeHtml for HTML escaping', () => {
+  assert.match(popupJs, /CM\.escapeHtml/);
 });
 
 test('popup.js uses esc() when inserting profile names into innerHTML', () => {
