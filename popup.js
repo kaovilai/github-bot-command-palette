@@ -1,31 +1,12 @@
 // GitHub Bot Command Palette — Popup
 (async () => {
-  const STORAGE_KEY = 'ghbcp_config';
+  const CM = GHBCP.ConfigManager;
   const contentDiv = document.getElementById('content');
 
   function esc(str) {
     const d = document.createElement('div');
     d.textContent = str == null ? '' : String(str);
     return d.innerHTML;
-  }
-
-  function globMatch(pattern, str) {
-    if (pattern === '*') return true;
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
-    return regex.test(str);
-  }
-
-  async function getConfig() {
-    return new Promise(resolve => {
-      chrome.storage.sync.get(STORAGE_KEY, result => resolve(result[STORAGE_KEY] || null));
-    });
-  }
-
-  async function saveConfig(config) {
-    return new Promise(resolve => {
-      chrome.storage.sync.set({ [STORAGE_KEY]: config }, resolve);
-    });
   }
 
   let currentTab = null;
@@ -36,7 +17,7 @@
     // no tab access
   }
 
-  const config = await getConfig();
+  const config = await CM.getConfig();
   if (!config) {
     contentDiv.innerHTML = '<div class="repo-info"><span class="no-pr">No configuration found. Open settings to initialize.</span></div>';
     document.getElementById('open-settings').addEventListener('click', (e) => {
@@ -75,11 +56,11 @@
 
   if (repoName && config.profiles) {
     const repoOverrides = config.repoOverrides || [];
-    const overrides = repoOverrides.filter(o => globMatch(o.pattern, repoName));
+    const overrides = repoOverrides.filter(o => CM.globMatch(o.pattern, repoName));
     const disabledByOverride = new Set(overrides.flatMap(o => o.disabledProfiles || []));
     const matched = config.profiles.filter(p =>
       !disabledByOverride.has(p.id) &&
-      p.repoPatterns.some(pat => globMatch(pat, repoName))
+      p.repoPatterns.some(pat => CM.globMatch(pat, repoName))
     );
 
     if (matched.length > 0) {
@@ -133,7 +114,7 @@
       const profile = config.profiles.find(p => p.id === pid);
       if (profile) {
         profile.enabled = el.checked;
-        await saveConfig(config);
+        await CM.saveConfig(config);
       }
     });
   });
