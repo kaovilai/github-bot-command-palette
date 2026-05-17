@@ -1,4 +1,13 @@
 // GitHub Bot Command Palette — Content Script
+
+// Shared selectors used by both scrapeCheckNames() and injectCheckButtons()
+// to keep status detection and DOM queries consistent in one place.
+const CHECKS_SECTION_SELECTOR = 'section[aria-label="Checks"]';
+const LEGACY_CHECK_ROW_SELECTOR =
+  '.merge-status-list .merge-status-item, ' +
+  '.js-merge-status-check-item, ' +
+  '.merge-status-list li';
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -60,7 +69,7 @@
     const seen = new Set();
 
     // Modern GitHub Primer React UI: section[aria-label="Checks"] > li[aria-label]
-    const checksSection = document.querySelector('section[aria-label="Checks"]');
+    const checksSection = document.querySelector(CHECKS_SECTION_SELECTOR);
     if (checksSection) {
       const items = checksSection.querySelectorAll('li[aria-label]');
       for (const item of items) {
@@ -69,8 +78,15 @@
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        const isFailed = item.querySelector('.octicon-x-circle-fill') !== null;
-        const isPending = item.querySelector('.octicon-dot-fill') !== null;
+        // Use the same comprehensive selectors as injectCheckButtons so that
+        // data-conclusion-based status (used by some GitHub UI variants) is
+        // also reflected correctly in the job picker.
+        const isFailed = item.querySelector('.octicon-x-circle-fill') !== null ||
+                         item.querySelector('.color-fg-danger, [data-conclusion="failure"]') !== null ||
+                         item.classList.contains('bg-danger');
+        const isPending = !isFailed && (
+                         item.querySelector('.octicon-dot-fill') !== null ||
+                         item.querySelector('.color-fg-attention, [data-conclusion="pending"]') !== null);
         const status = isFailed ? 'failed' : isPending ? 'pending' : 'passed';
         names.push({ name, status });
       }
@@ -78,11 +94,7 @@
 
     // Legacy GitHub UI fallback
     if (names.length === 0) {
-      const rows = document.querySelectorAll(
-        '.merge-status-list .merge-status-item, ' +
-        '.js-merge-status-check-item, ' +
-        '.merge-status-list li'
-      );
+      const rows = document.querySelectorAll(LEGACY_CHECK_ROW_SELECTOR);
       for (const row of rows) {
         const nameEl = row.querySelector('.status-actions a, .merge-status-item a, a.Link--primary, .text-bold');
         if (!nameEl) continue;
@@ -782,18 +794,14 @@
     let checkRows = [];
 
     // Modern GitHub UI
-    const checksSection = document.querySelector('section[aria-label="Checks"]');
+    const checksSection = document.querySelector(CHECKS_SECTION_SELECTOR);
     if (checksSection) {
       checkRows = checksSection.querySelectorAll('li[aria-label]');
     }
 
     // Legacy fallback
     if (checkRows.length === 0) {
-      checkRows = document.querySelectorAll(
-        '.merge-status-list .merge-status-item, ' +
-        '.js-merge-status-check-item, ' +
-        '.merge-status-list li'
-      );
+      checkRows = document.querySelectorAll(LEGACY_CHECK_ROW_SELECTOR);
     }
 
     for (const row of checkRows) {
@@ -1053,7 +1061,7 @@
             node.querySelector('.merge-status-list') ||
             node.querySelector('section[aria-label="Checks"]') ||
             node.matches && node.matches('.merge-status-item, .js-merge-status-check-item') ||
-            node.matches && node.matches('section[aria-label="Checks"]') ||
+            node.matches && node.matches(CHECKS_SECTION_SELECTOR) ||
             node.matches && node.matches('div[role="dialog"]') ||
             node.querySelector('div[role="dialog"]')
           )) {
