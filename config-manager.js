@@ -330,6 +330,13 @@ GHBCP.ConfigManager = (() => {
     return div.textContent;
   }
 
+  // Escape a string for safe insertion into innerHTML contexts.
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
   function filterCommandsByPlugins(profiles, enabledPlugins, mode) {
     if (mode === 'disabled' || !enabledPlugins) return profiles;
 
@@ -362,6 +369,8 @@ GHBCP.ConfigManager = (() => {
 
   return {
     generateId,
+    createCommand: cmd,
+    escapeHtml,
     isContextValid,
     getConfig,
     saveConfig,

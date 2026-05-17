@@ -72,6 +72,9 @@ Bot profile detail view with all commands, styles, and shortcuts:
 | Prow — OpenShift Release | `openshift/release` | `/pj-rehearse ack`, `/pj-rehearse <test>` |
 | Mergify | `*` (disabled by default) | `/mergify requeue`, `/mergify refresh` |
 | Changesets Bot | `*` (disabled by default) | `/changeset <type>` |
+| Dependabot | `*` (disabled by default) | `@dependabot rebase`, `@dependabot merge`, `@dependabot ignore …` |
+| Claude | `*` (disabled by default) | `@claude review`, `@claude fix this`, `@claude implement …` |
+| CodeRabbit AI | `*` (disabled by default) | `@coderabbitai full review`, `@coderabbitai summary`, `@coderabbitai resolve` |
 
 ## Adding a New Bot Profile
 
