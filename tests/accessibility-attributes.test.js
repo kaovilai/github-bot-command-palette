@@ -52,6 +52,16 @@ test('input popover has a keyboard focus trap', () => {
   assert.match(contentJs, /popover\.addEventListener\('keydown'.*Tab/s);
 });
 
+test('job picker has a keyboard focus trap', () => {
+  assert.match(contentJs, /addFocusTrap\(picker, searchInput\)/);
+});
+
+test('settings page edit buttons have aria-label', () => {
+  const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
+  assert.match(settingsJs, /aria-label="Edit profile \$\{esc\(p\.name\)\}"/);
+  assert.match(settingsJs, /aria-label="Edit command \$\{esc\(c\.label\)\}"/);
+});
+
 test('command bars have role=toolbar and aria-label', () => {
   // injectGlobalCommandBar and injectReviewDialogBar set role="toolbar"
   const toolbarRoleCount = (contentJs.match(/bar\.setAttribute\('role', 'toolbar'\)/g) || []).length;
