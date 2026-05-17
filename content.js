@@ -514,6 +514,24 @@
     popover.appendChild(postBtn);
     popover.appendChild(cancelBtn);
 
+    // Focus trap: keep keyboard focus within the popover dialog
+    popover.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const focusable = Array.from(popover.querySelectorAll(
+        'input, button:not([disabled])'
+      )).filter(el => el.offsetParent !== null || el === input);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+
     function onClickOutside(e) {
       if (!popover.contains(e.target) && e.target !== anchorBtn) {
         closePopover();
@@ -679,6 +697,8 @@
     const bar = document.createElement('div');
     bar.className = 'ghbcp-command-bar';
     bar.dataset.ghbcpInjected = 'true';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'Bot Commands');
 
     const header = document.createElement('div');
     header.className = 'ghbcp-bar-header';
@@ -868,6 +888,8 @@
     const toolbar = document.createElement('div');
     toolbar.className = 'ghbcp-review-toolbar';
     toolbar.dataset.ghbcpInjected = 'true';
+    toolbar.setAttribute('role', 'toolbar');
+    toolbar.setAttribute('aria-label', 'Bot Commands');
 
     const approveCommands = [];
     for (const profile of profiles) {
@@ -898,6 +920,8 @@
     const bar = document.createElement('div');
     bar.className = 'ghbcp-command-bar';
     bar.dataset.ghbcpInjected = 'true';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'Bot Commands');
     bar.style.margin = '0 0 8px 0';
 
     const header = document.createElement('div');
