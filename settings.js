@@ -1,7 +1,7 @@
 // GitHub Bot Command Palette — Settings Page
 (async () => {
   const CM = GHBCP.ConfigManager;
-  const { generateId, escapeHtml: esc, STORAGE_KEY, PRESET_SOURCES } = CM;
+  const { generateId, escapeHtml: esc, PRESET_SOURCES } = CM;
 
   function defaultConfig() {
     return JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG));
@@ -14,25 +14,11 @@
   let editingCmdIndex = -1;
 
   async function loadConfig() {
-    return new Promise((resolve, reject) => {
-      chrome.storage.sync.get(STORAGE_KEY, result => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          config = result[STORAGE_KEY] || defaultConfig();
-          resolve();
-        }
-      });
-    });
+    config = await CM.getConfig();
   }
 
   async function saveConfig() {
-    return new Promise((resolve, reject) => {
-      chrome.storage.sync.set({ [STORAGE_KEY]: config }, () => {
-        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-        else resolve();
-      });
-    });
+    return CM.saveConfig(config);
   }
 
   function showStatus(msg, type) {
