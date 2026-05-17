@@ -362,8 +362,9 @@
       }
     });
 
-    // Arrow key navigation within the job list
+    // Arrow key navigation and Escape dismiss within the job list
     list.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { closePicker(); return; }
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       e.preventDefault();
       const checkboxes = Array.from(list.querySelectorAll('.ghbcp-job-picker-checkbox'));
@@ -499,6 +500,11 @@
     popover.appendChild(input);
     popover.appendChild(postBtn);
     popover.appendChild(cancelBtn);
+
+    // Dismiss with Escape from any focusable element inside the popover
+    popover.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); closePopover(); }
+    });
 
     // Focus trap: keep keyboard focus within the popover dialog
     addFocusTrap(popover, input);
