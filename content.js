@@ -29,17 +29,6 @@
     return null;
   }
 
-  function getGitHubTheme() {
-    const html = document.documentElement;
-    const mode = html.getAttribute('data-color-mode');
-    if (mode === 'dark') return 'dark';
-    if (mode === 'light') return 'light';
-    const theme = html.getAttribute('data-dark-theme');
-    if (theme && theme !== 'light') return 'dark';
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
-    return 'light';
-  }
-
   function createButton(command, context) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -691,9 +680,6 @@
     bar.className = 'ghbcp-command-bar';
     bar.dataset.ghbcpInjected = 'true';
 
-    const theme = getGitHubTheme();
-    bar.dataset.theme = theme;
-
     const header = document.createElement('div');
     header.className = 'ghbcp-bar-header';
 
@@ -1040,7 +1026,9 @@
           if (node.querySelector && (
             node.querySelector('textarea') ||
             node.querySelector('.merge-status-list') ||
+            node.querySelector('section[aria-label="Checks"]') ||
             node.matches && node.matches('.merge-status-item, .js-merge-status-check-item') ||
+            node.matches && node.matches('section[aria-label="Checks"]') ||
             node.matches && node.matches('div[role="dialog"]') ||
             node.querySelector('div[role="dialog"]')
           )) {
