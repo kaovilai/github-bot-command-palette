@@ -82,7 +82,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         // data-conclusion-based status (used by some GitHub UI variants) is
         // also reflected correctly in the job picker.
         const isFailed = item.querySelector('.octicon-x-circle-fill') !== null ||
-                         item.querySelector('.color-fg-danger, [data-conclusion="failure"]') !== null ||
+                         item.querySelector('.color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') !== null ||
                          item.classList.contains('bg-danger');
         const isPending = !isFailed && (
                          item.querySelector('.octicon-dot-fill') !== null ||
@@ -101,7 +101,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        const isFailed = row.querySelector('.octicon-x-circle-fill, .color-fg-danger, [data-conclusion="failure"]') ||
+        const isFailed = row.querySelector('.octicon-x-circle-fill, .color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') ||
                          row.classList.contains('bg-danger');
         const isPending = row.querySelector('.octicon-dot-fill, .color-fg-attention, [data-conclusion="pending"]');
         const status = isFailed ? 'failed' : isPending ? 'pending' : 'passed';
@@ -813,7 +813,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       if (row.dataset.ghbcpInjected === 'true') continue;
 
       const isFailed = row.querySelector('.octicon-x-circle-fill') !== null ||
-                       row.querySelector('.color-fg-danger, [data-conclusion="failure"]') !== null ||
+                       row.querySelector('.color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') !== null ||
                        row.classList.contains('bg-danger');
 
       if (!isFailed) continue;

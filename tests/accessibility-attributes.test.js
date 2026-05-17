@@ -69,6 +69,8 @@ test('scrapeCheckNames uses data-conclusion selectors for failed status in moder
   // Ensures the job picker reports accurate status even when GitHub uses
   // data-conclusion attributes instead of icon classes.
   assert.match(contentJs, /\[data-conclusion="failure"\]/);
+  assert.match(contentJs, /\[data-conclusion="timed_out"\]/);
+  assert.match(contentJs, /\[data-conclusion="action_required"\]/);
   assert.match(contentJs, /\[data-conclusion="pending"\]/);
 });
 
