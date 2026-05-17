@@ -85,11 +85,11 @@
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="toggle">
-              <input type="checkbox" data-profile-toggle="${i}" ${p.enabled ? 'checked' : ''}>
+              <input type="checkbox" data-profile-toggle="${i}" aria-label="Enable ${esc(p.name)}" ${p.enabled ? 'checked' : ''}>
               <span class="slider"></span>
             </span>
             <button class="btn btn-sm" data-edit-profile="${i}">Edit</button>
-            <button class="btn btn-sm btn-danger" data-delete-profile="${i}">✕</button>
+            <button class="btn btn-sm btn-danger" data-delete-profile="${i}" aria-label="Delete profile ${esc(p.name)}">✕</button>
           </div>
         </div>
         <table class="cmd-table">
@@ -167,7 +167,7 @@
         ${c.shortcut ? `<span class="shortcut-badge">${esc(c.shortcut)}</span>` : ''}
         <span style="flex:1"></span>
         <button class="btn btn-sm" data-edit-cmd="${type}:${i}">Edit</button>
-        <button class="btn btn-sm btn-danger" data-del-cmd="${type}:${i}">✕</button>
+        <button class="btn btn-sm btn-danger" data-del-cmd="${type}:${i}" aria-label="Delete command ${esc(c.label)}">✕</button>
       `;
       container.appendChild(row);
     }
@@ -201,7 +201,7 @@
         <strong>${esc(d.label)}</strong>
         <code style="font-size:11px;color:var(--text-muted)">${esc(d.commandExpression)}</code>
         <span style="flex:1"></span>
-        <button class="btn btn-sm btn-danger" data-del-dyn="${i}">✕</button>
+        <button class="btn btn-sm btn-danger" data-del-dyn="${i}" aria-label="Delete dynamic command ${esc(d.label)}">✕</button>
       `;
       container.appendChild(row);
     }
@@ -404,11 +404,11 @@
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="toggle">
-              <input type="checkbox" data-source-toggle="${i}" ${s.enabled ? 'checked' : ''}>
+              <input type="checkbox" data-source-toggle="${i}" aria-label="Enable ${esc(s.name)}" ${s.enabled ? 'checked' : ''}>
               <span class="slider"></span>
             </span>
             <button class="btn btn-sm" data-edit-source="${i}">Edit</button>
-            <button class="btn btn-sm btn-danger" data-delete-source="${i}">✕</button>
+            <button class="btn btn-sm btn-danger" data-delete-source="${i}" aria-label="Delete source ${esc(s.name)}">✕</button>
           </div>
         </div>
       `;
