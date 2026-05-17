@@ -3,6 +3,12 @@
   const STORAGE_KEY = 'ghbcp_config';
   const contentDiv = document.getElementById('content');
 
+  function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str == null ? '' : String(str);
+    return d.innerHTML;
+  }
+
   function globMatch(pattern, str) {
     if (pattern === '*') return true;
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
@@ -76,7 +82,7 @@
       html += '<div style="margin-bottom:8px;font-size:12px;color:var(--text-muted)">Matched Profiles:</div>';
       for (const p of matched) {
         html += `<div class="profile-item">
-          <span>${p.name}</span>
+          <span>${esc(p.name)}</span>
           <span class="toggle">
             <input type="checkbox" data-pid="${p.id}" ${p.enabled ? 'checked' : ''}>
             <span class="slider"></span>
@@ -88,7 +94,7 @@
       if (allCmds.length > 0) {
         html += '<div class="cmd-preview"><h3>Available Commands</h3><div class="cmd-list">';
         for (const c of allCmds) {
-          html += `<span class="cmd-tag">${c.command}</span>`;
+          html += `<span class="cmd-tag">${esc(c.command)}</span>`;
         }
         html += '</div></div>';
       }

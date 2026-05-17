@@ -279,7 +279,7 @@
       el.addEventListener('change', async () => {
         const idx = parseInt(el.dataset.profileToggle);
         config.profiles[idx].enabled = el.checked;
-        await saveConfig();
+        try { await saveConfig(); } catch (err) { showStatus('Save failed: ' + err.message, 'error'); }
       });
     });
 
@@ -292,8 +292,12 @@
         const idx = parseInt(el.dataset.deleteProfile);
         if (confirm(`Delete profile "${config.profiles[idx].name}"?`)) {
           config.profiles.splice(idx, 1);
-          await saveConfig();
-          renderProfiles();
+          try {
+            await saveConfig();
+            renderProfiles();
+          } catch (err) {
+            showStatus('Save failed: ' + err.message, 'error');
+          }
         }
       });
     });
@@ -587,7 +591,7 @@
     container.querySelectorAll('[data-source-toggle]').forEach(el => {
       el.addEventListener('change', async () => {
         config.pluginConfigSources[parseInt(el.dataset.sourceToggle)].enabled = el.checked;
-        await saveConfig();
+        try { await saveConfig(); } catch (err) { showStatus('Save failed: ' + err.message, 'error'); }
       });
     });
 
@@ -600,8 +604,12 @@
         const idx = parseInt(el.dataset.deleteSource);
         if (confirm(`Delete source "${config.pluginConfigSources[idx].name}"?`)) {
           config.pluginConfigSources.splice(idx, 1);
-          await saveConfig();
-          renderPluginSources();
+          try {
+            await saveConfig();
+            renderPluginSources();
+          } catch (err) {
+            showStatus('Save failed: ' + err.message, 'error');
+          }
         }
       });
     });
