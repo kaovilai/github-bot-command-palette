@@ -74,7 +74,11 @@
   html += '</div>';
 
   if (repoName && config.profiles) {
+    const repoOverrides = config.repoOverrides || [];
+    const overrides = repoOverrides.filter(o => globMatch(o.pattern, repoName));
+    const disabledByOverride = new Set(overrides.flatMap(o => o.disabledProfiles || []));
     const matched = config.profiles.filter(p =>
+      !disabledByOverride.has(p.id) &&
       p.repoPatterns.some(pat => globMatch(pat, repoName))
     );
 
