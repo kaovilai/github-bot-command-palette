@@ -201,8 +201,7 @@
     closeBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      picker.remove();
-      if (anchorBtn) anchorBtn.focus();
+      closePicker();
     });
     header.appendChild(closeBtn);
 
@@ -243,8 +242,15 @@
       const visibleItems = list.querySelectorAll('.ghbcp-job-picker-item');
       const visibleNames = Array.from(visibleItems).map(el => el.dataset.jobName);
       const allVisible = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
+      const someVisible = visibleNames.some(name => selected.has(name));
       selectAllCb.checked = allVisible;
-      selectAllCb.indeterminate = !allVisible && visibleNames.some(name => selected.has(name));
+      selectAllCb.indeterminate = !allVisible && someVisible;
+      // aria-checked="mixed" is required for screen readers to announce indeterminate state correctly
+      if (!allVisible && someVisible) {
+        selectAllCb.setAttribute('aria-checked', 'mixed');
+      } else {
+        selectAllCb.setAttribute('aria-checked', String(allVisible));
+      }
     }
 
     function renderJobs(searchFilter) {
@@ -353,12 +359,12 @@
       }
 
       fillComment(cmdText);
-      picker.remove();
+      closePicker();
     });
 
     searchInput.addEventListener('input', () => renderJobs(searchInput.value));
     searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { picker.remove(); if (anchorBtn) anchorBtn.focus(); }
+      if (e.key === 'Escape') { closePicker(); }
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         const firstCb = list.querySelector('.ghbcp-job-picker-checkbox');
@@ -406,10 +412,15 @@
     picker.appendChild(footer);
     renderJobs('');
 
+    function closePicker() {
+      picker.remove();
+      document.removeEventListener('click', onClickOutside);
+      if (anchorBtn) anchorBtn.focus();
+    }
+
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
-        picker.remove();
-        document.removeEventListener('click', onClickOutside);
+        closePicker();
       }
     }
     setTimeout(() => document.addEventListener('click', onClickOutside), 0);
@@ -775,7 +786,8 @@
       if (row.dataset.ghbcpInjected === 'true') continue;
 
       const isFailed = row.querySelector('.octicon-x-circle-fill') !== null ||
-                       row.querySelector('.color-fg-danger, [data-conclusion="failure"]') !== null;
+                       row.querySelector('.color-fg-danger, [data-conclusion="failure"]') !== null ||
+                       row.classList.contains('bg-danger');
 
       if (!isFailed) continue;
 
