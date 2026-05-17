@@ -19,7 +19,9 @@ safe-outputs:
     max: 1
     title-prefix: "[daily] "
     labels: [automation]
-    protected-files: fallback-to-issue
+    protected-files:
+      policy: fallback-to-issue
+      exclude: [README.md]
   create-issue:
     title-prefix: "[daily] "
     labels: [automation]
