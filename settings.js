@@ -241,7 +241,8 @@
   }
 
   function styleBadge(style) {
-    return `<span class="badge badge-${style}">${style}</span>`;
+    const s = esc(style);
+    return `<span class="badge badge-${s}">${s}</span>`;
   }
 
   function renderProfiles() {
