@@ -62,7 +62,7 @@
 
   let html = '<div class="repo-info">';
   if (repoName) {
-    html += `<span class="repo-name">${repoName}</span>`;
+    html += `<span class="repo-name">${esc(repoName)}</span>`;
     if (isPR) {
       html += ' <span style="font-size:11px;color:var(--success)">● PR page</span>';
     } else {
@@ -114,7 +114,7 @@
           const ago = pluginResp.cachedAt ? Math.round((Date.now() - pluginResp.cachedAt) / 60000) : '?';
           html += `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;padding:6px;background:var(--bg2);border-radius:4px">
             Plugin config: ${pluginResp.plugins.length} plugins enabled (cached ${ago}m ago)
-            ${pluginResp.configFileUrl ? ` · <a href="${pluginResp.configFileUrl}" target="_blank" style="color:var(--primary)">Edit</a>` : ''}
+            ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" style="color:var(--primary)">Edit</a>` : ''}
           </div>`;
         } else {
           html += '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Plugin config: not found for this repo</div>';
