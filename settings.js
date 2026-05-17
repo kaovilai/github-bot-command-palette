@@ -230,8 +230,12 @@
         config.globalSettings.theme = document.getElementById('opt-theme').value;
         config.globalSettings.buttonPosition = document.getElementById('opt-position').value;
         config.globalSettings.pluginFilterMode = document.getElementById('opt-pluginfilter').value;
-        await saveConfig();
-        showStatus('Settings saved', 'success');
+        try {
+          await saveConfig();
+          showStatus('Settings saved', 'success');
+        } catch (err) {
+          showStatus('Save failed: ' + err.message, 'error');
+        }
       });
     }
   }
@@ -450,10 +454,14 @@
       config.profiles.push(editingProfile);
     }
 
-    await saveConfig();
-    renderProfiles();
-    document.getElementById('profile-modal').classList.remove('active');
-    showStatus('Profile saved', 'success');
+    try {
+      await saveConfig();
+      renderProfiles();
+      document.getElementById('profile-modal').classList.remove('active');
+      showStatus('Profile saved', 'success');
+    } catch (err) {
+      showStatus('Save failed: ' + err.message, 'error');
+    }
   });
 
   document.getElementById('btn-add-global-cmd').addEventListener('click', () => openCmdEditor('global', -1));
@@ -544,11 +552,15 @@
   document.getElementById('btn-reset').addEventListener('click', async () => {
     if (!confirm('Reset all settings to defaults? This cannot be undone.')) return;
     config = defaultConfig();
-    await saveConfig();
-    renderGlobalSettings();
-    renderProfiles();
-    renderPluginSources();
-    showStatus('Reset to defaults', 'success');
+    try {
+      await saveConfig();
+      renderGlobalSettings();
+      renderProfiles();
+      renderPluginSources();
+      showStatus('Reset to defaults', 'success');
+    } catch (err) {
+      showStatus('Reset failed: ' + err.message, 'error');
+    }
   });
 
   // === Plugin Config Sources ===
@@ -711,10 +723,14 @@
       config.pluginConfigSources.push(source);
     }
 
-    await saveConfig();
-    renderPluginSources();
-    document.getElementById('source-modal').classList.remove('active');
-    showStatus('Source saved', 'success');
+    try {
+      await saveConfig();
+      renderPluginSources();
+      document.getElementById('source-modal').classList.remove('active');
+      showStatus('Source saved', 'success');
+    } catch (err) {
+      showStatus('Save failed: ' + err.message, 'error');
+    }
   });
 
   document.getElementById('btn-test-source').addEventListener('click', async () => {
