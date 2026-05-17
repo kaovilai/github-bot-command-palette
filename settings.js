@@ -88,7 +88,7 @@
               <input type="checkbox" data-profile-toggle="${i}" aria-label="Enable ${esc(p.name)}" ${p.enabled ? 'checked' : ''}>
               <span class="slider"></span>
             </span>
-            <button class="btn btn-sm" data-edit-profile="${i}">Edit</button>
+            <button class="btn btn-sm" data-edit-profile="${i}" aria-label="Edit profile ${esc(p.name)}">Edit</button>
             <button class="btn btn-sm btn-danger" data-delete-profile="${i}" aria-label="Delete profile ${esc(p.name)}">✕</button>
           </div>
         </div>
@@ -166,7 +166,7 @@
         <code style="font-size:11px;color:var(--text-muted)">${esc(c.command)}</code>
         ${c.shortcut ? `<span class="shortcut-badge">${esc(c.shortcut)}</span>` : ''}
         <span style="flex:1"></span>
-        <button class="btn btn-sm" data-edit-cmd="${type}:${i}">Edit</button>
+        <button class="btn btn-sm" data-edit-cmd="${type}:${i}" aria-label="Edit command ${esc(c.label)}">Edit</button>
         <button class="btn btn-sm btn-danger" data-del-cmd="${type}:${i}" aria-label="Delete command ${esc(c.label)}">✕</button>
       `;
       container.appendChild(row);
