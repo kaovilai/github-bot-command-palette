@@ -278,7 +278,10 @@ GHBCP.ConfigManager = (() => {
           let config = result[STORAGE_KEY] || JSON.parse(JSON.stringify(DEFAULT_CONFIG));
           if (config.version < SCHEMA_VERSION) {
             config = migrateConfig(config);
-            try { await saveConfig(config); } catch (e) { /* best effort */ }
+            // Save without the transient _migrated flag so the toast only shows once.
+            const toSave = Object.assign({}, config);
+            delete toSave._migrated;
+            try { await saveConfig(toSave); } catch (e) { /* best effort */ }
           }
           resolve(config);
         });
