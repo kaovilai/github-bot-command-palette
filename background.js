@@ -28,14 +28,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 function storageGet(area, key, defaultValue) {
   return new Promise(resolve => {
     chrome.storage[area].get(key, result => {
+      if (chrome.runtime.lastError) {
+        resolve(defaultValue);
+        return;
+      }
       resolve(result[key] !== undefined ? result[key] : defaultValue);
     });
   });
 }
 
 function storageSet(area, key, value) {
-  return new Promise(resolve => {
-    chrome.storage[area].set({ [key]: value }, resolve);
+  return new Promise((resolve, reject) => {
+    chrome.storage[area].set({ [key]: value }, () => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        resolve();
+      }
+    });
   });
 }
 

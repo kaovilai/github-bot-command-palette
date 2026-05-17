@@ -543,8 +543,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
     // Use the native setter so React-controlled textareas recognise the change
     // and re-enable the submit button. Plain assignment is ignored by React's
     // internal value tracking.
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-    nativeSetter.call(textarea, cmdText);
+    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+    const nativeSetter = descriptor && descriptor.set;
+    if (nativeSetter) {
+      nativeSetter.call(textarea, cmdText);
+    } else {
+      textarea.value = cmdText;
+    }
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
     textarea.dispatchEvent(new Event('change', { bubbles: true }));
 
@@ -1060,9 +1065,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
             node.querySelector('textarea') ||
             node.querySelector('.merge-status-list') ||
             node.querySelector('section[aria-label="Checks"]') ||
-            node.matches && node.matches('.merge-status-item, .js-merge-status-check-item') ||
-            node.matches && node.matches(CHECKS_SECTION_SELECTOR) ||
-            node.matches && node.matches('div[role="dialog"]') ||
+            node.matches && (
+              node.matches('.merge-status-item, .js-merge-status-check-item') ||
+              node.matches(CHECKS_SECTION_SELECTOR) ||
+              node.matches('div[role="dialog"]')
+            ) ||
             node.querySelector('div[role="dialog"]')
           )) {
             shouldReinject = true;
