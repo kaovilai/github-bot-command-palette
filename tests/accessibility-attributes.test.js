@@ -64,3 +64,15 @@ test('review toolbar has role=toolbar and aria-label', () => {
   assert.match(contentJs, /toolbar\.setAttribute\('role', 'toolbar'\)/);
   assert.match(contentJs, /toolbar\.setAttribute\('aria-label', 'Bot Commands'\)/);
 });
+
+test('scrapeCheckNames uses data-conclusion selectors for failed status in modern UI', () => {
+  // Ensures the job picker reports accurate status even when GitHub uses
+  // data-conclusion attributes instead of icon classes.
+  assert.match(contentJs, /\[data-conclusion="failure"\]/);
+  assert.match(contentJs, /\[data-conclusion="pending"\]/);
+});
+
+test('shared selector constants are defined for checks section and legacy rows', () => {
+  assert.match(contentJs, /const CHECKS_SECTION_SELECTOR/);
+  assert.match(contentJs, /const LEGACY_CHECK_ROW_SELECTOR/);
+});
