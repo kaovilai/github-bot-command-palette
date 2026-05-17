@@ -359,6 +359,47 @@
     searchInput.addEventListener('input', () => renderJobs(searchInput.value));
     searchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { picker.remove(); if (anchorBtn) anchorBtn.focus(); }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const firstCb = list.querySelector('.ghbcp-job-picker-checkbox');
+        if (firstCb) firstCb.focus();
+      }
+    });
+
+    // Arrow key navigation within the job list
+    list.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      const checkboxes = Array.from(list.querySelectorAll('.ghbcp-job-picker-checkbox'));
+      if (checkboxes.length === 0) return;
+      const idx = checkboxes.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') {
+        const next = idx < checkboxes.length - 1 ? checkboxes[idx + 1] : null;
+        if (next) next.focus();
+        else submitBtn.focus();
+      } else {
+        const prev = idx > 0 ? checkboxes[idx - 1] : null;
+        if (prev) prev.focus();
+        else searchInput.focus();
+      }
+    });
+
+    // Focus trap: keep keyboard focus within the picker dialog
+    picker.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const focusable = Array.from(picker.querySelectorAll(
+        'input, button:not([disabled])'
+      )).filter(el => el.offsetParent !== null || el === searchInput);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     });
 
     picker.appendChild(list);
