@@ -25,26 +25,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-async function getConfig() {
+function storageGet(area, key, defaultValue) {
   return new Promise(resolve => {
-    chrome.storage.sync.get(STORAGE_KEY, result => {
-      resolve(result[STORAGE_KEY] || null);
+    chrome.storage[area].get(key, result => {
+      resolve(result[key] !== undefined ? result[key] : defaultValue);
     });
   });
+}
+
+function storageSet(area, key, value) {
+  return new Promise(resolve => {
+    chrome.storage[area].set({ [key]: value }, resolve);
+  });
+}
+
+async function getConfig() {
+  return storageGet('sync', STORAGE_KEY, null);
 }
 
 async function getCache() {
-  return new Promise(resolve => {
-    chrome.storage.local.get(CACHE_KEY, result => {
-      resolve(result[CACHE_KEY] || {});
-    });
-  });
+  return storageGet('local', CACHE_KEY, {});
 }
 
 async function setCache(cache) {
-  return new Promise(resolve => {
-    chrome.storage.local.set({ [CACHE_KEY]: cache }, resolve);
-  });
+  return storageSet('local', CACHE_KEY, cache);
+}
+
+async function getPresubmitsCache() {
+  return storageGet('local', PRESUBMITS_CACHE_KEY, {});
+}
+
+async function setPresubmitsCache(cache) {
+  return storageSet('local', PRESUBMITS_CACHE_KEY, cache);
 }
 
 /**
@@ -228,20 +240,6 @@ function buildConfigFileUrl(source, org, repoName) {
   } else {
     return `https://github.com/${source.configRepo}/blob/${source.branch}/${source.filePath}`;
   }
-}
-
-async function getPresubmitsCache() {
-  return new Promise(resolve => {
-    chrome.storage.local.get(PRESUBMITS_CACHE_KEY, result => {
-      resolve(result[PRESUBMITS_CACHE_KEY] || {});
-    });
-  });
-}
-
-async function setPresubmitsCache(cache) {
-  return new Promise(resolve => {
-    chrome.storage.local.set({ [PRESUBMITS_CACHE_KEY]: cache }, resolve);
-  });
 }
 
 /**
