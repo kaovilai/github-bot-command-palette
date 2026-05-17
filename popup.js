@@ -52,9 +52,10 @@
     const repoOverrides = config.repoOverrides || [];
     const overrides = repoOverrides.filter(o => CM.globMatch(o.pattern, repoName));
     const disabledByOverride = new Set(overrides.flatMap(o => o.disabledProfiles || []));
+    const extraProfileIds = new Set(overrides.flatMap(o => o.extraProfiles || []));
     const matched = config.profiles.filter(p =>
       !disabledByOverride.has(p.id) &&
-      p.repoPatterns.some(pat => CM.globMatch(pat, repoName))
+      (p.repoPatterns.some(pat => CM.globMatch(pat, repoName)) || extraProfileIds.has(p.id))
     );
 
     if (matched.length > 0) {

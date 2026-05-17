@@ -222,6 +222,11 @@ GHBCP.ConfigManager = (() => {
    * Calling extension APIs after context invalidation throws; this guard prevents that.
    * @returns {boolean}
    */
+  /**
+   * Return true if the Chrome extension context is still valid (not invalidated).
+   * Must be called before any chrome.* API use to avoid "Extension context invalidated" errors.
+   * @returns {boolean}
+   */
   function isContextValid() {
     try { return !!chrome.runtime.id; } catch (e) { return false; }
   }
@@ -239,6 +244,13 @@ GHBCP.ConfigManager = (() => {
     return regex.test(str);
   }
 
+  /**
+   * Migrate a stored config object to the current schema version.
+   * Refreshes built-in profiles from DEFAULT_CONFIG while preserving user's `enabled` state,
+   * and appends any new built-in profiles not yet in the stored config.
+   * @param {Object} config - Stored config object (mutated in place).
+   * @returns {Object} The mutated config with `version` bumped and `_migrated: true`.
+   */
   function migrateConfig(config) {
     if (!config.version || config.version >= SCHEMA_VERSION) return config;
     const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
@@ -380,6 +392,11 @@ GHBCP.ConfigManager = (() => {
    * so HTML escaping is not needed here — use escapeHtml() for innerHTML insertion instead.
    * @param {string} text - Raw command string.
    * @returns {string} Trimmed command string.
+   */
+  /**
+   * Trim and coerce a command string to a safe value.
+   * @param {*} text - Raw input (may be null/undefined).
+   * @returns {string} Trimmed string, or empty string if input is nullish.
    */
   function sanitizeCommand(text) {
     return text == null ? '' : String(text).trim();
