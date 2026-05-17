@@ -292,19 +292,27 @@
         nameSpan.textContent = job.name;
         item.appendChild(nameSpan);
 
+        // Keep checkbox and selected-set in sync regardless of input method
+        // (mouse click on item row, direct click on checkbox, or keyboard Space).
+        cb.addEventListener('change', () => {
+          if (cb.checked) {
+            selected.add(job.name);
+            item.classList.add('selected');
+          } else {
+            selected.delete(job.name);
+            item.classList.remove('selected');
+          }
+          updateFooter();
+        });
+
         item.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (selected.has(job.name)) {
-            selected.delete(job.name);
-            item.classList.remove('selected');
-            cb.checked = false;
-          } else {
-            selected.add(job.name);
-            item.classList.add('selected');
-            cb.checked = true;
-          }
-          updateFooter();
+          // When the checkbox itself is clicked the browser already toggles it
+          // and fires the 'change' event above — avoid double-toggling.
+          if (e.target === cb) return;
+          cb.checked = !cb.checked;
+          cb.dispatchEvent(new Event('change'));
         });
 
         list.appendChild(item);
@@ -484,7 +492,11 @@
     }
 
     textarea.focus();
-    textarea.value = cmdText;
+    // Use the native setter so React-controlled textareas recognise the change
+    // and re-enable the submit button. Plain assignment is ignored by React's
+    // internal value tracking.
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    nativeSetter.call(textarea, cmdText);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
     textarea.dispatchEvent(new Event('change', { bubbles: true }));
 
