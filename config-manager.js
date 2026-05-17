@@ -15,6 +15,7 @@ GHBCP.ConfigManager = (() => {
     'profile-coderabbitai'
   ]);
 
+  /** @returns {string} A new RFC-4122 v4 UUID string. */
   function generateId() {
     return crypto.randomUUID ? crypto.randomUUID() :
       'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -23,6 +24,14 @@ GHBCP.ConfigManager = (() => {
       });
   }
 
+  /**
+   * Build a command object with sensible defaults.
+   * @param {string} label   - Display label shown on the button.
+   * @param {string} command - Slash command text (e.g. `/lgtm`).
+   * @param {string} style   - Visual style key: `success|danger|warning|primary|neutral`.
+   * @param {Object} [opts]  - Optional overrides (description, shortcut, hasInput, etc.).
+   * @returns {Object} A fully-populated command descriptor.
+   */
   function cmd(label, command, style, opts = {}) {
     return {
       id: generateId(),
@@ -208,10 +217,21 @@ GHBCP.ConfigManager = (() => {
     }
   ];
 
+  /**
+   * Check whether the Chrome extension context is still valid (not invalidated).
+   * Calling extension APIs after context invalidation throws; this guard prevents that.
+   * @returns {boolean}
+   */
   function isContextValid() {
     try { return !!chrome.runtime.id; } catch (e) { return false; }
   }
 
+  /**
+   * Match `str` against a simple glob pattern where `*` is a wildcard.
+   * @param {string} pattern - Glob pattern (e.g. `*`, `org/*`, `org/repo`).
+   * @param {string} str     - String to test (e.g. `org/repo`).
+   * @returns {boolean}
+   */
   function globMatch(pattern, str) {
     if (pattern === '*') return true;
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
@@ -241,6 +261,11 @@ GHBCP.ConfigManager = (() => {
     return config;
   }
 
+  /**
+   * Load the stored config, applying schema migration if necessary.
+   * Falls back to a deep copy of DEFAULT_CONFIG when storage is unavailable.
+   * @returns {Promise<Object>} Resolved configuration object.
+   */
   async function getConfig() {
     if (!isContextValid()) return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     return new Promise(resolve => {
@@ -263,6 +288,11 @@ GHBCP.ConfigManager = (() => {
     });
   }
 
+  /**
+   * Persist `config` to `chrome.storage.sync`.
+   * @param {Object} config - The configuration object to save.
+   * @returns {Promise<void>} Rejects if storage write fails.
+   */
   async function saveConfig(config) {
     if (!isContextValid()) return;
     return new Promise((resolve, reject) => {
@@ -280,12 +310,23 @@ GHBCP.ConfigManager = (() => {
     });
   }
 
+  /**
+   * Reset storage to factory defaults and return the new config.
+   * @returns {Promise<Object>} The freshly-saved default configuration.
+   */
   async function resetToDefaults() {
     const config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     await saveConfig(config);
     return config;
   }
 
+  /**
+   * Return the list of enabled profiles whose `repoPatterns` match `repoFullName`,
+   * after applying any repo-level overrides (disabled/extra profiles).
+   * @param {Object} config       - Full config object.
+   * @param {string} repoFullName - Repository in `org/repo` format.
+   * @returns {Object[]} Array of matched, filtered profile objects.
+   */
   function getMatchingProfiles(config, repoFullName) {
     const profiles = config.profiles.filter(p => {
       if (!p.enabled) return false;
@@ -315,6 +356,12 @@ GHBCP.ConfigManager = (() => {
     return profiles;
   }
 
+  /**
+   * Collect any `extraCommands` defined in repo overrides that match `repoFullName`.
+   * @param {Object} config       - Full config object.
+   * @param {string} repoFullName - Repository in `org/repo` format.
+   * @returns {Object[]} Flat array of extra command objects.
+   */
   function getExtraCommands(config, repoFullName) {
     const overrides = config.repoOverrides.filter(o => globMatch(o.pattern, repoFullName));
     const cmds = [];
@@ -324,12 +371,19 @@ GHBCP.ConfigManager = (() => {
     return cmds;
   }
 
+  /**
+   * Sanitize user-supplied text by round-tripping through a DOM text node.
+   * Prevents XSS when command text is later used in innerHTML contexts.
+   * @param {string} text - Raw command string.
+   * @returns {string} The sanitized string.
+   */
   function sanitizeCommand(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.textContent;
   }
 
+  /** @param {string} str - Arbitrary string. @returns {string} HTML-entity-escaped string. */
   // Escape a string for safe insertion into innerHTML contexts.
   function escapeHtml(str) {
     const div = document.createElement('div');
@@ -337,6 +391,16 @@ GHBCP.ConfigManager = (() => {
     return div.innerHTML;
   }
 
+  /**
+   * Filter or annotate profile commands based on which Prow plugins are enabled for the repo.
+   * @param {Object[]} profiles       - Array of profile objects.
+   * @param {string[]} enabledPlugins - Plugin names that are active for the current repo.
+   * @param {'disabled'|'filter'|'indicate'} mode
+   *   - `disabled`: return profiles unchanged.
+   *   - `filter`:   remove commands whose plugin is not enabled.
+   *   - `indicate`: keep all commands but mark disabled ones with `_pluginDisabled: true`.
+   * @returns {Object[]} Updated (deep-cloned) profiles array.
+   */
   function filterCommandsByPlugins(profiles, enabledPlugins, mode) {
     if (mode === 'disabled' || !enabledPlugins) return profiles;
 

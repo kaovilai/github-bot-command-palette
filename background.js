@@ -47,6 +47,12 @@ async function setCache(cache) {
   });
 }
 
+/**
+ * Retrieve the enabled plugins for `repo` by querying all configured plugin sources.
+ * @param {string}  repo         - Repository in `org/repo` format.
+ * @param {boolean} forceRefresh - When true, bypass the TTL cache and re-fetch.
+ * @returns {Promise<{plugins: string[]|null, configFileUrl: string|null, cachedAt: number|null}>}
+ */
 async function handleGetEnabledPlugins(repo, forceRefresh) {
   const config = await getConfig();
   if (!config || !config.pluginConfigSources || config.pluginConfigSources.length === 0) {
@@ -85,6 +91,15 @@ async function handleGetEnabledPlugins(repo, forceRefresh) {
   };
 }
 
+/**
+ * Fetch enabled plugins for a single source, using the local cache when fresh.
+ * @param {Object} source    - Plugin config source descriptor from user settings.
+ * @param {string} org       - GitHub organisation name.
+ * @param {string} repoName  - Repository name (without org prefix).
+ * @param {string} fullRepo  - Full `org/repo` string.
+ * @param {boolean} forceRefresh - Bypass TTL and force a network fetch.
+ * @returns {Promise<{plugins: string[], configFileUrl: string, cachedAt: number}|null>}
+ */
 async function getPluginsFromSource(source, org, repoName, fullRepo, forceRefresh) {
   const cache = await getCache();
   const sourceCache = cache[source.id] || { repos: {} };
@@ -129,6 +144,14 @@ async function getPluginsFromSource(source, org, repoName, fullRepo, forceRefres
   }
 }
 
+/**
+ * Fetch the raw YAML config file for the given source and repo.
+ * @param {Object} source   - Plugin config source descriptor.
+ * @param {string} org      - GitHub organisation name.
+ * @param {string} repoName - Repository name.
+ * @returns {Promise<string>} Raw YAML text.
+ * @throws {Error} When the HTTP response is not OK.
+ */
 async function fetchYaml(source, org, repoName) {
   let url;
   if (source.format === 'sharded') {
@@ -145,6 +168,14 @@ async function fetchYaml(source, org, repoName) {
   return resp.text();
 }
 
+/**
+ * Parse a Prow plugins YAML string and extract plugin names for the given repo/org.
+ * Supports both the `plugins` map format and top-level plugin-section formats.
+ * @param {string} yamlText - Raw YAML content.
+ * @param {string} fullRepo - Full `org/repo` string.
+ * @param {string} org      - GitHub organisation name.
+ * @returns {string[]} Deduplicated list of plugin names.
+ */
 function extractPlugins(yamlText, fullRepo, org) {
   const parsed = jsyaml.load(yamlText);
   if (!parsed) return [];
@@ -183,6 +214,13 @@ function extractPlugins(yamlText, fullRepo, org) {
   return Array.from(plugins);
 }
 
+/**
+ * Build the GitHub web URL for viewing the plugin config file.
+ * @param {Object} source   - Plugin config source descriptor.
+ * @param {string} org      - GitHub organisation name.
+ * @param {string} repoName - Repository name.
+ * @returns {string} GitHub blob URL.
+ */
 function buildConfigFileUrl(source, org, repoName) {
   if (source.format === 'sharded') {
     const basePath = source.pathTemplate.replace(/\/$/, '');
@@ -206,6 +244,14 @@ async function setPresubmitsCache(cache) {
   });
 }
 
+/**
+ * Resolve the base branch for a PR, using `hintBranch` if provided,
+ * or fetching it from the GitHub REST API as a fallback.
+ * @param {string}      repo        - Full `org/repo` string.
+ * @param {string|null} prNumber    - PR number string, or null.
+ * @param {string|null} hintBranch  - Branch name from the page DOM, if available.
+ * @returns {Promise<string|null>} Branch name, or null if unresolvable.
+ */
 async function resolveBaseBranch(repo, prNumber, hintBranch) {
   if (hintBranch) return hintBranch;
   if (!prNumber) return null;
@@ -221,6 +267,14 @@ async function resolveBaseBranch(repo, prNumber, hintBranch) {
   }
 }
 
+/**
+ * Fetch the list of presubmit CI jobs for a repo/branch from the Prow config.
+ * @param {string}      repo         - Full `org/repo` string.
+ * @param {string|null} branch       - Target branch hint from the page DOM.
+ * @param {boolean}     forceRefresh - Bypass TTL cache.
+ * @param {string|null} prNumber     - PR number used to resolve branch via API.
+ * @returns {Promise<{jobs: Object[]|null}>}
+ */
 async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
   const config = await getConfig();
   if (!config || !config.pluginConfigSources) {
@@ -278,6 +332,13 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
   }
 }
 
+/**
+ * Test a plugin config source by fetching its YAML for a sample repo.
+ * Used by the settings page to validate source configuration before saving.
+ * @param {Object}      source   - Plugin config source descriptor to test.
+ * @param {string|null} testRepo - Optional repo to use instead of the default test repo.
+ * @returns {Promise<{success: boolean, plugins?: string[], rawLength?: number, configFileUrl?: string, error?: string}>}
+ */
 async function handleTestSource(source, testRepo) {
   if (!source || !source.configRepo) {
     return { success: false, error: 'Missing config repo' };
