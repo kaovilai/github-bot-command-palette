@@ -6,6 +6,7 @@
   let debounceTimer = null;
   let lastPluginData = null;
   let lastPresubmitJobs = null;
+  let shortcutMap = {};
 
   function detectRepo() {
     const match = window.location.pathname.match(/^\/([^/]+\/[^/]+)/);
@@ -380,22 +381,7 @@
     });
 
     // Focus trap: keep keyboard focus within the picker dialog
-    picker.addEventListener('keydown', (e) => {
-      if (e.key !== 'Tab') return;
-      const focusable = Array.from(picker.querySelectorAll(
-        'input, button:not([disabled])'
-      )).filter(el => el.offsetParent !== null || el === searchInput);
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    });
+    addFocusTrap(picker, searchInput);
 
     picker.appendChild(list);
     picker.appendChild(footer);
@@ -515,22 +501,7 @@
     popover.appendChild(cancelBtn);
 
     // Focus trap: keep keyboard focus within the popover dialog
-    popover.addEventListener('keydown', (e) => {
-      if (e.key !== 'Tab') return;
-      const focusable = Array.from(popover.querySelectorAll(
-        'input, button:not([disabled])'
-      )).filter(el => el.offsetParent !== null || el === input);
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    });
+    addFocusTrap(popover, input);
 
     function onClickOutside(e) {
       if (!popover.contains(e.target) && e.target !== anchorBtn) {
@@ -657,6 +628,30 @@
       toast.classList.remove('ghbcp-toast-show');
       setTimeout(() => toast.remove(), 300);
     }, 2500);
+  }
+
+  /**
+   * Trap keyboard Tab focus within `container`. Shift+Tab from the first
+   * focusable element wraps to the last, and Tab from the last wraps to the
+   * first. `firstFocusable` is always treated as focusable even when hidden.
+   */
+  function addFocusTrap(container, firstFocusable) {
+    container.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const focusable = Array.from(container.querySelectorAll(
+        'input, button:not([disabled])'
+      )).filter(el => el.offsetParent !== null || el === firstFocusable);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
   }
 
   function createCommandGroup(name, commands) {
@@ -942,12 +937,12 @@
 
   function registerShortcuts(profiles) {
     document.removeEventListener('keydown', handleShortcut);
-    window._ghbcpShortcutMap = {};
+    shortcutMap = {};
 
     for (const profile of profiles) {
       for (const cmd of profile.globalCommands) {
         if (cmd.shortcut) {
-          window._ghbcpShortcutMap[cmd.shortcut.toLowerCase()] = cmd;
+          shortcutMap[cmd.shortcut.toLowerCase()] = cmd;
         }
       }
     }
@@ -966,7 +961,7 @@
     parts.push(e.key.toLowerCase());
     const combo = parts.join('+');
 
-    const cmd = window._ghbcpShortcutMap[combo];
+    const cmd = shortcutMap[combo];
     if (cmd) {
       e.preventDefault();
       handleCommandClick(cmd, { repoName: currentRepo, prNumber: getPRNumber() }, null);
