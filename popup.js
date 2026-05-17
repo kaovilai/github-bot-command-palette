@@ -45,7 +45,7 @@
   if (repoName) {
     html += `<span class="repo-name">${esc(repoName)}</span>`;
     if (isPR) {
-      html += ' <span style="font-size:11px;color:var(--success)">● PR page</span>';
+      html += ' <span class="status-pr">● PR page</span>';
     } else {
       html += ' <span class="no-pr">(not a PR page)</span>';
     }
@@ -64,12 +64,12 @@
     );
 
     if (matched.length > 0) {
-      html += '<div style="margin-bottom:8px;font-size:12px;color:var(--text-muted)">Matched Profiles:</div>';
+      html += '<div class="profiles-heading">Matched Profiles:</div>';
       for (const p of matched) {
         html += `<div class="profile-item">
           <span>${esc(p.name)}</span>
           <span class="toggle">
-            <input type="checkbox" data-pid="${p.id}" ${p.enabled ? 'checked' : ''}>
+            <input type="checkbox" data-pid="${p.id}" aria-label="Enable ${esc(p.name)}" ${p.enabled ? 'checked' : ''}>
             <span class="slider"></span>
           </span>
         </div>`;
@@ -84,7 +84,7 @@
         html += '</div></div>';
       }
     } else {
-      html += '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">No profiles match this repo</div>';
+      html += '<div class="no-profiles">No profiles match this repo</div>';
     }
 
     // Plugin config status
@@ -93,15 +93,15 @@
         const pluginResp = await chrome.runtime.sendMessage({ action: 'getEnabledPlugins', repo: repoName });
         if (pluginResp && pluginResp.plugins) {
           const ago = pluginResp.cachedAt ? Math.round((Date.now() - pluginResp.cachedAt) / 60000) : '?';
-          html += `<div style="font-size:11px;color:var(--text-muted);margin-top:8px;padding:6px;background:var(--bg2);border-radius:4px">
+          html += `<div class="plugin-status">
             Plugin config: ${pluginResp.plugins.length} plugins enabled (cached ${ago}m ago)
-            ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" style="color:var(--primary)">Edit</a>` : ''}
+            ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" class="plugin-link">Edit</a>` : ''}
           </div>`;
         } else {
-          html += '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Plugin config: not found for this repo</div>';
+          html += '<div class="plugin-status-msg">Plugin config: not found for this repo</div>';
         }
       } catch (e) {
-        html += '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Plugin config: unavailable</div>';
+        html += '<div class="plugin-status-msg">Plugin config: unavailable</div>';
       }
     }
   }
