@@ -47,3 +47,20 @@ test('popup.js uses esc() when inserting profile names into innerHTML', () => {
 test('popup.js uses esc() when inserting command text into innerHTML', () => {
   assert.match(popupJs, /\$\{esc\(c\.command\)\}/);
 });
+
+test('input popover has a keyboard focus trap', () => {
+  assert.match(contentJs, /popover\.addEventListener\('keydown'.*Tab/s);
+});
+
+test('command bars have role=toolbar and aria-label', () => {
+  // injectGlobalCommandBar and injectReviewDialogBar set role="toolbar"
+  const toolbarRoleCount = (contentJs.match(/bar\.setAttribute\('role', 'toolbar'\)/g) || []).length;
+  assert.ok(toolbarRoleCount >= 2, `Expected at least 2 bar role=toolbar, got ${toolbarRoleCount}`);
+  const toolbarLabelCount = (contentJs.match(/bar\.setAttribute\('aria-label', 'Bot Commands'\)/g) || []).length;
+  assert.ok(toolbarLabelCount >= 2, `Expected at least 2 bar aria-label, got ${toolbarLabelCount}`);
+});
+
+test('review toolbar has role=toolbar and aria-label', () => {
+  assert.match(contentJs, /toolbar\.setAttribute\('role', 'toolbar'\)/);
+  assert.match(contentJs, /toolbar\.setAttribute\('aria-label', 'Bot Commands'\)/);
+});
