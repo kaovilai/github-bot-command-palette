@@ -765,6 +765,13 @@
   }
 
   function injectCheckButtons(profiles) {
+    // Clear any previously injected check buttons so that a plugin refresh or
+    // re-inject picks up the latest command set instead of skipping processed rows.
+    document.querySelectorAll('.ghbcp-check-btns').forEach(el => el.remove());
+    document.querySelectorAll('[data-ghbcp-injected]').forEach(el => {
+      delete el.dataset.ghbcpInjected;
+    });
+
     let checkRows = [];
 
     // Modern GitHub UI

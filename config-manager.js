@@ -372,19 +372,21 @@ GHBCP.ConfigManager = (() => {
   }
 
   /**
-   * Sanitize user-supplied text by round-tripping through a DOM text node.
-   * Prevents XSS when command text is later used in innerHTML contexts.
+   * Normalize a command string before posting: trims whitespace and coerces null/undefined to ''.
+   * Command text is placed into textarea.value and confirm() dialogs (plain-text contexts),
+   * so HTML escaping is not needed here — use escapeHtml() for innerHTML insertion instead.
    * @param {string} text - Raw command string.
-   * @returns {string} The sanitized string.
+   * @returns {string} Trimmed command string.
    */
   function sanitizeCommand(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.textContent;
+    return text == null ? '' : String(text).trim();
   }
 
-  /** @param {string} str - Arbitrary string. @returns {string} HTML-entity-escaped string. */
-  // Escape a string for safe insertion into innerHTML contexts.
+  /**
+   * Escape a string for safe insertion into innerHTML contexts.
+   * @param {string} str - Arbitrary string.
+   * @returns {string} HTML-entity-escaped string.
+   */
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str == null ? '' : String(str);
