@@ -62,6 +62,7 @@ Bot profile detail view with all commands, styles, and shortcuts:
 - **Keyboard shortcuts** — Alt+L for LGTM, Alt+A for Approve, Alt+R for Retest
 - **GitHub theme support** — matches light/dark mode automatically
 - **SPA-aware** — works with GitHub's Turbo/PJAX navigation
+- **Accessible** — ARIA labels on all injected buttons and dialogs; screen-reader-friendly
 
 ## Built-in Profiles
 
@@ -99,13 +100,17 @@ In Settings → **Repo Overrides**, you can:
 
 ```
 manifest.json          — Chrome Manifest V3 config
+background.js          — Service worker: config fetch, plugin YAML parsing, presubmit job caching
 config-manager.js      — Configuration CRUD, storage, glob matching
+prow-plugin-map.js     — Static map of known Prow plugin commands
 content.js             — Main injection: DOM manipulation, button rendering, SPA listeners
 styles.css             — GitHub-themed styles (light/dark, responsive)
 settings.html/js       — Full settings page (profiles, commands, import/export)
 popup.html/js          — Toolbar popup (current repo, matched profiles)
 icons/                 — Extension icons (16/48/128px)
 config-export.json     — Sample config with all default profiles
+vendor/                — Vendored third-party libraries (js-yaml)
+tests/                 — Unit and integration tests
 ```
 
 ## Configuration Schema
