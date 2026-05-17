@@ -26,6 +26,16 @@ test('content script makes toast announcements available to assistive tech', () 
   assert.match(contentJs, /toast\.setAttribute\('aria-live', 'polite'\)/);
 });
 
+test('job picker count span has aria-live for screen reader announcements', () => {
+  assert.match(contentJs, /countSpan\.setAttribute\('aria-live', 'polite'\)/);
+  assert.match(contentJs, /countSpan\.setAttribute\('aria-atomic', 'true'\)/);
+});
+
+test('job picker list has role=list and items have role=listitem', () => {
+  assert.match(contentJs, /list\.setAttribute\('role', 'list'\)/);
+  assert.match(contentJs, /item\.setAttribute\('role', 'listitem'\)/);
+});
+
 test('popup.js defines an esc() HTML escape helper', () => {
   assert.match(popupJs, /function esc\(str\)/);
   assert.match(popupJs, /d\.textContent/);

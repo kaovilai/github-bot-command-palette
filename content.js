@@ -210,6 +210,7 @@
 
     const list = document.createElement('div');
     list.className = 'ghbcp-job-picker-list';
+    list.setAttribute('role', 'list');
 
     const footer = document.createElement('div');
     footer.className = 'ghbcp-job-picker-footer';
@@ -224,6 +225,8 @@
 
     const countSpan = document.createElement('span');
     countSpan.className = 'ghbcp-job-picker-count';
+    countSpan.setAttribute('aria-live', 'polite');
+    countSpan.setAttribute('aria-atomic', 'true');
     footer.appendChild(countSpan);
 
     const submitBtn = document.createElement('button');
@@ -233,15 +236,15 @@
     footer.appendChild(submitBtn);
 
     function updateFooter() {
-      const n = selected.size;
-      countSpan.textContent = n + ' selected';
-      submitBtn.textContent = (command.label || 'Run') + ' Selected' + (n > 0 ? ' (' + n + ')' : '');
-      submitBtn.disabled = n === 0;
+      const count = selected.size;
+      countSpan.textContent = count + ' selected';
+      submitBtn.textContent = (command.label || 'Run') + ' Selected' + (count > 0 ? ' (' + count + ')' : '');
+      submitBtn.disabled = count === 0;
       const visibleItems = list.querySelectorAll('.ghbcp-job-picker-item');
       const visibleNames = Array.from(visibleItems).map(el => el.dataset.jobName);
-      const allVisible = visibleNames.length > 0 && visibleNames.every(n => selected.has(n));
+      const allVisible = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
       selectAllCb.checked = allVisible;
-      selectAllCb.indeterminate = !allVisible && visibleNames.some(n => selected.has(n));
+      selectAllCb.indeterminate = !allVisible && visibleNames.some(name => selected.has(name));
     }
 
     function renderJobs(searchFilter) {
@@ -270,6 +273,7 @@
         const item = document.createElement('div');
         item.className = 'ghbcp-job-picker-item' + (selected.has(job.name) ? ' selected' : '');
         item.dataset.jobName = job.name;
+        item.setAttribute('role', 'listitem');
 
         const cb = document.createElement('input');
         cb.type = 'checkbox';
