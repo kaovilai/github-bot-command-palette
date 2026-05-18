@@ -305,7 +305,7 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
   }
 
   try {
-    const basePath = source.presubmitsBasePath.replace(/\/$/, '');
+    const basePath = source.presubmitsBasePath.replace(/\/+$/, '');
     const fileName = `${org}-${repoName}-${resolvedBranch}-presubmits.yaml`;
     const url = `https://raw.githubusercontent.com/${source.configRepo}/${source.branch}/${basePath}/${org}/${repoName}/${fileName}`;
 

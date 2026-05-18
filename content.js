@@ -39,6 +39,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return null;
   }
 
+  /**
+   * Create an accessible button element for a slash command.
+   * @param {Object} command - Command descriptor (id, label, style, description, shortcut, _pluginDisabled).
+   * @param {Object} context - Contextual data passed to the click handler (repoName, prNumber, testName, etc.).
+   * @returns {HTMLButtonElement}
+   */
   function createButton(command, context) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -81,6 +87,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return isPending ? 'pending' : 'passed';
   }
 
+  /**
+   * Scrape CI check names and statuses from the current PR page.
+   * Supports both the modern Primer React UI and the legacy merge-status UI.
+   * @returns {{name: string, status: 'failed'|'pending'|'passed'}[]}
+   */
   function scrapeCheckNames() {
     const names = [];
     const seen = new Set();
@@ -115,6 +126,10 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return names;
   }
 
+  /**
+   * Scrape rehearsal job names from REHEARSALNOTIFIER comment tables on the PR page.
+   * @returns {{name: string, status: 'pending'}[]}
+   */
   function scrapeRehearsalNames() {
     const names = [];
     const seen = new Set();
@@ -416,6 +431,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
     requestAnimationFrame(() => searchInput.focus());
   }
 
+  /**
+   * Route a command button click to the appropriate handler (job picker, input
+   * popover, or direct fill), applying confirmation if required.
+   * @param {Object}          command   - Command descriptor.
+   * @param {Object}          context   - Context data (repoName, prNumber, testName).
+   * @param {HTMLButtonElement|null} btn - The clicked button, used to anchor overlays.
+   */
   function handleCommandClick(command, context, btn) {
     if (command.hasJobPicker) {
       showTestJobPicker(command, context, btn);
@@ -531,6 +553,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     requestAnimationFrame(() => input.focus());
   }
 
+  /**
+   * Fill the PR comment textarea with `cmdText`, using the React native setter so
+   * React-controlled inputs detect the change and re-enable the submit button.
+   * Optionally auto-submits the comment if `globalSettings.autoSubmit` is enabled.
+   * @param {string} cmdText - The slash command text to post.
+   */
   function fillComment(cmdText) {
     const textarea = findCommentTextarea();
     if (!textarea) {
@@ -982,6 +1010,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Main injection entry point. Loads config, resolves matching profiles and plugin
+   * data, then injects the command bar, check buttons, review toolbar, and shortcuts.
+   * No-ops if the extension is disabled, the page is not a PR, or context is invalid.
+   */
   async function inject() {
     if (!CM.isContextValid()) return;
     if (!isPRPage()) return;
