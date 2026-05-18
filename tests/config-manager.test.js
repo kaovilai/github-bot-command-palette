@@ -187,3 +187,70 @@ test('filterCommandsByPlugins: commands with no plugin mapping are always kept',
   const cmds = result[0].globalCommands;
   assert.equal(cmds.length, 2, '/unknown has no plugin mapping and should always pass through');
 });
+
+// ---------------------------------------------------------------------------
+// sanitizeCommand
+// ---------------------------------------------------------------------------
+test('sanitizeCommand: trims whitespace from a normal command', () => {
+  const CM = makeContext();
+  assert.equal(CM.sanitizeCommand('  /lgtm  '), '/lgtm');
+});
+
+test('sanitizeCommand: returns empty string for null', () => {
+  const CM = makeContext();
+  assert.equal(CM.sanitizeCommand(null), '');
+});
+
+test('sanitizeCommand: returns empty string for undefined', () => {
+  const CM = makeContext();
+  assert.equal(CM.sanitizeCommand(undefined), '');
+});
+
+test('sanitizeCommand: coerces non-string values to string', () => {
+  const CM = makeContext();
+  assert.equal(CM.sanitizeCommand(42), '42');
+});
+
+// ---------------------------------------------------------------------------
+// getExtraCommands
+// ---------------------------------------------------------------------------
+test('getExtraCommands: returns extra commands from matching repo override', () => {
+  const CM = makeContext();
+  const extra = { id: 'x1', label: 'Extra', command: '/extra' };
+  const config = {
+    profiles: [],
+    repoOverrides: [
+      { pattern: 'org/repo', extraCommands: [extra] }
+    ]
+  };
+  const result = CM.getExtraCommands(config, 'org/repo');
+  assert.equal(result.length, 1);
+  assert.equal(result[0].command, '/extra');
+});
+
+test('getExtraCommands: returns empty array when no overrides match', () => {
+  const CM = makeContext();
+  const config = {
+    profiles: [],
+    repoOverrides: [
+      { pattern: 'other/repo', extraCommands: [{ id: 'x1', label: 'Extra', command: '/extra' }] }
+    ]
+  };
+  const result = CM.getExtraCommands(config, 'org/repo');
+  assert.equal(result.length, 0);
+});
+
+test('getExtraCommands: merges extra commands from multiple matching overrides', () => {
+  const CM = makeContext();
+  const config = {
+    profiles: [],
+    repoOverrides: [
+      { pattern: 'org/*', extraCommands: [{ id: 'x1', label: 'A', command: '/a' }] },
+      { pattern: 'org/repo', extraCommands: [{ id: 'x2', label: 'B', command: '/b' }] }
+    ]
+  };
+  const result = CM.getExtraCommands(config, 'org/repo');
+  assert.equal(result.length, 2);
+  assert.ok(result.some(c => c.command === '/a'));
+  assert.ok(result.some(c => c.command === '/b'));
+});
