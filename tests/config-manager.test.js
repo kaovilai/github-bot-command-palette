@@ -13,6 +13,20 @@ const configManagerSrc = fs.readFileSync(
   'utf8'
 );
 
+function makeEscapingDiv() {
+  let _text = '';
+  return {
+    set textContent(v) { _text = v == null ? '' : String(v); },
+    get innerHTML() {
+      return _text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+  };
+}
+
 function makeContext(commandToPlugin = {}) {
   const ctx = vm.createContext({
     window: {
@@ -22,10 +36,7 @@ function makeContext(commandToPlugin = {}) {
       randomUUID: () => 'test-uuid-1234'
     },
     document: {
-      createElement: () => ({
-        set textContent(_) {},
-        get innerHTML() { return ''; }
-      })
+      createElement: () => makeEscapingDiv()
     },
     chrome: {
       runtime: { id: 'fake-id', lastError: null },
@@ -253,4 +264,152 @@ test('getExtraCommands: merges extra commands from multiple matching overrides',
   assert.equal(result.length, 2);
   assert.ok(result.some(c => c.command === '/a'));
   assert.ok(result.some(c => c.command === '/b'));
+});
+
+// ---------------------------------------------------------------------------
+// escapeHtml
+// ---------------------------------------------------------------------------
+test('escapeHtml: escapes < and > characters', () => {
+  const CM = makeContext();
+  assert.equal(CM.escapeHtml('<b>bold</b>'), '&lt;b&gt;bold&lt;/b&gt;');
+});
+
+test('escapeHtml: escapes & character', () => {
+  const CM = makeContext();
+  assert.equal(CM.escapeHtml('foo & bar'), 'foo &amp; bar');
+});
+
+test('escapeHtml: escapes double-quote characters', () => {
+  const CM = makeContext();
+  assert.equal(CM.escapeHtml('"quoted"'), '&quot;quoted&quot;');
+});
+
+test('escapeHtml: returns empty string for null', () => {
+  const CM = makeContext();
+  assert.equal(CM.escapeHtml(null), '');
+});
+
+test('escapeHtml: returns empty string for undefined', () => {
+  const CM = makeContext();
+  assert.equal(CM.escapeHtml(undefined), '');
+});
+
+test('escapeHtml: coerces non-string to string before escaping', () => {
+  const CM = makeContext();
+  assert.equal(CM.escapeHtml(42), '42');
+});
+
+// ---------------------------------------------------------------------------
+// getConfig
+// ---------------------------------------------------------------------------
+function makeContextWithStorage(storedValue, lastError = null) {
+  const ctx = vm.createContext({
+    window: {
+      GHBCP: { CommandToPlugin: {} }
+    },
+    crypto: {
+      randomUUID: () => 'test-uuid-1234'
+    },
+    document: {
+      createElement: () => makeEscapingDiv()
+    },
+    chrome: {
+      runtime: { id: 'fake-id', get lastError() { return lastError; } },
+      storage: {
+        sync: {
+          get: (_key, cb) => cb(storedValue == null ? {} : { ghbcp_config: storedValue }),
+          set: (_obj, cb) => cb && cb()
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  return ctx.window.GHBCP.ConfigManager;
+}
+
+test('getConfig: returns DEFAULT_CONFIG when storage is empty', async () => {
+  const CM = makeContextWithStorage(null);
+  const config = await CM.getConfig();
+  assert.equal(config.version, CM.DEFAULT_CONFIG.version);
+  assert.ok(Array.isArray(config.profiles));
+  assert.ok(config.profiles.length > 0);
+});
+
+test('getConfig: returns stored config when present and at current version', async () => {
+  const CM = makeContextWithStorage(null);
+  const defaults = JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG));
+  // Store a config at the current schema version
+  const CM2 = makeContextWithStorage(defaults);
+  const config = await CM2.getConfig();
+  assert.equal(config.version, defaults.version);
+});
+
+test('getConfig: returns DEFAULT_CONFIG when chrome.runtime.lastError is set', async () => {
+  const CM = makeContextWithStorage(null, { message: 'quota exceeded' });
+  const config = await CM.getConfig();
+  assert.equal(config.version, CM.DEFAULT_CONFIG.version);
+  assert.ok(Array.isArray(config.profiles));
+});
+
+// ---------------------------------------------------------------------------
+// migrateConfig (tested via getConfig with a v1 config stored)
+// ---------------------------------------------------------------------------
+test('migrateConfig: bumps version to current schema version', async () => {
+  const CM = makeContextWithStorage(null);
+  const v1config = {
+    version: 1,
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v1config);
+  const config = await CM2.getConfig();
+  assert.equal(config.version, CM.DEFAULT_CONFIG.version, 'version should be bumped to schema version');
+});
+
+test('migrateConfig: sets _migrated flag so injection toast fires once', async () => {
+  const CM = makeContextWithStorage(null);
+  const v1config = {
+    version: 1,
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v1config);
+  const config = await CM2.getConfig();
+  assert.equal(config._migrated, true);
+});
+
+test('migrateConfig: adds built-in profiles missing from stored config', async () => {
+  const CM = makeContextWithStorage(null);
+  const v1config = {
+    version: 1,
+    profiles: [],  // no profiles at all
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v1config);
+  const config = await CM2.getConfig();
+  assert.ok(config.profiles.length > 0, 'built-in profiles should be added during migration');
+});
+
+test('migrateConfig: preserves user-set enabled=false on a built-in profile', async () => {
+  const CM = makeContextWithStorage(null);
+  const v1config = {
+    version: 1,
+    profiles: [
+      { id: 'profile-tide-prow-universal', enabled: false, repoPatterns: ['*'], globalCommands: [], checkCommands: [] }
+    ],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v1config);
+  const config = await CM2.getConfig();
+  const p = config.profiles.find(x => x.id === 'profile-tide-prow-universal');
+  assert.ok(p, 'profile-tide-prow-universal should exist after migration');
+  assert.equal(p.enabled, false, 'user-disabled profile should stay disabled after migration');
 });
