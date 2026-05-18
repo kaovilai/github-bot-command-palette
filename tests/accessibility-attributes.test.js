@@ -88,3 +88,12 @@ test('shared selector constants are defined for checks section and legacy rows',
   assert.match(contentJs, /const CHECKS_SECTION_SELECTOR/);
   assert.match(contentJs, /const LEGACY_CHECK_ROW_SELECTOR/);
 });
+
+test('getCheckStatus helper is defined and used by both scrapeCheckNames and injectCheckButtons', () => {
+  assert.match(contentJs, /function getCheckStatus\(element\)/);
+  // scrapeCheckNames uses it
+  assert.match(contentJs, /status: getCheckStatus\(item\)/);
+  assert.match(contentJs, /status: getCheckStatus\(row\)/);
+  // injectCheckButtons uses it
+  assert.match(contentJs, /getCheckStatus\(row\) !== 'failed'/);
+});

@@ -387,13 +387,6 @@ GHBCP.ConfigManager = (() => {
   }
 
   /**
-   * Normalize a command string before posting: trims whitespace and coerces null/undefined to ''.
-   * Command text is placed into textarea.value and confirm() dialogs (plain-text contexts),
-   * so HTML escaping is not needed here — use escapeHtml() for innerHTML insertion instead.
-   * @param {string} text - Raw command string.
-   * @returns {string} Trimmed command string.
-   */
-  /**
    * Trim and coerce a command string to a safe value.
    * @param {*} text - Raw input (may be null/undefined).
    * @returns {string} Trimmed string, or empty string if input is nullish.
