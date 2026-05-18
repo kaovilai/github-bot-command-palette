@@ -407,7 +407,7 @@
               <input type="checkbox" data-source-toggle="${i}" aria-label="Enable ${esc(s.name)}" ${s.enabled ? 'checked' : ''}>
               <span class="slider"></span>
             </span>
-            <button class="btn btn-sm" data-edit-source="${i}">Edit</button>
+            <button class="btn btn-sm" data-edit-source="${i}" aria-label="Edit source ${esc(s.name)}">Edit</button>
             <button class="btn btn-sm btn-danger" data-delete-source="${i}" aria-label="Delete source ${esc(s.name)}">✕</button>
           </div>
         </div>

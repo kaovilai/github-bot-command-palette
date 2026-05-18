@@ -90,7 +90,7 @@
           const ago = pluginResp.cachedAt ? Math.round((Date.now() - pluginResp.cachedAt) / 60000) : '?';
           html += `<div class="plugin-status">
             Plugin config: ${pluginResp.plugins.length} plugins enabled (cached ${ago}m ago)
-            ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" class="plugin-link">Edit</a>` : ''}
+            ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" class="plugin-link" aria-label="Edit plugin config on GitHub">Edit</a>` : ''}
           </div>`;
         } else {
           html += '<div class="plugin-status-msg">Plugin config: not found for this repo</div>';
@@ -109,7 +109,12 @@
       const profile = config.profiles.find(p => p.id === pid);
       if (profile) {
         profile.enabled = el.checked;
-        await CM.saveConfig(config);
+        try {
+          await CM.saveConfig(config);
+        } catch (err) {
+          profile.enabled = !el.checked;
+          el.checked = !el.checked;
+        }
       }
     });
   });
