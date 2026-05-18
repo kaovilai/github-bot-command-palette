@@ -64,6 +64,23 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return btn;
   }
 
+  /**
+   * Determine the CI status of a check row element by inspecting its icon classes
+   * and data-conclusion attributes. Used by both scrapeCheckNames() and injectCheckButtons()
+   * to keep status detection consistent in one place.
+   * @param {Element} element - A check row or list item element.
+   * @returns {'failed'|'pending'|'passed'}
+   */
+  function getCheckStatus(element) {
+    const isFailed = element.querySelector('.octicon-x-circle-fill') !== null ||
+                     element.querySelector('.color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') !== null ||
+                     element.classList.contains('bg-danger');
+    if (isFailed) return 'failed';
+    const isPending = element.querySelector('.octicon-dot-fill') !== null ||
+                      element.querySelector('.color-fg-attention, [data-conclusion="pending"]') !== null;
+    return isPending ? 'pending' : 'passed';
+  }
+
   function scrapeCheckNames() {
     const names = [];
     const seen = new Set();
@@ -78,17 +95,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        // Use the same comprehensive selectors as injectCheckButtons so that
-        // data-conclusion-based status (used by some GitHub UI variants) is
-        // also reflected correctly in the job picker.
-        const isFailed = item.querySelector('.octicon-x-circle-fill') !== null ||
-                         item.querySelector('.color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') !== null ||
-                         item.classList.contains('bg-danger');
-        const isPending = !isFailed && (
-                         item.querySelector('.octicon-dot-fill') !== null ||
-                         item.querySelector('.color-fg-attention, [data-conclusion="pending"]') !== null);
-        const status = isFailed ? 'failed' : isPending ? 'pending' : 'passed';
-        names.push({ name, status });
+        names.push({ name, status: getCheckStatus(item) });
       }
     }
 
@@ -101,11 +108,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        const isFailed = row.querySelector('.octicon-x-circle-fill, .color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') ||
-                         row.classList.contains('bg-danger');
-        const isPending = row.querySelector('.octicon-dot-fill, .color-fg-attention, [data-conclusion="pending"]');
-        const status = isFailed ? 'failed' : isPending ? 'pending' : 'passed';
-        names.push({ name, status });
+        names.push({ name, status: getCheckStatus(row) });
       }
     }
 
@@ -812,11 +815,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     for (const row of checkRows) {
       if (row.dataset.ghbcpInjected === 'true') continue;
 
-      const isFailed = row.querySelector('.octicon-x-circle-fill') !== null ||
-                       row.querySelector('.color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') !== null ||
-                       row.classList.contains('bg-danger');
-
-      if (!isFailed) continue;
+      if (getCheckStatus(row) !== 'failed') continue;
 
       const nameEl = row.querySelector('h4 a span') ||
                      row.querySelector('.status-actions a, .merge-status-item a, a.Link--primary, .text-bold');
