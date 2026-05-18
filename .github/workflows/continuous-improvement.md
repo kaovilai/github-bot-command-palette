@@ -41,6 +41,7 @@ Before doing anything, check for existing open PRs and issues:
 2. Search for open issues with label `automation`.
    - If any open issue describes the **same improvement** you are about to propose (same files, same category), **stop** — call `noop` with a message like "Duplicate of #N". Do not create another issue or PR for the same fix.
    - If an open issue describes a **different** improvement that is actionable now, consider working on that instead.
+3. Search **closed** issues and PRs for the same topic or files you're about to change. If a closed issue/PR explains why a change was rejected or reverted, **skip that topic** — do not re-propose the same change.
 
 **Never include `Closes #N` or `Fixes #N` in an issue body** — only use closing keywords in PR descriptions. Using them in issues causes unintended auto-closing of other issues.
 
