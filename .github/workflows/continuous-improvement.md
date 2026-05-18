@@ -11,7 +11,7 @@ permissions:
   pull-requests: read
 tools:
   edit:
-  bash: ["git log", "git diff", "git show", "find", "grep", "wc", "cat", "ls", "head", "tail"]
+  bash: ["git log", "git diff", "git show", "find", "grep", "wc", "cat", "ls", "head", "tail", "cd", "echo", "node"]
   github:
     toolsets: [repos, issues, pull_requests]
 safe-outputs:
