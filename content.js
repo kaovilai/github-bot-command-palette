@@ -249,13 +249,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
       const allVisible = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
       const someVisible = visibleNames.some(name => selected.has(name));
       selectAllCb.checked = allVisible;
+      // The native indeterminate property is the correct mechanism for the mixed state;
+      // setting aria-checked on a native checkbox conflicts with its implicit ARIA semantics.
       selectAllCb.indeterminate = !allVisible && someVisible;
-      // aria-checked="mixed" is required for screen readers to announce indeterminate state correctly
-      if (!allVisible && someVisible) {
-        selectAllCb.setAttribute('aria-checked', 'mixed');
-      } else {
-        selectAllCb.setAttribute('aria-checked', String(allVisible));
-      }
     }
 
     function renderJobs(searchFilter) {
@@ -759,7 +755,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         configLink.className = 'ghbcp-config-link';
         configLink.href = lastPluginData.configFileUrl;
         configLink.target = '_blank';
-        configLink.rel = 'noopener';
+        configLink.rel = 'noopener noreferrer';
         configLink.innerHTML = '<span aria-hidden="true">&#9881;</span>';
         configLink.title = 'Edit plugin config on GitHub';
         configLink.setAttribute('aria-label', 'Edit plugin config on GitHub');

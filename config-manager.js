@@ -218,11 +218,6 @@ GHBCP.ConfigManager = (() => {
   ];
 
   /**
-   * Check whether the Chrome extension context is still valid (not invalidated).
-   * Calling extension APIs after context invalidation throws; this guard prevents that.
-   * @returns {boolean}
-   */
-  /**
    * Return true if the Chrome extension context is still valid (not invalidated).
    * Must be called before any chrome.* API use to avoid "Extension context invalidated" errors.
    * @returns {boolean}
