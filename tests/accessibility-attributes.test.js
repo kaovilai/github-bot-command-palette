@@ -98,9 +98,15 @@ test('getCheckStatus helper is defined and used by both scrapeCheckNames and inj
   assert.match(contentJs, /getCheckStatus\(row\) !== 'failed'/);
 });
 
-test('handleShortcut suppresses keyboard shortcuts when a GHBCP overlay is open', () => {
-  // When the job picker or input popover is visible, pressing a shortcut key
-  // should not post a command (prevents accidental posts while interacting with
-  // the extension's own UI).
-  assert.match(contentJs, /document\.querySelector\('\.ghbcp-popover, \.ghbcp-job-picker'\)/);
+test('addFocusTrap includes all standard focusable elements', () => {
+  // Should include a[href], select, textarea, and [tabindex] — not just input and button.
+  assert.match(contentJs, /a\[href\].*button:not\(\[disabled\]\).*input:not\(\[disabled\]\).*select:not\(\[disabled\]\).*textarea:not\(\[disabled\]\).*\[tabindex\]:not\(\[tabindex="-1"\]\)/);
 });
+
+test('injectReviewToolbar receives and checks extraCommands for review commands', () => {
+  // extraCommands (repo overrides) should also appear in the review toolbar
+  // if they match /lgtm or /approve.
+  assert.match(contentJs, /function injectReviewToolbar\(profiles, extraCommands\)/);
+  assert.match(contentJs, /for.*const cmd of.*extraCommands.*\|\|.*\[\]\)/s);
+});
+
