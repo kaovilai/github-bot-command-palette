@@ -97,3 +97,10 @@ test('getCheckStatus helper is defined and used by both scrapeCheckNames and inj
   // injectCheckButtons uses it
   assert.match(contentJs, /getCheckStatus\(row\) !== 'failed'/);
 });
+
+test('handleShortcut suppresses keyboard shortcuts when a GHBCP overlay is open', () => {
+  // When the job picker or input popover is visible, pressing a shortcut key
+  // should not post a command (prevents accidental posts while interacting with
+  // the extension's own UI).
+  assert.match(contentJs, /document\.querySelector\('\.ghbcp-popover, \.ghbcp-job-picker'\)/);
+});
