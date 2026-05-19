@@ -413,3 +413,52 @@ test('migrateConfig: preserves user-set enabled=false on a built-in profile', as
   assert.ok(p, 'profile-tide-prow-universal should exist after migration');
   assert.equal(p.enabled, false, 'user-disabled profile should stay disabled after migration');
 });
+
+// ---------------------------------------------------------------------------
+// getConfig: defensive defaults for partial/corrupted stored configs
+// ---------------------------------------------------------------------------
+test('getConfig: fills in missing globalSettings when stored config lacks it', async () => {
+  const partial = {
+    version: 2,
+    profiles: [],
+    repoOverrides: [],
+    pluginConfigSources: []
+    // globalSettings intentionally absent
+  };
+  const CM = makeContextWithStorage(partial);
+  const config = await CM.getConfig();
+  assert.ok(config.globalSettings, 'globalSettings should be present');
+  assert.equal(typeof config.globalSettings.enabled, 'boolean', 'globalSettings.enabled should be a boolean');
+});
+
+test('getConfig: fills in missing repoOverrides when stored config lacks it', async () => {
+  const partial = {
+    version: 2,
+    profiles: [],
+    globalSettings: { enabled: true, confirmBeforePost: false, autoSubmit: false,
+                      showOnlyFailedTests: true, theme: 'auto', buttonPosition: 'above-comment-box',
+                      pluginFilterMode: 'filter' },
+    pluginConfigSources: []
+    // repoOverrides intentionally absent
+  };
+  const CM = makeContextWithStorage(partial);
+  const config = await CM.getConfig();
+  assert.ok(Array.isArray(config.repoOverrides), 'repoOverrides should be an array');
+  assert.equal(config.repoOverrides.length, 0);
+});
+
+test('getConfig: fills in missing pluginConfigSources when stored config lacks it', async () => {
+  const partial = {
+    version: 2,
+    profiles: [],
+    globalSettings: { enabled: true, confirmBeforePost: false, autoSubmit: false,
+                      showOnlyFailedTests: true, theme: 'auto', buttonPosition: 'above-comment-box',
+                      pluginFilterMode: 'filter' },
+    repoOverrides: []
+    // pluginConfigSources intentionally absent
+  };
+  const CM = makeContextWithStorage(partial);
+  const config = await CM.getConfig();
+  assert.ok(Array.isArray(config.pluginConfigSources), 'pluginConfigSources should be an array');
+  assert.equal(config.pluginConfigSources.length, 0);
+});

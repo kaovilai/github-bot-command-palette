@@ -283,6 +283,12 @@ GHBCP.ConfigManager = (() => {
             return;
           }
           let config = result[STORAGE_KEY] || JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+          // Defensive: fill in missing top-level keys so callers never crash on
+          // partial or manually-edited stored configs.
+          if (!config.globalSettings) config.globalSettings = JSON.parse(JSON.stringify(DEFAULT_CONFIG.globalSettings));
+          if (!config.repoOverrides) config.repoOverrides = [];
+          if (!config.pluginConfigSources) config.pluginConfigSources = [];
+          if (!config.profiles) config.profiles = [];
           if (config.version < SCHEMA_VERSION) {
             config = migrateConfig(config);
             // Save without the transient _migrated flag so the toast only shows once.
