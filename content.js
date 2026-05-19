@@ -737,7 +737,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     container.addEventListener('keydown', (e) => {
       if (e.key !== 'Tab') return;
       const focusable = Array.from(container.querySelectorAll(
-        'input, button:not([disabled])'
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
       )).filter(el => el.offsetParent !== null || el === firstFocusable);
       if (focusable.length === 0) return;
       const first = focusable[0];
@@ -991,10 +991,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
   /**
    * Inject a compact approve/LGTM toolbar into the review-changes panel on the
    * "Files changed" tab.  No-ops when the current page is not the files tab or
-   * when no matching `/lgtm` or `/approve` commands exist in the active profiles.
-   * @param {Object[]} profiles - Matched, enabled profile objects.
+   * when no matching `/lgtm` or `/approve` commands exist in the active profiles
+   * or repo-level extra commands.
+   * @param {Object[]} profiles      - Matched, enabled profile objects.
+   * @param {Object[]} extraCommands - Additional commands from repo overrides.
    */
-  function injectReviewToolbar(profiles) {
+  function injectReviewToolbar(profiles, extraCommands) {
     const isFilesTab = window.location.pathname.includes('/files') ||
                        document.querySelector('.js-diff-progressive-container');
     if (!isFilesTab) return;
@@ -1010,12 +1012,18 @@ const LEGACY_CHECK_ROW_SELECTOR =
     toolbar.setAttribute('role', 'toolbar');
     toolbar.setAttribute('aria-label', 'Bot Commands');
 
+    const REVIEW_COMMANDS = ['/lgtm', '/approve'];
     const approveCommands = [];
     for (const profile of profiles) {
       for (const cmd of profile.globalCommands) {
-        if (['/lgtm', '/approve'].includes(cmd.command)) {
+        if (REVIEW_COMMANDS.includes(cmd.command)) {
           approveCommands.push(cmd);
         }
+      }
+    }
+    for (const cmd of (extraCommands || [])) {
+      if (REVIEW_COMMANDS.includes(cmd.command)) {
+        approveCommands.push(cmd);
       }
     }
 
@@ -1162,7 +1170,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
     injectGlobalCommandBar(profiles, extraCommands);
     injectCheckButtons(profiles);
-    injectReviewToolbar(profiles);
+    injectReviewToolbar(profiles, extraCommands);
     injectReviewDialogBar(profiles, extraCommands);
     registerShortcuts(profiles);
   }
