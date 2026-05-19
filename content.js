@@ -885,7 +885,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
-   * Inject "Test" and "Override" buttons next to each failed CI check row.
+   * Inject "Test" and "Override" buttons next to CI check rows.
+   * When `config.globalSettings.showOnlyFailedTests` is true (the default),
+   * buttons are injected only on failed checks; when false, all checks get buttons.
    * Supports both the modern Primer React checks UI and the legacy merge-status UI.
    * Clears previously injected buttons before re-injecting so that a refresh
    * picks up the latest command set without duplicating buttons.
@@ -915,7 +917,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     for (const row of checkRows) {
       if (row.dataset.ghbcpInjected === 'true') continue;
 
-      if (getCheckStatus(row) !== 'failed') continue;
+      if (config.globalSettings.showOnlyFailedTests && getCheckStatus(row) !== 'failed') continue;
 
       const nameEl = row.querySelector('h4 a span') ||
                      row.querySelector('.status-actions a, .merge-status-item a, a.Link--primary, .text-bold');
