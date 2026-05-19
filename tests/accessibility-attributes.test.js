@@ -110,3 +110,10 @@ test('injectReviewToolbar receives and checks extraCommands for review commands'
   assert.match(contentJs, /for.*const cmd of.*extraCommands.*\|\|.*\[\]\)/s);
 });
 
+test('injectCheckButtons respects showOnlyFailedTests setting', () => {
+  // When showOnlyFailedTests is true, only failed checks should get buttons.
+  // When false, all checks should get buttons.
+  // The gate must read config.globalSettings.showOnlyFailedTests, not be hardcoded.
+  assert.match(contentJs, /config\.globalSettings\.showOnlyFailedTests && getCheckStatus\(row\) !== 'failed'/);
+});
+
