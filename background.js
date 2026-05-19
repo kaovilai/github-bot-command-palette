@@ -137,33 +137,27 @@ async function getPluginsFromSource(source, org, repoName, fullRepo, forceRefres
     };
   }
 
+  let plugins;
   try {
     const yamlText = await fetchYaml(source, org, repoName);
-    const plugins = extractPlugins(yamlText, fullRepo, org);
-
-    sourceCache.repos[fullRepo] = {
-      fetchedAt: Date.now(),
-      plugins,
-      error: null
-    };
-    cache[source.id] = sourceCache;
-    await setCache(cache);
-
-    return {
-      plugins,
-      configFileUrl: buildConfigFileUrl(source, org, repoName),
-      cachedAt: Date.now()
-    };
+    plugins = extractPlugins(yamlText, fullRepo, org);
   } catch (err) {
-    sourceCache.repos[fullRepo] = {
-      fetchedAt: Date.now(),
-      plugins: null,
-      error: err.message
-    };
+    sourceCache.repos[fullRepo] = { fetchedAt: Date.now(), plugins: null, error: err.message };
     cache[source.id] = sourceCache;
-    await setCache(cache);
+    try { await setCache(cache); } catch (_) { /* best effort */ }
     return null;
   }
+
+  sourceCache.repos[fullRepo] = { fetchedAt: Date.now(), plugins, error: null };
+  cache[source.id] = sourceCache;
+  // Cache write is best-effort; a storage failure should not suppress the result.
+  try { await setCache(cache); } catch (_) { /* best effort */ }
+
+  return {
+    plugins,
+    configFileUrl: buildConfigFileUrl(source, org, repoName),
+    cachedAt: Date.now()
+  };
 }
 
 /**
@@ -304,6 +298,7 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
     return { jobs: cache[cacheKey].jobs || null };
   }
 
+  let jobs;
   try {
     const basePath = source.presubmitsBasePath.replace(/\/+$/, '');
     const fileName = `${org}-${repoName}-${resolvedBranch}-presubmits.yaml`;
@@ -314,7 +309,7 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
     const yamlText = await resp.text();
     const parsed = jsyaml.load(yamlText);
 
-    const jobs = [];
+    jobs = [];
     if (parsed && parsed.presubmits) {
       const entries = parsed.presubmits[repo] || [];
       for (const entry of entries) {
@@ -329,15 +324,16 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
         }
       }
     }
-
-    cache[cacheKey] = { fetchedAt: Date.now(), jobs };
-    await setPresubmitsCache(cache);
-    return { jobs };
   } catch (err) {
     cache[cacheKey] = { fetchedAt: Date.now(), jobs: null, error: err.message };
-    await setPresubmitsCache(cache);
+    try { await setPresubmitsCache(cache); } catch (_) { /* best effort */ }
     return { jobs: null };
   }
+
+  cache[cacheKey] = { fetchedAt: Date.now(), jobs };
+  // Cache write is best-effort; a storage failure should not suppress the result.
+  try { await setPresubmitsCache(cache); } catch (_) { /* best effort */ }
+  return { jobs };
 }
 
 /**
