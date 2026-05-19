@@ -661,6 +661,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Show a self-dismissing toast notification. Removes any existing toast first.
+   * @param {string} message - The text to display.
+   * @param {'success'|'warning'|'error'} type - Visual style variant.
+   */
   function showToast(message, type) {
     const existing = document.querySelector('.ghbcp-toast');
     if (existing) existing.remove();
@@ -704,6 +709,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     });
   }
 
+  /**
+   * Build a named group of command buttons wrapped in a labelled container.
+   * @param {string}   name     - Group label shown above the buttons.
+   * @param {Object[]} commands - Array of command descriptors.
+   * @returns {HTMLDivElement}
+   */
   function createCommandGroup(name, commands) {
     const group = document.createElement('div');
     group.className = 'ghbcp-cmd-group';
@@ -721,6 +732,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return group;
   }
 
+  /**
+   * Build a DocumentFragment containing one group per matching profile plus an
+   * optional "Repo Overrides" group for repo-specific extra commands.
+   * @param {Object[]} profiles      - Matched, enabled profile objects.
+   * @param {Object[]} extraCommands - Additional commands from repo overrides.
+   * @returns {DocumentFragment}
+   */
   function buildCommandGroups(profiles, extraCommands) {
     const fragment = document.createDocumentFragment();
     for (const profile of profiles) {
@@ -977,6 +995,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Register keyboard shortcuts from all matching profiles. Removes any previously
+   * registered listener before re-registering so shortcut bindings stay fresh.
+   * @param {Object[]} profiles - Enabled, matched profile objects.
+   */
   function registerShortcuts(profiles) {
     document.removeEventListener('keydown', handleShortcut);
     shortcutMap = {};
@@ -992,8 +1015,16 @@ const LEGACY_CHECK_ROW_SELECTOR =
     document.addEventListener('keydown', handleShortcut);
   }
 
+  /**
+   * Handle a keyboard shortcut event. Ignores events targeting text inputs or
+   * any active GHBCP overlay (job picker / input popover) to prevent accidental
+   * command posting while the user is interacting with the extension's own UI.
+   * @param {KeyboardEvent} e
+   */
   function handleShortcut(e) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    // Suppress shortcuts when a GHBCP overlay is open to prevent accidental posts
+    if (document.querySelector('.ghbcp-popover, .ghbcp-job-picker')) return;
 
     const parts = [];
     if (e.altKey) parts.push('alt');
@@ -1065,6 +1096,10 @@ const LEGACY_CHECK_ROW_SELECTOR =
     registerShortcuts(profiles);
   }
 
+  /**
+   * Debounce wrapper for `inject` to avoid redundant re-injections when multiple
+   * DOM mutations or navigation events fire in rapid succession.
+   */
   function debouncedInject() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(inject, 50);
