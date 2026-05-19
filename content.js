@@ -17,20 +17,29 @@ const LEGACY_CHECK_ROW_SELECTOR =
   let lastPresubmitJobs = null;
   let shortcutMap = {};
 
+  /** @returns {string|null} Full `org/repo` path extracted from the current URL, or null. */
   function detectRepo() {
     const match = window.location.pathname.match(/^\/([^/]+\/[^/]+)/);
     return match ? match[1] : null;
   }
 
+  /** @returns {boolean} True when the current page is a GitHub pull-request page. */
   function isPRPage() {
     return /^\/[^/]+\/[^/]+\/pull\/\d+/.test(window.location.pathname);
   }
 
+  /** @returns {string|null} PR number string extracted from the URL, or null if not on a PR page. */
   function getPRNumber() {
     const match = window.location.pathname.match(/\/pull\/(\d+)/);
     return match ? match[1] : null;
   }
 
+  /**
+   * Detect the base branch of the current PR by querying the DOM.
+   * Tries the modern Primer React `.base-ref` selector first, then falls back
+   * to legacy selectors for older GitHub UI layouts.
+   * @returns {string|null} Branch name, or null if the page does not expose it.
+   */
   function detectTargetBranch() {
     const baseRef = document.querySelector('.base-ref a, .base-ref span.css-truncate-target');
     if (baseRef) return baseRef.textContent.trim();
@@ -153,6 +162,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return names;
   }
 
+  /**
+   * Ask the background service worker for presubmit CI jobs for the current repo
+   * and base branch.  Returns null when the extension context is invalid, the repo
+   * is unknown, or the background worker returns no data.
+   * @returns {Promise<Object[]|null>} Array of presubmit job objects, or null.
+   */
   async function fetchPresubmitJobs() {
     if (!CM.isContextValid() || !currentRepo) return null;
     try {
@@ -460,6 +475,14 @@ const LEGACY_CHECK_ROW_SELECTOR =
     fillComment(cmdText);
   }
 
+  /**
+   * Show a floating input popover anchored to `anchorBtn` for commands that need
+   * free-form user input before posting.  Handles Enter/Escape keyboard shortcuts,
+   * optional confirmation, and click-outside dismissal.
+   * @param {Object}                command   - Command descriptor (commandTemplate, requireConfirm, etc.).
+   * @param {Object}                context   - Context data (testName, repoName, prNumber).
+   * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the popover, or null.
+   */
   function showInputPopover(command, context, anchorBtn) {
     const existing = document.querySelector('.ghbcp-popover');
     if (existing) existing.remove();
@@ -598,6 +621,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Find the most appropriate comment textarea on the current PR page.
+   * Priority order: open review dialog textarea → `#new_comment_field` → various
+   * legacy selectors for the new-comment form area.
+   * @returns {HTMLTextAreaElement|null}
+   */
   function findCommentTextarea() {
     // If a modal review dialog is open, prefer its textarea
     const reviewDialog = document.querySelector('div[role="dialog"][aria-modal="true"]');
@@ -624,6 +653,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return null;
   }
 
+  /**
+   * Locate the primary submit button for the form that contains `textarea`.
+   * Checks the enclosing review dialog first, then the nearest `<form>`, then
+   * falls back to page-level selectors.  Only non-disabled buttons are returned.
+   * @param {HTMLTextAreaElement} textarea - The comment textarea whose form to search.
+   * @returns {HTMLButtonElement|null}
+   */
   function findSubmitButton(textarea) {
     // Review dialog submit button
     const dialog = textarea.closest('div[role="dialog"][aria-modal="true"]');
@@ -648,6 +684,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return null;
   }
 
+  /**
+   * Attach `overlay` to the DOM relative to `anchorBtn`.  When an anchor button
+   * is available its parent becomes the positioning context; otherwise the overlay
+   * is appended to the existing `.ghbcp-command-bar` or `document.body`.
+   * @param {HTMLElement}            overlay   - The overlay element to attach.
+   * @param {HTMLElement|null}       anchorBtn - Button that triggered the overlay, or null.
+   */
   function attachOverlay(overlay, anchorBtn) {
     if (anchorBtn && anchorBtn.parentElement) {
       anchorBtn.parentElement.style.position = 'relative';
@@ -751,6 +794,14 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return fragment;
   }
 
+  /**
+   * Inject (or replace) the global command bar above the PR comment textarea.
+   * The bar contains one button group per matching profile plus an optional
+   * "Repo Overrides" group.  Falls back to the discussion timeline or `<body>`
+   * when the comment form container is not found.
+   * @param {Object[]} profiles      - Matched, enabled profile objects.
+   * @param {Object[]} extraCommands - Additional commands from repo overrides.
+   */
   function injectGlobalCommandBar(profiles, extraCommands) {
     const existing = document.querySelector('.ghbcp-command-bar');
     if (existing) existing.remove();
@@ -833,6 +884,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Inject "Test" and "Override" buttons next to each failed CI check row.
+   * Supports both the modern Primer React checks UI and the legacy merge-status UI.
+   * Clears previously injected buttons before re-injecting so that a refresh
+   * picks up the latest command set without duplicating buttons.
+   * @param {Object[]} profiles - Matched, enabled profile objects.
+   */
   function injectCheckButtons(profiles) {
     // Clear any previously injected check buttons so that a plugin refresh or
     // re-inject picks up the latest command set instead of skipping processed rows.
@@ -930,6 +988,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Inject a compact approve/LGTM toolbar into the review-changes panel on the
+   * "Files changed" tab.  No-ops when the current page is not the files tab or
+   * when no matching `/lgtm` or `/approve` commands exist in the active profiles.
+   * @param {Object[]} profiles - Matched, enabled profile objects.
+   */
   function injectReviewToolbar(profiles) {
     const isFilesTab = window.location.pathname.includes('/files') ||
                        document.querySelector('.js-diff-progressive-container');
@@ -964,6 +1028,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
     reviewForm.parentElement.insertBefore(toolbar, reviewForm);
   }
 
+  /**
+   * Inject a command bar inside an open review dialog (`div[role="dialog"]`).
+   * No-ops when no dialog is present, the bar is already injected, or there is
+   * no textarea in the dialog.
+   * @param {Object[]} profiles      - Matched, enabled profile objects.
+   * @param {Object[]} extraCommands - Additional commands from repo overrides.
+   */
   function injectReviewDialogBar(profiles, extraCommands) {
     const dialog = document.querySelector('div[role="dialog"][aria-modal="true"]');
     if (!dialog) return;
