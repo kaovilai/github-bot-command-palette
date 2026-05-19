@@ -234,8 +234,13 @@ GHBCP.ConfigManager = (() => {
    */
   function globMatch(pattern, str) {
     if (pattern === '*') return true;
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
+    // Escape regex special chars that aren't glob wildcards, then map glob
+    // wildcards to their regex equivalents: * → .* (any sequence), ? → . (any char).
+    const escaped = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\?/g, '.')
+      .replace(/\*/g, '.*');
+    const regex = new RegExp('^' + escaped + '$');
     return regex.test(str);
   }
 
@@ -432,14 +437,16 @@ GHBCP.ConfigManager = (() => {
 
     return profiles.map(profile => {
       const filtered = JSON.parse(JSON.stringify(profile));
+      const globalCmds = filtered.globalCommands || [];
+      const checkCmds = filtered.checkCommands || [];
       if (mode === 'filter') {
-        filtered.globalCommands = filtered.globalCommands.filter(isCommandEnabled);
-        filtered.checkCommands = filtered.checkCommands.filter(isCommandEnabled);
+        filtered.globalCommands = globalCmds.filter(isCommandEnabled);
+        filtered.checkCommands = checkCmds.filter(isCommandEnabled);
       } else if (mode === 'indicate') {
-        filtered.globalCommands = filtered.globalCommands.map(cmd => ({
+        filtered.globalCommands = globalCmds.map(cmd => ({
           ...cmd, _pluginDisabled: !isCommandEnabled(cmd)
         }));
-        filtered.checkCommands = filtered.checkCommands.map(cmd => ({
+        filtered.checkCommands = checkCmds.map(cmd => ({
           ...cmd, _pluginDisabled: !isCommandEnabled(cmd)
         }));
       }

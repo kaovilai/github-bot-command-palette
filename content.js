@@ -961,7 +961,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
           btnContainer.appendChild(createButton(overrideCmd, context));
         }
 
-        for (const dyn of profile.dynamicCommands) {
+        for (const dyn of (profile.dynamicCommands || [])) {
           if (dyn.injectAt === 'failed-checks') {
             try {
               const dynCmd = {
