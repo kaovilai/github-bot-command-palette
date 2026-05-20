@@ -90,7 +90,7 @@
           const ago = pluginResp.cachedAt ? Math.round((Date.now() - pluginResp.cachedAt) / 60000) : '?';
           html += `<div class="plugin-status">
             Plugin config: ${pluginResp.plugins.length} plugins enabled (cached ${ago}m ago)
-            ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" class="plugin-link" aria-label="Edit plugin config on GitHub">Edit</a>` : ''}
+            ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" rel="noopener noreferrer" class="plugin-link" aria-label="Edit plugin config on GitHub">Edit</a>` : ''}
           </div>`;
         } else {
           html += '<div class="plugin-status-msg">Plugin config: not found for this repo</div>';
