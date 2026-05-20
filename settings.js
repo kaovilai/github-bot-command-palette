@@ -40,23 +40,25 @@
   }
 
   function bindGlobalSettings() {
+    async function readAndSave() {
+      config.globalSettings.enabled = document.getElementById('opt-enabled').checked;
+      config.globalSettings.confirmBeforePost = document.getElementById('opt-confirm').checked;
+      config.globalSettings.autoSubmit = document.getElementById('opt-autosubmit').checked;
+      config.globalSettings.showOnlyFailedTests = document.getElementById('opt-failtests').checked;
+      config.globalSettings.theme = document.getElementById('opt-theme').value;
+      config.globalSettings.buttonPosition = document.getElementById('opt-position').value;
+      config.globalSettings.pluginFilterMode = document.getElementById('opt-pluginfilter').value;
+      try {
+        await saveConfig();
+        showStatus('Settings saved', 'success');
+      } catch (err) {
+        showStatus('Save failed: ' + err.message, 'error');
+      }
+    }
+
     const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-theme', 'opt-position', 'opt-pluginfilter'];
     for (const id of fields) {
-      document.getElementById(id).addEventListener('change', async () => {
-        config.globalSettings.enabled = document.getElementById('opt-enabled').checked;
-        config.globalSettings.confirmBeforePost = document.getElementById('opt-confirm').checked;
-        config.globalSettings.autoSubmit = document.getElementById('opt-autosubmit').checked;
-        config.globalSettings.showOnlyFailedTests = document.getElementById('opt-failtests').checked;
-        config.globalSettings.theme = document.getElementById('opt-theme').value;
-        config.globalSettings.buttonPosition = document.getElementById('opt-position').value;
-        config.globalSettings.pluginFilterMode = document.getElementById('opt-pluginfilter').value;
-        try {
-          await saveConfig();
-          showStatus('Settings saved', 'success');
-        } catch (err) {
-          showStatus('Save failed: ' + err.message, 'error');
-        }
-      });
+      document.getElementById(id).addEventListener('change', readAndSave);
     }
   }
 

@@ -385,7 +385,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         ? template.replace('{input}', names.join(' '))
         : names.map(n => template.replace('{input}', n)).join('\n');
 
-      if (command.requireConfirm || config.globalSettings.confirmBeforePost) {
+      if (shouldConfirm(command)) {
         if (!confirm(`Post:\n${cmdText}`)) return;
       }
 
@@ -447,6 +447,15 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
+   * Returns true when the user should be prompted to confirm before posting.
+   * @param {Object} command - Command descriptor.
+   * @returns {boolean}
+   */
+  function shouldConfirm(command) {
+    return !!(command.requireConfirm || config.globalSettings.confirmBeforePost);
+  }
+
+  /**
    * Route a command button click to the appropriate handler (job picker, input
    * popover, or direct fill), applying confirmation if required.
    * @param {Object}          command   - Command descriptor.
@@ -468,7 +477,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       cmdText = command.commandTemplate.replace('{input}', context.testName);
     }
 
-    if (command.requireConfirm || config.globalSettings.confirmBeforePost) {
+    if (shouldConfirm(command)) {
       if (!confirm(`Post "${cmdText}"?`)) return;
     }
 
@@ -524,7 +533,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       const template = command.commandTemplate || (command.command + ' {input}');
       const cmdText = CM.sanitizeCommand(template.replace('{input}', val));
 
-      if (command.requireConfirm || config.globalSettings.confirmBeforePost) {
+      if (shouldConfirm(command)) {
         if (!confirm(`Post "${cmdText}"?`)) return;
       }
 
@@ -715,8 +724,16 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
     const toast = document.createElement('div');
     toast.className = `ghbcp-toast ghbcp-toast-${type || 'success'}`;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'polite');
+    // role="alert" implies aria-live="assertive" (interrupts screen reader immediately).
+    // role="status" implies aria-live="polite" (waits for current task to finish).
+    // Use assertive only for errors; polite for success/warning.
+    if (type === 'error') {
+      toast.setAttribute('role', 'alert');
+    } else {
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+    }
+    toast.setAttribute('aria-atomic', 'true');
     toast.textContent = message;
     document.body.appendChild(toast);
 
