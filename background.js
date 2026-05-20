@@ -171,7 +171,7 @@ async function getPluginsFromSource(source, org, repoName, fullRepo, forceRefres
 async function fetchYaml(source, org, repoName) {
   let url;
   if (source.format === 'sharded') {
-    const basePath = source.pathTemplate.replace(/\/$/, '');
+    const basePath = source.pathTemplate.replace(/\/+$/, '');
     url = `https://raw.githubusercontent.com/${source.configRepo}/${source.branch}/${basePath}/${org}/${repoName}/_pluginconfig.yaml`;
   } else {
     url = `https://raw.githubusercontent.com/${source.configRepo}/${source.branch}/${source.filePath}`;
@@ -212,6 +212,9 @@ function extractPlugins(yamlText, fullRepo, org) {
 
   // Method 2: top-level plugin sections with repos lists
   // e.g. approve: [{repos: [org/repo], ...}]
+  // knownPlugins must stay in sync with the keys of GHBCP_PROW_PLUGIN_MAP in
+  // prow-plugin-map.js so that top-level plugin sections are recognised here
+  // even when new plugins are added to the map.
   const knownPlugins = ['approve', 'lgtm', 'hold', 'trigger', 'assign', 'lifecycle',
     'label', 'milestone', 'override', 'wip', 'retitle', 'cherrypick'];
 
@@ -239,7 +242,7 @@ function extractPlugins(yamlText, fullRepo, org) {
  */
 function buildConfigFileUrl(source, org, repoName) {
   if (source.format === 'sharded') {
-    const basePath = source.pathTemplate.replace(/\/$/, '');
+    const basePath = source.pathTemplate.replace(/\/+$/, '');
     return `https://github.com/${source.configRepo}/blob/${source.branch}/${basePath}/${org}/${repoName}/_pluginconfig.yaml`;
   } else {
     return `https://github.com/${source.configRepo}/blob/${source.branch}/${source.filePath}`;
