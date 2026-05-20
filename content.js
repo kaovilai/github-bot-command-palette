@@ -267,6 +267,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     submitBtn.type = 'button';
     submitBtn.className = 'ghbcp-btn ghbcp-btn-primary ghbcp-job-picker-submit';
     submitBtn.disabled = true;
+    submitBtn.setAttribute('aria-label', (command.label || 'Run') + ' selected jobs');
     footer.appendChild(submitBtn);
 
     function updateFooter() {
@@ -1189,6 +1190,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * No-ops if the extension is disabled, the page is not a PR, or context is invalid.
    */
   async function inject() {
+    try {
     if (!CM.isContextValid()) return;
     if (!isPRPage()) return;
 
@@ -1236,6 +1238,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
     injectReviewToolbar(profiles, extraCommands);
     injectReviewDialogBar(profiles, extraCommands);
     registerShortcuts(profiles);
+    } catch (e) {
+      console.error('[GHBCP] inject() failed:', e);
+    }
   }
 
   /**
