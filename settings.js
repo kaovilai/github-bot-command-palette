@@ -357,6 +357,8 @@
       }
       config = imported;
       await saveConfig();
+      // Reload through getConfig() so schema migration runs on older imports.
+      await loadConfig();
       renderGlobalSettings();
       renderProfiles();
       showStatus('Config imported successfully', 'success');

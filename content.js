@@ -1079,7 +1079,51 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
     const header = document.createElement('div');
     header.className = 'ghbcp-bar-header';
-    header.innerHTML = '<span><span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span></span>';
+
+    const headerLeft = document.createElement('span');
+    headerLeft.innerHTML = '<span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span>';
+    header.appendChild(headerLeft);
+
+    const headerRight = document.createElement('span');
+    headerRight.className = 'ghbcp-bar-actions';
+
+    if (lastPluginData) {
+      if (lastPluginData.cachedAt) {
+        const ago = Math.round((Date.now() - lastPluginData.cachedAt) / 60000);
+        const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
+        refreshBtn.className = 'ghbcp-refresh-btn';
+        refreshBtn.innerHTML = '&#8635;';
+        refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
+        refreshBtn.setAttribute('aria-label', `Refresh plugin config (cached ${ago} min ago)`);
+        refreshBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!CM.isContextValid()) return;
+          refreshBtn.classList.add('ghbcp-spinning');
+          try {
+            await chrome.runtime.sendMessage({ action: 'refreshPlugins', repo: currentRepo });
+          } catch (err) { /* ignore */ }
+          refreshBtn.classList.remove('ghbcp-spinning');
+          inject();
+        });
+        headerRight.appendChild(refreshBtn);
+      }
+
+      if (lastPluginData.configFileUrl) {
+        const configLink = document.createElement('a');
+        configLink.className = 'ghbcp-config-link';
+        configLink.href = lastPluginData.configFileUrl;
+        configLink.target = '_blank';
+        configLink.rel = 'noopener noreferrer';
+        configLink.innerHTML = '<span aria-hidden="true">&#9881;</span>';
+        configLink.title = 'Edit plugin config on GitHub';
+        configLink.setAttribute('aria-label', 'Edit plugin config on GitHub');
+        headerRight.appendChild(configLink);
+      }
+    }
+
+    header.appendChild(headerRight);
     bar.appendChild(header);
 
     bar.appendChild(buildCommandGroups(profiles, extraCommands));
