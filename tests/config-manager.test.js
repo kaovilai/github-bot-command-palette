@@ -462,3 +462,47 @@ test('getConfig: fills in missing pluginConfigSources when stored config lacks i
   assert.ok(Array.isArray(config.pluginConfigSources), 'pluginConfigSources should be an array');
   assert.equal(config.pluginConfigSources.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// globMatch: ? wildcard and regex-special-char escaping
+// ---------------------------------------------------------------------------
+test('globMatch: ? matches any single character', () => {
+  const CM = makeContext();
+  assert.equal(CM.globMatch('org/repo?', 'org/repos'), true);
+  assert.equal(CM.globMatch('org/repo?', 'org/repox'), true);
+  assert.equal(CM.globMatch('org/repo?', 'org/repo'), false, '? requires exactly one char');
+  assert.equal(CM.globMatch('org/repo?', 'org/repoab'), false, '? matches only one char');
+});
+
+test('globMatch: ? does not act as a regex quantifier', () => {
+  const CM = makeContext();
+  // Without the fix, 'org/repo?' would match 'org/rep' (zero occurrences of 'o')
+  assert.equal(CM.globMatch('org/repo?', 'org/rep'), false, '? should not make preceding char optional');
+});
+
+test('globMatch: literal dot in pattern is not treated as regex wildcard', () => {
+  const CM = makeContext();
+  assert.equal(CM.globMatch('my.org/repo', 'my.org/repo'), true);
+  assert.equal(CM.globMatch('my.org/repo', 'myXorg/repo'), false, 'dot should be literal');
+});
+
+// ---------------------------------------------------------------------------
+// filterCommandsByPlugins: profiles missing globalCommands/checkCommands
+// ---------------------------------------------------------------------------
+test('filterCommandsByPlugins: does not crash when profile has no globalCommands or checkCommands', () => {
+  const CM = makeContext({ '/lgtm': 'lgtm' });
+  // Profile missing both arrays (simulates an imported config with partial schema)
+  const profiles = [{ id: 'p1', name: 'Test' }];
+  assert.doesNotThrow(() => CM.filterCommandsByPlugins(profiles, ['lgtm'], 'filter'));
+  assert.doesNotThrow(() => CM.filterCommandsByPlugins(profiles, ['lgtm'], 'indicate'));
+});
+
+test('filterCommandsByPlugins: mode=filter on profile with no commands returns empty arrays', () => {
+  const CM = makeContext({ '/lgtm': 'lgtm' });
+  const profiles = [{ id: 'p1', name: 'Test' }];
+  const result = CM.filterCommandsByPlugins(profiles, ['lgtm'], 'filter');
+  assert.ok(Array.isArray(result[0].globalCommands), 'globalCommands should be an array');
+  assert.equal(result[0].globalCommands.length, 0);
+  assert.ok(Array.isArray(result[0].checkCommands), 'checkCommands should be an array');
+  assert.equal(result[0].checkCommands.length, 0);
+});
