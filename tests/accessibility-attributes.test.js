@@ -115,6 +115,18 @@ test('injectReviewToolbar receives and checks extraCommands for review commands'
   assert.match(contentJs, /for.*const cmd of.*extraCommands.*\|\|.*\[\]\)/s);
 });
 
+test('injectReviewToolbar guards against null parentElement before DOM insertion', () => {
+  // reviewForm.parentElement could theoretically be null for a detached DOM node;
+  // the null guard prevents an uncaught TypeError that would silence the injection.
+  assert.match(contentJs, /if \(reviewForm\.parentElement\)/);
+});
+
+test('injectReviewDialogBar guards against null textarea parentElement before DOM insertion', () => {
+  // The fieldset branch already checks fieldset.parentElement; the else branch
+  // must be consistent and guard textarea.parentElement the same way.
+  assert.match(contentJs, /else if \(textarea\.parentElement\)/);
+});
+
 test('injectCheckButtons respects showOnlyFailedTests setting', () => {
   // When showOnlyFailedTests is true, only failed checks should get buttons.
   // When false, all checks should get buttons.
