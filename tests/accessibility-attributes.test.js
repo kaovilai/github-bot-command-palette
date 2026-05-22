@@ -117,3 +117,15 @@ test('injectCheckButtons respects showOnlyFailedTests setting', () => {
   assert.match(contentJs, /config\.globalSettings\.showOnlyFailedTests && getCheckStatus\(row\) !== 'failed'/);
 });
 
+test('job picker close button has type="button" to prevent accidental form submission', () => {
+  // Without type="button", the default type is "submit" which can accidentally
+  // submit any enclosing <form> element when clicked.
+  assert.match(contentJs, /closeBtn\.type = 'button'/);
+});
+
+test('command groups have role=group and aria-labelledby for screen reader navigation', () => {
+  assert.match(contentJs, /group\.setAttribute\('role', 'group'\)/);
+  assert.match(contentJs, /group\.setAttribute\('aria-labelledby', groupLabelId\)/);
+  assert.match(contentJs, /groupLabel\.id = groupLabelId/);
+});
+

@@ -230,6 +230,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     header.appendChild(searchInput);
 
     const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
     closeBtn.className = 'ghbcp-job-picker-close';
     closeBtn.textContent = '✕';
     closeBtn.setAttribute('aria-label', 'Close job picker');
@@ -779,8 +780,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
   function createCommandGroup(name, commands) {
     const group = document.createElement('div');
     group.className = 'ghbcp-cmd-group';
+    group.setAttribute('role', 'group');
+    const groupLabelId = 'ghbcp-group-' + Math.random().toString(36).slice(2, 9);
+    group.setAttribute('aria-labelledby', groupLabelId);
     const groupLabel = document.createElement('span');
     groupLabel.className = 'ghbcp-group-label';
+    groupLabel.id = groupLabelId;
     groupLabel.textContent = name;
     group.appendChild(groupLabel);
     const btnWrap = document.createElement('div');
