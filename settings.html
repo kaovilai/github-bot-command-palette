@@ -186,7 +186,7 @@
 
   <!-- Source Editor Modal -->
   <div class="modal-overlay" id="source-modal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="source-modal-title">
       <h3 id="source-modal-title">Edit Plugin Config Source</h3>
       <div class="form-row">
         <label class="block" for="src-name">Name</label>
@@ -261,7 +261,7 @@
 
   <!-- Profile Editor Modal -->
   <div class="modal-overlay" id="profile-modal">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <h3 id="modal-title">Edit Profile</h3>
       <div class="form-row">
         <label class="block" for="pf-name">Profile Name</label>
@@ -301,8 +301,8 @@
 
   <!-- Command Editor Modal -->
   <div class="modal-overlay" id="cmd-modal">
-    <div class="modal">
-      <h3>Edit Command</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cmd-modal-title">
+      <h3 id="cmd-modal-title">Edit Command</h3>
       <div class="form-row">
         <label class="block" for="cmd-label">Label</label>
         <input type="text" id="cmd-label" placeholder="LGTM">
