@@ -3,6 +3,7 @@
   const CM = GHBCP.ConfigManager;
   const { generateId, escapeHtml: esc, PRESET_SOURCES } = CM;
 
+  /** @returns {Object} A fresh deep copy of the factory-default configuration. */
   function defaultConfig() {
     return JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG));
   }
@@ -13,15 +14,22 @@
   let editingCmdTarget = null;
   let editingCmdIndex = -1;
 
+  /** Load the extension config from storage into the module-level `config` variable. */
   async function loadConfig() {
     config = await CM.getConfig();
   }
 
+  /** Persist the current `config` to storage via ConfigManager. @returns {Promise<void>} */
   async function saveConfig() {
     return CM.saveConfig(config);
   }
 
   let _statusTimer = null;
+  /**
+   * Display a transient status message in the settings page status bar.
+   * @param {string} msg  - Message text to display.
+   * @param {'success'|'error'|'warning'} type - Visual style variant.
+   */
   function showStatus(msg, type) {
     const el = document.getElementById('status-msg');
     el.textContent = msg;
@@ -30,6 +38,7 @@
     _statusTimer = setTimeout(() => { el.className = 'status'; }, 3000);
   }
 
+  /** Populate the global-settings form fields from the current config. */
   function renderGlobalSettings() {
     const gs = config.globalSettings;
     document.getElementById('opt-enabled').checked = gs.enabled;
@@ -41,6 +50,7 @@
     document.getElementById('opt-pluginfilter').value = gs.pluginFilterMode || 'disabled';
   }
 
+  /** Attach change-event listeners to global-settings form fields so each change auto-saves. */
   function bindGlobalSettings() {
     async function readAndSave() {
       config.globalSettings.enabled = document.getElementById('opt-enabled').checked;
@@ -64,11 +74,17 @@
     }
   }
 
+  /**
+   * Return an HTML `<span>` badge for a command style value.
+   * @param {string} style - Style key (e.g. `success`, `danger`, `neutral`).
+   * @returns {string} HTML string.
+   */
   function styleBadge(style) {
     const s = esc(style);
     return `<span class="badge badge-${s}">${s}</span>`;
   }
 
+  /** Re-render the full profile list from the current config, wiring all edit/delete/toggle handlers. */
   function renderProfiles() {
     const container = document.getElementById('profiles-list');
     container.innerHTML = '';
@@ -132,6 +148,10 @@
     });
   }
 
+  /**
+   * Open the profile editor modal for an existing or new profile.
+   * @param {number} index - Index into `config.profiles`, or -1 to create a new profile.
+   */
   function openProfileEditor(index) {
     editingProfileIndex = index;
     editingProfile = index >= 0
@@ -151,12 +171,19 @@
     document.getElementById('profile-modal').classList.add('active');
   }
 
+  /** Re-render all command lists (global, check, dynamic) inside the profile editor. */
   function renderProfileCommands() {
     renderCmdList('pf-global-cmds', editingProfile.globalCommands, 'global');
     renderCmdList('pf-check-cmds', editingProfile.checkCommands, 'check');
     renderDynamicCmds();
   }
 
+  /**
+   * Render a command list inside the profile editor, wiring edit/delete buttons.
+   * @param {string}   containerId - ID of the container element.
+   * @param {Object[]} cmds        - Array of command objects to render.
+   * @param {'global'|'check'} type - Command list type, used to route edit/delete actions.
+   */
   function renderCmdList(containerId, cmds, type) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
@@ -193,6 +220,7 @@
     });
   }
 
+  /** Re-render the dynamic commands list inside the profile editor, wiring delete buttons. */
   function renderDynamicCmds() {
     const container = document.getElementById('pf-dynamic-cmds');
     container.innerHTML = '';
@@ -218,6 +246,11 @@
     });
   }
 
+  /**
+   * Open the command editor modal for an existing or new command.
+   * @param {'global'|'check'} type - Which command list the command belongs to.
+   * @param {number}           index - Index within the list, or -1 to create a new command.
+   */
   function openCmdEditor(type, index) {
     editingCmdTarget = type;
     editingCmdIndex = index;
@@ -245,6 +278,7 @@
     document.getElementById('cmd-modal').classList.add('active');
   }
 
+  /** Show or hide the input-related fields in the command editor based on the hasInput/hasJobPicker checkboxes. */
   function toggleInputFields() {
     const show = document.getElementById('cmd-hasinput').checked || document.getElementById('cmd-hasjobpicker').checked;
     document.getElementById('cmd-input-fields').classList.toggle('hidden', !show);
@@ -393,6 +427,7 @@
 
   let editingSourceIndex = -1;
 
+  /** Re-render the plugin config sources list from the current config, wiring all edit/delete/toggle/preset handlers. */
   function renderPluginSources() {
     if (!config.pluginConfigSources) config.pluginConfigSources = [];
     const container = document.getElementById('plugin-sources-list');
@@ -460,6 +495,10 @@
     }
   }
 
+  /**
+   * Open the plugin config source editor modal for an existing or new source.
+   * @param {number} index - Index into `config.pluginConfigSources`, or -1 to create a new source.
+   */
   function openSourceEditor(index) {
     editingSourceIndex = index;
     const s = index >= 0
@@ -482,6 +521,7 @@
     document.getElementById('source-modal').classList.add('active');
   }
 
+  /** Show or hide path-template / file-path fields in the source editor based on the selected format. */
   function toggleSourceFields() {
     const fmt = document.getElementById('src-format').value;
     document.getElementById('src-path-row').classList.toggle('hidden', fmt !== 'sharded');
