@@ -120,6 +120,22 @@ test('injectCheckButtons respects showOnlyFailedTests setting', () => {
   assert.match(contentJs, /config\.globalSettings\.showOnlyFailedTests && getCheckStatus\(row\) !== 'failed'/);
 });
 
+test('job picker dialog has aria-modal="true"', () => {
+  assert.match(contentJs, /picker\.setAttribute\('aria-modal', 'true'\)/);
+});
+
+test('input popover dialog has aria-modal="true"', () => {
+  assert.match(contentJs, /popover\.setAttribute\('aria-modal', 'true'\)/);
+});
+
+test('job picker close button has aria-label', () => {
+  assert.match(contentJs, /closeBtn\.setAttribute\('aria-label', 'Close job picker'\)/);
+});
+
+test('job picker submit button has aria-label describing the action', () => {
+  assert.match(contentJs, /submitBtn\.setAttribute\('aria-label', \(command\.label \|\| 'Run'\) \+ ' selected jobs'\)/);
+});
+
 test('job picker close button has type="button" to prevent accidental form submission', () => {
   // Without type="button", the default type is "submit" which can accidentally
   // submit any enclosing <form> element when clicked.

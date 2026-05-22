@@ -188,6 +188,17 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Show a floating job-picker dialog anchored to `anchorBtn` for commands that
+   * need a CI job name as input.  Populates the list from rehearsal comments,
+   * presubmit config, or scraped check names (in that order of preference).
+   * Handles multi-select, keyboard navigation, search filtering, and optional
+   * confirmation before posting.
+   * @param {Object}                command   - Command descriptor (hasJobPicker, jobSource, jobPickerFilter, etc.).
+   * @param {Object}                context   - Context data (repoName, prNumber).
+   * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the picker, or null.
+   * @returns {Promise<void>}
+   */
   async function showTestJobPicker(command, context, anchorBtn) {
     const existing = document.querySelector('.ghbcp-job-picker');
     if (existing) existing.remove();
