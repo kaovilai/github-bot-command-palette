@@ -361,6 +361,7 @@
       await loadConfig();
       renderGlobalSettings();
       renderProfiles();
+      renderPluginSources();
       showStatus('Config imported successfully', 'success');
     } catch (err) {
       showStatus('Import failed: ' + err.message, 'error');
