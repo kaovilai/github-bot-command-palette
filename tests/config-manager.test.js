@@ -486,6 +486,121 @@ test('migrateConfig: runs migration when stored config has no version field', as
     'built-in profiles should be added when migrating an unversioned config');
 });
 
+test('migrateConfig: preserves user-created custom (non-built-in) profiles', async () => {
+  const CM = makeContextWithStorage(null);
+  const v1config = {
+    version: 1,
+    profiles: [
+      {
+        id: 'user-custom-profile',
+        name: 'My Custom Profile',
+        enabled: true,
+        repoPatterns: ['myorg/*'],
+        globalCommands: [{ id: 'c1', label: 'Custom', command: '/custom', style: 'neutral' }],
+        checkCommands: []
+      }
+    ],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v1config);
+  const config = await CM2.getConfig();
+  const custom = config.profiles.find(p => p.id === 'user-custom-profile');
+  assert.ok(custom, 'user-created custom profile should survive migration');
+  assert.equal(custom.name, 'My Custom Profile');
+  assert.equal(custom.globalCommands[0].command, '/custom');
+});
+
+// ---------------------------------------------------------------------------
+// saveConfig
+// ---------------------------------------------------------------------------
+function makeContextWithCapturingSave() {
+  let savedObj = null;
+  const ctx = vm.createContext({
+    window: { GHBCP: { CommandToPlugin: {} } },
+    crypto: { randomUUID: () => 'test-uuid-1234' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { id: 'fake-id', lastError: null },
+      storage: {
+        sync: {
+          get: (_key, cb) => cb({}),
+          set: (obj, cb) => { savedObj = obj; cb && cb(); }
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  return { CM: ctx.window.GHBCP.ConfigManager, getSaved: () => savedObj };
+}
+
+test('saveConfig: persists config to storage under the correct key', async () => {
+  const { CM, getSaved } = makeContextWithCapturingSave();
+  const config = { version: 3, profiles: [], repoOverrides: [], globalSettings: {} };
+  await CM.saveConfig(config);
+  assert.ok(getSaved() !== null, 'storage.set should have been called');
+  assert.deepEqual(getSaved()[CM.STORAGE_KEY], config);
+});
+
+test('saveConfig: rejects when chrome.runtime.lastError is set after set', async () => {
+  const ctx = vm.createContext({
+    window: { GHBCP: { CommandToPlugin: {} } },
+    crypto: { randomUUID: () => 'test-uuid-1234' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { id: 'fake-id', get lastError() { return { message: 'quota exceeded' }; } },
+      storage: {
+        sync: {
+          get: (_key, cb) => cb({}),
+          set: (_obj, cb) => cb && cb()
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  const CM = ctx.window.GHBCP.ConfigManager;
+  await assert.rejects(() => CM.saveConfig({ version: 3 }));
+});
+
+test('saveConfig: is a no-op when extension context is invalid', async () => {
+  const ctx = vm.createContext({
+    window: { GHBCP: { CommandToPlugin: {} } },
+    crypto: { randomUUID: () => 'test-uuid-1234' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { get id() { return undefined; } },
+      storage: { sync: { get: (_k, cb) => cb({}), set: () => { throw new Error('should not be called'); } } }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  const CM = ctx.window.GHBCP.ConfigManager;
+  await assert.doesNotReject(() => CM.saveConfig({ version: 3 }));
+});
+
+// ---------------------------------------------------------------------------
+// resetToDefaults
+// ---------------------------------------------------------------------------
+test('resetToDefaults: returns DEFAULT_CONFIG and saves it to storage', async () => {
+  const { CM, getSaved } = makeContextWithCapturingSave();
+  const config = await CM.resetToDefaults();
+  assert.equal(config.version, CM.DEFAULT_CONFIG.version, 'returned config has correct version');
+  assert.ok(Array.isArray(config.profiles), 'returned config has profiles array');
+  assert.ok(getSaved() !== null, 'storage.set should have been called');
+  assert.equal(getSaved()[CM.STORAGE_KEY].version, CM.DEFAULT_CONFIG.version,
+    'saved config version should match DEFAULT_CONFIG version');
+});
+
+test('resetToDefaults: saved config has the same version as the returned config', async () => {
+  const { CM, getSaved } = makeContextWithCapturingSave();
+  const config = await CM.resetToDefaults();
+  assert.equal(
+    getSaved()[CM.STORAGE_KEY].version,
+    config.version,
+    'saved config version should match returned config version'
+  );
+});
+
 test('filterCommandsByPlugins: mode=filter also filters checkCommands', () => {
   const CM = makeContext({ '/lgtm': 'lgtm', '/hold': 'hold' });
   const profiles = makeProfiles([
