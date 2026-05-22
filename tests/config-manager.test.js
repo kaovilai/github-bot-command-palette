@@ -437,6 +437,54 @@ test('migrateConfig: preserves user-set enabled=false on a built-in profile', as
   assert.equal(p.enabled, false, 'user-disabled profile should stay disabled after migration');
 });
 
+test('migrateConfig: runs migration when stored config has no version field', async () => {
+  // A config without a `version` field should be treated as older than any
+  // versioned config and have migration run (adding missing built-in profiles).
+  // Previously, `undefined < SCHEMA_VERSION` evaluated to `false` in JS
+  // (NaN comparison), so migrateConfig was never called for unversioned configs.
+  const CM = makeContextWithStorage(null);
+  const unversionedConfig = {
+    // version intentionally absent
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(unversionedConfig);
+  const config = await CM2.getConfig();
+  assert.equal(config.version, CM.DEFAULT_CONFIG.version,
+    'version should be bumped to schema version after migrating an unversioned config');
+  assert.ok(config.profiles.length > 0,
+    'built-in profiles should be added when migrating an unversioned config');
+});
+
+test('filterCommandsByPlugins: mode=filter also filters checkCommands', () => {
+  const CM = makeContext({ '/lgtm': 'lgtm', '/hold': 'hold' });
+  const profiles = makeProfiles([
+    { command: '/lgtm', label: 'LGTM' },
+    { command: '/hold', label: 'Hold' }
+  ]);
+  const result = CM.filterCommandsByPlugins(profiles, ['lgtm'], 'filter');
+  assert.equal(result[0].checkCommands.length, 1,
+    'checkCommands should also be filtered, not just globalCommands');
+  assert.equal(result[0].checkCommands[0].command, '/lgtm');
+});
+
+test('filterCommandsByPlugins: mode=indicate also marks checkCommands', () => {
+  const CM = makeContext({ '/lgtm': 'lgtm', '/hold': 'hold' });
+  const profiles = makeProfiles([
+    { command: '/lgtm', label: 'LGTM' },
+    { command: '/hold', label: 'Hold' }
+  ]);
+  const result = CM.filterCommandsByPlugins(profiles, ['lgtm'], 'indicate');
+  const checkCmds = result[0].checkCommands;
+  assert.equal(checkCmds.length, 2, 'Both checkCommands should be kept in indicate mode');
+  const lgtm = checkCmds.find(c => c.command === '/lgtm');
+  const hold = checkCmds.find(c => c.command === '/hold');
+  assert.equal(lgtm._pluginDisabled, false, '/lgtm checkCommand should not be disabled');
+  assert.equal(hold._pluginDisabled, true, '/hold checkCommand should be marked disabled');
+});
+
 // ---------------------------------------------------------------------------
 // getConfig: defensive defaults for partial/corrupted stored configs
 // ---------------------------------------------------------------------------
