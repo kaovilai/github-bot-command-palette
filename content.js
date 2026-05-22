@@ -83,6 +83,10 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * Determine the CI status of a check row element by inspecting its icon classes
    * and data-conclusion attributes. Used by both scrapeCheckNames() and injectCheckButtons()
    * to keep status detection consistent in one place.
+   *
+   * GitHub check-run conclusions: failure, timed_out, action_required → failed
+   *                               cancelled, stale               → pending (amber)
+   *                               success, neutral, skipped      → passed (green)
    * @param {Element} element - A check row or list item element.
    * @returns {'failed'|'pending'|'passed'}
    */
@@ -91,8 +95,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
                      element.querySelector('.color-fg-danger, [data-conclusion="failure"], [data-conclusion="timed_out"], [data-conclusion="action_required"]') !== null ||
                      element.classList.contains('bg-danger');
     if (isFailed) return 'failed';
+    // cancelled = manually stopped (should be re-run); stale = deadline exceeded without result
     const isPending = element.querySelector('.octicon-dot-fill') !== null ||
-                      element.querySelector('.color-fg-attention, [data-conclusion="pending"]') !== null;
+                      element.querySelector('.color-fg-attention, [data-conclusion="pending"], [data-conclusion="cancelled"], [data-conclusion="stale"]') !== null;
     return isPending ? 'pending' : 'passed';
   }
 
