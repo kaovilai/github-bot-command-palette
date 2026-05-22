@@ -1089,7 +1089,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
       toolbar.appendChild(createButton(cmd, { repoName: currentRepo, prNumber: getPRNumber() }));
     }
 
-    reviewForm.parentElement.insertBefore(toolbar, reviewForm);
+    if (reviewForm.parentElement) {
+      reviewForm.parentElement.insertBefore(toolbar, reviewForm);
+    }
   }
 
   /**
@@ -1121,9 +1123,8 @@ const LEGACY_CHECK_ROW_SELECTOR =
     const fieldset = textarea.closest('fieldset');
     if (fieldset && fieldset.parentElement) {
       fieldset.parentElement.insertBefore(bar, fieldset);
-    } else {
-      const container = textarea.parentElement;
-      container.insertBefore(bar, container.firstChild);
+    } else if (textarea.parentElement) {
+      textarea.parentElement.insertBefore(bar, textarea.parentElement.firstChild);
     }
   }
 

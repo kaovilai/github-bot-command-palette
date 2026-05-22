@@ -251,6 +251,11 @@
    * @param {'global'|'check'} type - Which command list the command belongs to.
    * @param {number}           index - Index within the list, or -1 to create a new command.
    */
+  /**
+   * Open the command editor modal, pre-populated for an existing command or blank for a new one.
+   * @param {'global'|'check'} type - Which command list to edit.
+   * @param {number} index          - Index into the relevant command array, or -1 to create a new command.
+   */
   function openCmdEditor(type, index) {
     editingCmdTarget = type;
     editingCmdIndex = index;
@@ -497,6 +502,10 @@
 
   /**
    * Open the plugin config source editor modal for an existing or new source.
+   * @param {number} index - Index into `config.pluginConfigSources`, or -1 to create a new source.
+   */
+  /**
+   * Open the plugin config source editor modal, pre-populated for an existing source or blank for a new one.
    * @param {number} index - Index into `config.pluginConfigSources`, or -1 to create a new source.
    */
   function openSourceEditor(index) {
