@@ -162,6 +162,34 @@ test('getMatchingProfiles: override applies only to matching repo', () => {
   assert.ok(ids.includes('p1'), 'p1 should remain for a repo not covered by the override');
 });
 
+test('getMatchingProfiles: extraProfiles adds a globally-disabled profile', () => {
+  // A repo override can explicitly add a profile even when that profile has
+  // enabled=false at the global level.  This is intentional: the override is an
+  // explicit opt-in that should bypass the global enabled flag.
+  const CM = makeContext();
+  const config = makeConfig({
+    repoOverrides: [{ pattern: 'org/repo', extraProfiles: ['p3'] }]
+  });
+  // p3 has enabled=false and repoPatterns=['org/*'] in makeConfig()
+  const result = CM.getMatchingProfiles(config, 'org/repo');
+  const ids = result.map(p => p.id);
+  assert.ok(ids.includes('p3'), 'disabled profile p3 should be included when explicitly listed in extraProfiles');
+});
+
+test('getMatchingProfiles: extraProfiles silently ignores unknown profile IDs', () => {
+  // If the override lists a profile ID that does not exist in config.profiles,
+  // getMatchingProfiles should not throw and should return only the profiles
+  // that were actually found.
+  const CM = makeContext();
+  const config = makeConfig({
+    repoOverrides: [{ pattern: 'org/repo', extraProfiles: ['does-not-exist'] }]
+  });
+  assert.doesNotThrow(() => CM.getMatchingProfiles(config, 'org/repo'));
+  const result = CM.getMatchingProfiles(config, 'org/repo');
+  const ids = result.map(p => p.id);
+  assert.ok(!ids.includes('does-not-exist'), 'unknown profile ID should be silently skipped');
+});
+
 // ---------------------------------------------------------------------------
 // filterCommandsByPlugins
 // ---------------------------------------------------------------------------
