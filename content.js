@@ -3,6 +3,10 @@
 // Shared selectors used by both scrapeCheckNames() and injectCheckButtons()
 // to keep status detection and DOM queries consistent in one place.
 const CHECKS_SECTION_SELECTOR = 'section[aria-label="Checks"]';
+
+// Monotonic counter for generating unique ARIA label IDs within the page,
+// avoiding the (unlikely but non-zero) collision risk of Math.random().
+let _ghbcpGroupIdCounter = 0;
 const LEGACY_CHECK_ROW_SELECTOR =
   '.merge-status-list .merge-status-item, ' +
   '.js-merge-status-check-item, ' +
@@ -797,7 +801,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     const group = document.createElement('div');
     group.className = 'ghbcp-cmd-group';
     group.setAttribute('role', 'group');
-    const groupLabelId = 'ghbcp-group-' + Math.random().toString(36).slice(2, 9);
+    const groupLabelId = 'ghbcp-group-' + (++_ghbcpGroupIdCounter);
     group.setAttribute('aria-labelledby', groupLabelId);
     const groupLabel = document.createElement('span');
     groupLabel.className = 'ghbcp-group-label';
