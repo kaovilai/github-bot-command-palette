@@ -82,6 +82,9 @@ test('scrapeCheckNames uses data-conclusion selectors for failed status in moder
   assert.match(contentJs, /\[data-conclusion="timed_out"\]/);
   assert.match(contentJs, /\[data-conclusion="action_required"\]/);
   assert.match(contentJs, /\[data-conclusion="pending"\]/);
+  // cancelled and stale must be treated as pending (amber), not passed (green)
+  assert.match(contentJs, /\[data-conclusion="cancelled"\]/);
+  assert.match(contentJs, /\[data-conclusion="stale"\]/);
 });
 
 test('shared selector constants are defined for checks section and legacy rows', () => {
@@ -140,5 +143,15 @@ test('settings command editor loads jobSource and joinMode into form fields', ()
   const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
   assert.match(settingsJs, /getElementById\('cmd-jobsource'\)\.value\s*=\s*cmd\.jobSource/);
   assert.match(settingsJs, /getElementById\('cmd-joinmode'\)\.value\s*=\s*cmd\.joinMode/);
+});
+
+test('getCheckStatus maps cancelled and stale conclusions to pending (not passed)', () => {
+  // cancelled = job manually stopped and may need re-run
+  // stale = deadline exceeded without a result
+  // Both are NOT clean pass states and should show as amber in the job picker.
+  assert.match(contentJs, /\[data-conclusion="cancelled"\]/);
+  assert.match(contentJs, /\[data-conclusion="stale"\]/);
+  // Both must appear in the pending selector (same querySelector call as [data-conclusion="pending"])
+  assert.match(contentJs, /\[data-conclusion="pending"\].*\[data-conclusion="cancelled"\].*\[data-conclusion="stale"\]|isPending.*cancelled.*stale/s);
 });
 
