@@ -346,12 +346,30 @@
       </label>
       <div id="cmd-input-fields" class="hidden">
         <div class="form-row">
+          <label class="block" for="cmd-jobsource">Job Source</label>
+          <select id="cmd-jobsource">
+            <option value="">CI checks (from PR page)</option>
+            <option value="rehearsals">Rehearsals (from REHEARSALNOTIFIER comments)</option>
+          </select>
+        </div>
+        <div class="form-row">
           <label class="block" for="cmd-jobpickerfilter">Job Picker Filter</label>
           <select id="cmd-jobpickerfilter">
             <option value="all">All jobs</option>
             <option value="failed">Failed only</option>
             <option value="pending">Pending only</option>
           </select>
+        </div>
+        <div class="form-row">
+          <label class="block" for="cmd-joinmode">Multi-job Submission</label>
+          <select id="cmd-joinmode">
+            <option value="">One command per job (default)</option>
+            <option value="single-command">All jobs in one command</option>
+          </select>
+          <small style="color:var(--text-muted);font-size:11px;margin-top:2px;display:block">
+            "One per job" posts <code>/test job-a</code> then <code>/test job-b</code>.
+            "All in one" posts <code>/test job-a job-b</code>.
+          </small>
         </div>
         <div class="form-row">
           <label class="block" for="cmd-inputplaceholder">Input Placeholder</label>
