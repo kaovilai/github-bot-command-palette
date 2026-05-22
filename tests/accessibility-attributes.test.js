@@ -189,3 +189,36 @@ test('handleShortcut suppresses keyboard shortcuts when a GHBCP overlay is open'
   assert.match(contentJs, /if.*document\.querySelector\('.ghbcp-popover, .ghbcp-job-picker'\).*return/s);
 });
 
+test('bar header robot icon has aria-hidden so screen readers skip it', () => {
+  // The robot emoji (🤖) is decorative; screen readers should skip it.
+  assert.match(contentJs, /aria-hidden="true">&#129302;/);
+});
+
+test('bar header refresh button has aria-label describing cache age', () => {
+  // The refresh button (↻) is an icon-only button; it must have an aria-label
+  // so screen reader users know what it does and how stale the cached data is.
+  assert.match(contentJs, /refreshBtn\.setAttribute\('aria-label', `Refresh plugin config \(cached \$\{ago\} min ago\)`\)/);
+});
+
+test('bar header config link has aria-label', () => {
+  // The config gear (⚙) is an icon-only link; it must have an aria-label.
+  assert.match(contentJs, /configLink\.setAttribute\('aria-label', 'Edit plugin config on GitHub'\)/);
+});
+
+test('bar header config link gear icon has aria-hidden', () => {
+  // The gear character is decorative; the accessible name comes from aria-label.
+  assert.match(contentJs, /configLink\.innerHTML.*aria-hidden="true".*&#9881;/s);
+});
+
+test('popup.js profile toggle checkboxes have aria-label', () => {
+  // Icon-free checkboxes must have an aria-label so screen reader users know
+  // which profile they are toggling.
+  assert.match(popupJs, /aria-label="Enable \$\{esc\(p\.name\)\}"/);
+});
+
+test('popup.js plugin config link has aria-label', () => {
+  // The "Edit" link in the plugin status line must have an accessible name so
+  // screen reader users are not presented with a bare "Edit" link without context.
+  assert.match(popupJs, /aria-label="Edit plugin config on GitHub"/);
+});
+
