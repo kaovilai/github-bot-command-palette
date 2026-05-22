@@ -80,6 +80,29 @@ test('globMatch: non-matching pattern returns false', () => {
   assert.equal(CM.globMatch('a/b', 'a/c'), false);
 });
 
+test('globMatch: ? matches exactly one character', () => {
+  const CM = makeContext();
+  assert.equal(CM.globMatch('org/?', 'org/a'), true);
+  assert.equal(CM.globMatch('org/?', 'org/ab'), false, '? should not match two chars');
+  assert.equal(CM.globMatch('org/?epo', 'org/repo'), true);
+});
+
+test('globMatch: . in pattern is treated as a literal dot, not a regex wildcard', () => {
+  const CM = makeContext();
+  // 'a.b' should only match 'a.b', not 'axb'
+  assert.equal(CM.globMatch('a.b', 'a.b'), true);
+  assert.equal(CM.globMatch('a.b', 'axb'), false, 'dot must be literal, not regex wildcard');
+});
+
+test('globMatch: regex special chars in pattern are treated as literals', () => {
+  const CM = makeContext();
+  // + and ( ) should not be treated as regex metacharacters
+  assert.equal(CM.globMatch('a+b', 'a+b'), true);
+  assert.equal(CM.globMatch('a+b', 'ab'), false);
+  assert.equal(CM.globMatch('a(b)', 'a(b)'), true);
+  assert.equal(CM.globMatch('a(b)', 'ab'), false);
+});
+
 // ---------------------------------------------------------------------------
 // getMatchingProfiles
 // ---------------------------------------------------------------------------
