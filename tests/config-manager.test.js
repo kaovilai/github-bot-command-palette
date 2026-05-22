@@ -463,9 +463,31 @@ test('getConfig: fills in missing pluginConfigSources when stored config lacks i
   assert.equal(config.pluginConfigSources.length, 0);
 });
 
-// ---------------------------------------------------------------------------
-// globMatch: ? wildcard and regex-special-char escaping
-// ---------------------------------------------------------------------------
+test('getConfig: fills in individual missing globalSettings keys from defaults', async () => {
+  // Simulate a stored config from an older version that has globalSettings but
+  // is missing keys added in a later schema version (e.g. pluginFilterMode).
+  const partial = {
+    version: 3,
+    profiles: [],
+    repoOverrides: [],
+    pluginConfigSources: [],
+    globalSettings: { enabled: true, confirmBeforePost: false }
+    // pluginFilterMode, autoSubmit, showOnlyFailedTests, theme, buttonPosition intentionally absent
+  };
+  const CM = makeContextWithStorage(partial);
+  const config = await CM.getConfig();
+  assert.equal(config.globalSettings.pluginFilterMode, CM.DEFAULT_CONFIG.globalSettings.pluginFilterMode,
+    'missing pluginFilterMode should be filled with its default value');
+  assert.equal(typeof config.globalSettings.autoSubmit, 'boolean',
+    'missing autoSubmit should be filled in as a boolean');
+  assert.equal(typeof config.globalSettings.showOnlyFailedTests, 'boolean',
+    'missing showOnlyFailedTests should be filled in as a boolean');
+  // User-set values must NOT be overwritten
+  assert.equal(config.globalSettings.enabled, true, 'user-set enabled=true should be preserved');
+  assert.equal(config.globalSettings.confirmBeforePost, false, 'user-set confirmBeforePost=false should be preserved');
+});
+
+
 test('globMatch: ? matches any single character', () => {
   const CM = makeContext();
   assert.equal(CM.globMatch('org/repo?', 'org/repos'), true);

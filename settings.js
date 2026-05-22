@@ -21,11 +21,13 @@
     return CM.saveConfig(config);
   }
 
+  let _statusTimer = null;
   function showStatus(msg, type) {
     const el = document.getElementById('status-msg');
     el.textContent = msg;
     el.className = 'status status-' + type;
-    setTimeout(() => { el.className = 'status'; }, 3000);
+    clearTimeout(_statusTimer);
+    _statusTimer = setTimeout(() => { el.className = 'status'; }, 3000);
   }
 
   function renderGlobalSettings() {
