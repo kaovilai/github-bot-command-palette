@@ -144,7 +144,7 @@
       Show buttons only for failed tests
     </label>
     <div class="form-row" style="margin-top:12px">
-      <label class="block">Theme</label>
+      <label class="block" for="opt-theme">Theme</label>
       <select id="opt-theme">
         <option value="auto">Auto (match GitHub)</option>
         <option value="light">Light</option>
@@ -152,7 +152,7 @@
       </select>
     </div>
     <div class="form-row">
-      <label class="block">Button Position</label>
+      <label class="block" for="opt-position">Button Position</label>
       <select id="opt-position">
         <option value="above-comment-box">Above comment box</option>
         <option value="floating">Floating</option>
@@ -167,7 +167,7 @@
       Configure where to fetch Prow plugin config. Commands are filtered based on which plugins are enabled for each repo.
     </p>
     <div class="form-row">
-      <label class="block">Plugin Filter Mode</label>
+      <label class="block" for="opt-pluginfilter">Plugin Filter Mode</label>
       <select id="opt-pluginfilter">
         <option value="disabled">Disabled (show all commands)</option>
         <option value="filter">Filter (hide commands for disabled plugins)</option>
@@ -189,46 +189,46 @@
     <div class="modal">
       <h3 id="source-modal-title">Edit Plugin Config Source</h3>
       <div class="form-row">
-        <label class="block">Name</label>
+        <label class="block" for="src-name">Name</label>
         <input type="text" id="src-name" placeholder="OpenShift CI">
       </div>
       <div class="form-row">
-        <label class="block">Format</label>
+        <label class="block" for="src-format">Format</label>
         <select id="src-format">
           <option value="sharded">Sharded (per-repo directories)</option>
           <option value="monolithic">Monolithic (single file)</option>
         </select>
       </div>
       <div class="form-row">
-        <label class="block">Config Repository (org/repo)</label>
+        <label class="block" for="src-configrepo">Config Repository (org/repo)</label>
         <input type="text" id="src-configrepo" placeholder="openshift/release">
       </div>
       <div class="form-row">
-        <label class="block">Branch</label>
+        <label class="block" for="src-branch">Branch</label>
         <input type="text" id="src-branch" placeholder="master">
       </div>
       <div class="form-row" id="src-path-row">
-        <label class="block">Base Path (sharded: directory containing org/ subdirs)</label>
+        <label class="block" for="src-pathtemplate">Base Path (sharded: directory containing org/ subdirs)</label>
         <input type="text" id="src-pathtemplate" placeholder="core-services/prow/02_config">
       </div>
       <div class="form-row hidden" id="src-file-row">
-        <label class="block">File Path (monolithic: path to plugins.yaml)</label>
+        <label class="block" for="src-filepath">File Path (monolithic: path to plugins.yaml)</label>
         <input type="text" id="src-filepath" placeholder="config/prow/plugins.yaml">
       </div>
       <div class="form-row">
-        <label class="block">Presubmits Base Path (for /test job lookup, e.g. ci-operator/jobs)</label>
+        <label class="block" for="src-presubmitspath">Presubmits Base Path (for /test job lookup, e.g. ci-operator/jobs)</label>
         <input type="text" id="src-presubmitspath" placeholder="ci-operator/jobs">
       </div>
       <div class="form-row">
-        <label class="block">Cache TTL (minutes)</label>
-        <input type="text" id="src-ttl" placeholder="60" style="width:80px">
+        <label class="block" for="src-ttl">Cache TTL (minutes)</label>
+        <input type="number" id="src-ttl" placeholder="60" min="1" max="1440" style="width:80px">
       </div>
       <label>
         <span class="toggle"><input type="checkbox" id="src-enabled"><span class="slider"></span></span>
         Enabled
       </label>
       <div class="form-row" style="margin-top:12px">
-        <label class="block">Test Fetch (enter an org/repo to test)</label>
+        <label class="block" for="src-test-repo">Test Fetch (enter an org/repo to test)</label>
         <div class="inline-fields">
           <input type="text" id="src-test-repo" placeholder="openshift/oadp-operator">
           <button class="btn btn-sm" id="btn-test-source">Test Fetch</button>
@@ -264,15 +264,15 @@
     <div class="modal">
       <h3 id="modal-title">Edit Profile</h3>
       <div class="form-row">
-        <label class="block">Profile Name</label>
+        <label class="block" for="pf-name">Profile Name</label>
         <input type="text" id="pf-name">
       </div>
       <div class="form-row">
-        <label class="block">Description</label>
+        <label class="block" for="pf-desc">Description</label>
         <input type="text" id="pf-desc">
       </div>
       <div class="form-row">
-        <label class="block">Repo Patterns (one per line, supports * glob)</label>
+        <label class="block" for="pf-patterns">Repo Patterns (one per line, supports * glob)</label>
         <textarea id="pf-patterns" placeholder="openshift/*&#10;kubernetes/*&#10;*"></textarea>
       </div>
       <label>
@@ -304,20 +304,20 @@
     <div class="modal">
       <h3>Edit Command</h3>
       <div class="form-row">
-        <label class="block">Label</label>
+        <label class="block" for="cmd-label">Label</label>
         <input type="text" id="cmd-label" placeholder="LGTM">
       </div>
       <div class="form-row">
-        <label class="block">Command</label>
+        <label class="block" for="cmd-command">Command</label>
         <input type="text" id="cmd-command" placeholder="/lgtm">
       </div>
       <div class="form-row">
-        <label class="block">Description</label>
+        <label class="block" for="cmd-description">Description</label>
         <input type="text" id="cmd-description" placeholder="Looks good to me">
       </div>
       <div class="inline-fields">
         <div class="form-row">
-          <label class="block">Style</label>
+          <label class="block" for="cmd-style">Style</label>
           <select id="cmd-style">
             <option value="neutral">Neutral</option>
             <option value="primary">Primary (Blue)</option>
@@ -327,7 +327,7 @@
           </select>
         </div>
         <div class="form-row">
-          <label class="block">Shortcut</label>
+          <label class="block" for="cmd-shortcut">Shortcut</label>
           <input type="text" id="cmd-shortcut" placeholder="Alt+L">
           <small style="color:var(--text-muted);font-size:11px;margin-top:2px;display:block">Format: Alt+L, Ctrl+Shift+R, etc. GitHub uses single-key shortcuts (L, A, R, E) — use a modifier to avoid conflicts. Active outside text fields on PR pages.</small>
         </div>
@@ -346,7 +346,7 @@
       </label>
       <div id="cmd-input-fields" class="hidden">
         <div class="form-row">
-          <label class="block">Job Picker Filter</label>
+          <label class="block" for="cmd-jobpickerfilter">Job Picker Filter</label>
           <select id="cmd-jobpickerfilter">
             <option value="all">All jobs</option>
             <option value="failed">Failed only</option>
@@ -354,11 +354,11 @@
           </select>
         </div>
         <div class="form-row">
-          <label class="block">Input Placeholder</label>
+          <label class="block" for="cmd-inputplaceholder">Input Placeholder</label>
           <input type="text" id="cmd-inputplaceholder" placeholder="username">
         </div>
         <div class="form-row">
-          <label class="block">Command Template (use {input})</label>
+          <label class="block" for="cmd-template">Command Template (use {input})</label>
           <input type="text" id="cmd-template" placeholder="/cc @{input}">
         </div>
       </div>
