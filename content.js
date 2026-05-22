@@ -794,6 +794,64 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
+   * Build the "Bot Commands" bar header element with title, optional refresh
+   * button (when cached plugin data is available), and optional config-file link.
+   * @param {Object|null} pluginData - Cached plugin data from lastPluginData, or null.
+   * @param {Function}    onRefresh  - Callback to invoke after a refresh is triggered.
+   * @returns {HTMLElement} The header div ready to be appended to the bar.
+   */
+  function buildBarHeader(pluginData, onRefresh) {
+    const header = document.createElement('div');
+    header.className = 'ghbcp-bar-header';
+
+    const headerLeft = document.createElement('span');
+    headerLeft.innerHTML = '<span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span>';
+    header.appendChild(headerLeft);
+
+    const headerRight = document.createElement('span');
+    headerRight.className = 'ghbcp-bar-actions';
+
+    if (pluginData) {
+      if (pluginData.cachedAt) {
+        const ago = Math.round((Date.now() - pluginData.cachedAt) / 60000);
+        const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
+        refreshBtn.className = 'ghbcp-refresh-btn';
+        refreshBtn.innerHTML = '&#8635;';
+        refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
+        refreshBtn.setAttribute('aria-label', `Refresh plugin config (cached ${ago} min ago)`);
+        refreshBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!CM.isContextValid()) return;
+          refreshBtn.classList.add('ghbcp-spinning');
+          try {
+            await chrome.runtime.sendMessage({ action: 'refreshPlugins', repo: currentRepo });
+          } catch (err) { /* ignore */ }
+          refreshBtn.classList.remove('ghbcp-spinning');
+          onRefresh();
+        });
+        headerRight.appendChild(refreshBtn);
+      }
+
+      if (pluginData.configFileUrl) {
+        const configLink = document.createElement('a');
+        configLink.className = 'ghbcp-config-link';
+        configLink.href = pluginData.configFileUrl;
+        configLink.target = '_blank';
+        configLink.rel = 'noopener noreferrer';
+        configLink.innerHTML = '<span aria-hidden="true">&#9881;</span>';
+        configLink.title = 'Edit plugin config on GitHub';
+        configLink.setAttribute('aria-label', 'Edit plugin config on GitHub');
+        headerRight.appendChild(configLink);
+      }
+    }
+
+    header.appendChild(headerRight);
+    return header;
+  }
+
+  /**
    * Build a DocumentFragment containing one group per matching profile plus an
    * optional "Repo Overrides" group for repo-specific extra commands.
    * @param {Object[]} profiles      - Matched, enabled profile objects.
@@ -832,54 +890,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     bar.setAttribute('role', 'toolbar');
     bar.setAttribute('aria-label', 'Bot Commands');
 
-    const header = document.createElement('div');
-    header.className = 'ghbcp-bar-header';
-
-    const headerLeft = document.createElement('span');
-    headerLeft.innerHTML = '<span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span>';
-    header.appendChild(headerLeft);
-
-    const headerRight = document.createElement('span');
-    headerRight.className = 'ghbcp-bar-actions';
-
-    if (lastPluginData) {
-      if (lastPluginData.cachedAt) {
-        const ago = Math.round((Date.now() - lastPluginData.cachedAt) / 60000);
-        const refreshBtn = document.createElement('button');
-        refreshBtn.type = 'button';
-        refreshBtn.className = 'ghbcp-refresh-btn';
-        refreshBtn.innerHTML = '&#8635;';
-        refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
-        refreshBtn.setAttribute('aria-label', `Refresh plugin config (cached ${ago} min ago)`);
-        refreshBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (!CM.isContextValid()) return;
-          refreshBtn.classList.add('ghbcp-spinning');
-          try {
-            await chrome.runtime.sendMessage({ action: 'refreshPlugins', repo: currentRepo });
-          } catch (err) { /* ignore */ }
-          refreshBtn.classList.remove('ghbcp-spinning');
-          inject();
-        });
-        headerRight.appendChild(refreshBtn);
-      }
-
-      if (lastPluginData.configFileUrl) {
-        const configLink = document.createElement('a');
-        configLink.className = 'ghbcp-config-link';
-        configLink.href = lastPluginData.configFileUrl;
-        configLink.target = '_blank';
-        configLink.rel = 'noopener noreferrer';
-        configLink.innerHTML = '<span aria-hidden="true">&#9881;</span>';
-        configLink.title = 'Edit plugin config on GitHub';
-        configLink.setAttribute('aria-label', 'Edit plugin config on GitHub');
-        headerRight.appendChild(configLink);
-      }
-    }
-
-    header.appendChild(headerRight);
-    bar.appendChild(header);
+    bar.appendChild(buildBarHeader(lastPluginData, inject));
 
     bar.appendChild(buildCommandGroups(profiles, extraCommands));
 
@@ -1078,54 +1089,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     bar.setAttribute('aria-label', 'Bot Commands');
     bar.style.margin = '0 0 8px 0';
 
-    const header = document.createElement('div');
-    header.className = 'ghbcp-bar-header';
-
-    const headerLeft = document.createElement('span');
-    headerLeft.innerHTML = '<span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span>';
-    header.appendChild(headerLeft);
-
-    const headerRight = document.createElement('span');
-    headerRight.className = 'ghbcp-bar-actions';
-
-    if (lastPluginData) {
-      if (lastPluginData.cachedAt) {
-        const ago = Math.round((Date.now() - lastPluginData.cachedAt) / 60000);
-        const refreshBtn = document.createElement('button');
-        refreshBtn.type = 'button';
-        refreshBtn.className = 'ghbcp-refresh-btn';
-        refreshBtn.innerHTML = '&#8635;';
-        refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
-        refreshBtn.setAttribute('aria-label', `Refresh plugin config (cached ${ago} min ago)`);
-        refreshBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (!CM.isContextValid()) return;
-          refreshBtn.classList.add('ghbcp-spinning');
-          try {
-            await chrome.runtime.sendMessage({ action: 'refreshPlugins', repo: currentRepo });
-          } catch (err) { /* ignore */ }
-          refreshBtn.classList.remove('ghbcp-spinning');
-          inject();
-        });
-        headerRight.appendChild(refreshBtn);
-      }
-
-      if (lastPluginData.configFileUrl) {
-        const configLink = document.createElement('a');
-        configLink.className = 'ghbcp-config-link';
-        configLink.href = lastPluginData.configFileUrl;
-        configLink.target = '_blank';
-        configLink.rel = 'noopener noreferrer';
-        configLink.innerHTML = '<span aria-hidden="true">&#9881;</span>';
-        configLink.title = 'Edit plugin config on GitHub';
-        configLink.setAttribute('aria-label', 'Edit plugin config on GitHub');
-        headerRight.appendChild(configLink);
-      }
-    }
-
-    header.appendChild(headerRight);
-    bar.appendChild(header);
+    bar.appendChild(buildBarHeader(lastPluginData, inject));
 
     bar.appendChild(buildCommandGroups(profiles, extraCommands));
 
