@@ -253,7 +253,7 @@ GHBCP.ConfigManager = (() => {
    * @returns {Object} The mutated config with `version` bumped and `_migrated: true`.
    */
   function migrateConfig(config) {
-    if (!config.version || config.version >= SCHEMA_VERSION) return config;
+    if (config.version >= SCHEMA_VERSION) return config;
     const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     const defaultMap = new Map(defaults.profiles.map(p => [p.id, p]));
     for (let i = 0; i < config.profiles.length; i++) {
@@ -307,7 +307,7 @@ GHBCP.ConfigManager = (() => {
           if (!config.repoOverrides) config.repoOverrides = [];
           if (!config.pluginConfigSources) config.pluginConfigSources = [];
           if (!config.profiles) config.profiles = [];
-          if (config.version < SCHEMA_VERSION) {
+          if (!config.version || config.version < SCHEMA_VERSION) {
             config = migrateConfig(config);
             // Save without the transient _migrated flag so the toast only shows once.
             const toSave = Object.assign({}, config);
