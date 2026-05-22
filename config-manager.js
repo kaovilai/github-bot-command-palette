@@ -292,6 +292,18 @@ GHBCP.ConfigManager = (() => {
           // Defensive: fill in missing top-level keys so callers never crash on
           // partial or manually-edited stored configs.
           if (!config.globalSettings) config.globalSettings = JSON.parse(JSON.stringify(DEFAULT_CONFIG.globalSettings));
+          // Fill in individual missing globalSettings keys so users upgrading from older
+          // configs get correct defaults rather than undefined (which can fall back to
+          // the wrong value at each call-site, e.g. pluginFilterMode → 'disabled'
+          // instead of the intended 'filter').
+          else {
+            const gsDefaults = DEFAULT_CONFIG.globalSettings;
+            for (const key of Object.keys(gsDefaults)) {
+              if (!(key in config.globalSettings)) {
+                config.globalSettings[key] = gsDefaults[key];
+              }
+            }
+          }
           if (!config.repoOverrides) config.repoOverrides = [];
           if (!config.pluginConfigSources) config.pluginConfigSources = [];
           if (!config.profiles) config.profiles = [];
