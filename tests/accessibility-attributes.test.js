@@ -255,3 +255,18 @@ test('settings.html preset selector has aria-label for screen readers', () => {
   assert.match(settingsHtml, /id="preset-select"[^>]*aria-label=|aria-label=[^>]*id="preset-select"/);
 });
 
+test('settings.html modal dialogs have role=dialog, aria-modal, and aria-labelledby', () => {
+  // Without role="dialog" and aria-modal="true", screen readers do not treat
+  // these overlays as modal dialogs and may allow the user to interact with
+  // content behind them.  aria-labelledby gives each dialog an accessible name.
+  const settingsHtml = fs.readFileSync(path.resolve(__dirname, '..', 'settings.html'), 'utf8');
+  assert.match(settingsHtml, /id="source-modal-title".*role="dialog"|role="dialog"[^>]*aria-labelledby="source-modal-title"/s);
+  assert.match(settingsHtml, /id="modal-title".*role="dialog"|role="dialog"[^>]*aria-labelledby="modal-title"/s);
+  assert.match(settingsHtml, /id="cmd-modal-title".*role="dialog"|role="dialog"[^>]*aria-labelledby="cmd-modal-title"/s);
+  // Each dialog must also have aria-modal="true"
+  assert.ok(
+    (settingsHtml.match(/role="dialog"[^>]*aria-modal="true"|aria-modal="true"[^>]*role="dialog"/g) || []).length >= 3,
+    'Expected at least 3 modal dialogs with aria-modal="true"'
+  );
+});
+
