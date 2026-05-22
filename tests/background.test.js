@@ -106,6 +106,29 @@ test('buildConfigFileUrl: sharded source produces correct path', () => {
   assert.equal(url, 'https://github.com/org/config/blob/main/config/myorg/myrepo/_pluginconfig.yaml');
 });
 
+test('extractPlugins: deduplicates when plugins section and top-level sections both match', () => {
+  // The `approve` plugin could appear in both parsed.plugins[repo] (Method 1) and
+  // parsed.approve[].repos (Method 2).  The Set-based accumulator must deduplicate
+  // so that the returned array contains `approve` exactly once.
+  const yaml =
+    'plugins:\n' +
+    '  org/repo:\n' +
+    '    - approve\n' +
+    'approve:\n' +
+    '  - repos:\n' +
+    '      - org/repo\n';
+  const result = extractPlugins(yaml, 'org/repo', 'org');
+  const approveCount = result.filter(p => p === 'approve').length;
+  assert.equal(approveCount, 1, 'approve should appear exactly once despite matching both sections');
+});
+
+test('extractPlugins: YAML that parses to a non-object (e.g. a plain string) returns []', () => {
+  // jsyaml.load("just a string") returns a string, not an object.
+  // extractPlugins must guard against non-object parsed values.
+  const result = extractPlugins('just a plain string', 'org/repo', 'org');
+  assert.equal(result.length, 0);
+});
+
 test('buildConfigFileUrl: multiple trailing slashes in pathTemplate are stripped', () => {
   const source = { format: 'sharded', configRepo: 'org/config', branch: 'main', pathTemplate: 'config//' };
   const url = buildConfigFileUrl(source, 'myorg', 'myrepo');
