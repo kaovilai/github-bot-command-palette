@@ -28,6 +28,13 @@ test('content script makes toast announcements available to assistive tech', () 
   assert.match(contentJs, /toast\.setAttribute\('aria-atomic', 'true'\)/);
 });
 
+test('success/warning toasts use role=status to avoid interrupting screen reader', () => {
+  // role="alert" implies aria-live="assertive" and interrupts the current screen reader task.
+  // role="status" implies aria-live="polite" and waits for the current task to finish.
+  // Only error toasts should interrupt; success/warning toasts should use role="status".
+  assert.match(contentJs, /toast\.setAttribute\('role', 'status'\)/);
+});
+
 test('job picker count span has aria-live for screen reader announcements', () => {
   assert.match(contentJs, /countSpan\.setAttribute\('aria-live', 'polite'\)/);
   assert.match(contentJs, /countSpan\.setAttribute\('aria-atomic', 'true'\)/);
