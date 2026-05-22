@@ -37,7 +37,7 @@ const GHBCP_PROW_PLUGIN_MAP = {
     description: 'Override failed checks'
   },
   'wip': {
-    commands: ['/wip', '/hold'],
+    commands: ['/wip'],
     description: 'Work in progress'
   },
   'retitle': {
