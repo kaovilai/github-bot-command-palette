@@ -506,3 +506,115 @@ test('filterCommandsByPlugins: mode=filter on profile with no commands returns e
   assert.ok(Array.isArray(result[0].checkCommands), 'checkCommands should be an array');
   assert.equal(result[0].checkCommands.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// isContextValid
+// ---------------------------------------------------------------------------
+test('isContextValid: returns true when chrome.runtime.id is set', () => {
+  const CM = makeContext();
+  assert.equal(CM.isContextValid(), true);
+});
+
+test('isContextValid: returns false when chrome.runtime.id is falsy', () => {
+  const ctx = vm.createContext({
+    window: { GHBCP: {} },
+    crypto: { randomUUID: () => 'test-uuid' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: { runtime: { id: '', lastError: null }, storage: { sync: { get: (_k, cb) => cb({}), set: (_o, cb) => cb && cb() } } }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  const CM = ctx.window.GHBCP.ConfigManager;
+  assert.equal(CM.isContextValid(), false);
+});
+
+test('isContextValid: returns false when chrome.runtime throws', () => {
+  const ctx = vm.createContext({
+    window: { GHBCP: {} },
+    crypto: { randomUUID: () => 'test-uuid' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      get runtime() { throw new Error('Extension context invalidated'); },
+      storage: { sync: { get: (_k, cb) => cb({}), set: (_o, cb) => cb && cb() } }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  const CM = ctx.window.GHBCP.ConfigManager;
+  assert.equal(CM.isContextValid(), false);
+});
+
+// ---------------------------------------------------------------------------
+// saveConfig
+// ---------------------------------------------------------------------------
+test('saveConfig: writes config to chrome.storage.sync', async () => {
+  let saved = null;
+  const ctx = vm.createContext({
+    window: { GHBCP: {} },
+    crypto: { randomUUID: () => 'test-uuid' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { id: 'fake-id', lastError: null },
+      storage: {
+        sync: {
+          get: (_k, cb) => cb({}),
+          set: (obj, cb) => { saved = obj; cb && cb(); }
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  const CM = ctx.window.GHBCP.ConfigManager;
+  const config = { version: 2, profiles: [], globalSettings: {}, repoOverrides: [], pluginConfigSources: [] };
+  await CM.saveConfig(config);
+  assert.deepEqual(saved[CM.STORAGE_KEY], config);
+});
+
+test('saveConfig: rejects when chrome.storage.sync.set fails', async () => {
+  const ctx = vm.createContext({
+    window: { GHBCP: {} },
+    crypto: { randomUUID: () => 'test-uuid' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { id: 'fake-id', get lastError() { return { message: 'quota exceeded' }; } },
+      storage: {
+        sync: {
+          get: (_k, cb) => cb({}),
+          set: (_obj, cb) => cb && cb()
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  const CM = ctx.window.GHBCP.ConfigManager;
+  const err = await CM.saveConfig({ version: 2, profiles: [] }).then(() => null, e => e);
+  assert.ok(err && err.message === 'quota exceeded', 'should reject with lastError message');
+});
+
+test('saveConfig: no-ops (resolves) when context is invalid', async () => {
+  const ctx = vm.createContext({
+    window: { GHBCP: {} },
+    crypto: { randomUUID: () => 'test-uuid' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: { runtime: { id: '', lastError: null }, storage: { sync: { get: (_k, cb) => cb({}), set: (_o, cb) => cb && cb() } } }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  const CM = ctx.window.GHBCP.ConfigManager;
+  await assert.doesNotReject(() => CM.saveConfig({ version: 2 }));
+});
+
+// ---------------------------------------------------------------------------
+// resetToDefaults
+// ---------------------------------------------------------------------------
+test('resetToDefaults: returns a config equal to DEFAULT_CONFIG', async () => {
+  const CM = makeContext();
+  const result = await CM.resetToDefaults();
+  assert.equal(result.version, CM.DEFAULT_CONFIG.version);
+  assert.ok(Array.isArray(result.profiles));
+  assert.ok(result.globalSettings);
+});
+
+test('resetToDefaults: returned config is a deep copy (not the same reference as DEFAULT_CONFIG)', async () => {
+  const CM = makeContext();
+  const result = await CM.resetToDefaults();
+  result.profiles.push({ id: 'extra' });
+  assert.ok(!CM.DEFAULT_CONFIG.profiles.some(p => p.id === 'extra'), 'DEFAULT_CONFIG should not be mutated');
+});
