@@ -1245,6 +1245,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
+          // Skip our own injected elements — their role="dialog" and textarea
+          // contents must not retrigger injection, or the picker/popover would
+          // be removed 50 ms after opening by the debounced inject() call.
+          const cls = typeof node.className === 'string' ? node.className : '';
+          if (/\bghbcp-/.test(cls)) continue;
+
           if (node.querySelector && (
             node.querySelector('textarea') ||
             node.querySelector('.merge-status-list') ||
