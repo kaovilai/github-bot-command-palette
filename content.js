@@ -771,6 +771,10 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * Trap keyboard Tab focus within `container`. Shift+Tab from the first
    * focusable element wraps to the last, and Tab from the last wraps to the
    * first. `firstFocusable` is always treated as focusable even when hidden.
+   * @param {HTMLElement} container     - The dialog or overlay element to trap focus within.
+   * @param {HTMLElement} firstFocusable - The element that is always considered focusable
+   *   (e.g. the search input), even when its offsetParent is null.
+   * @returns {void}
    */
   function addFocusTrap(container, firstFocusable) {
     container.addEventListener('keydown', (e) => {
@@ -1181,53 +1185,53 @@ const LEGACY_CHECK_ROW_SELECTOR =
    */
   async function inject() {
     try {
-    if (!CM.isContextValid()) return;
-    if (!isPRPage()) return;
+      if (!CM.isContextValid()) return;
+      if (!isPRPage()) return;
 
-    config = await CM.getConfig();
-    if (config._migrated) {
-      showToast('Bot Commands updated to v' + config.version + ' — built-in profiles refreshed', 'success');
-      delete config._migrated;
-    }
-    if (!config.globalSettings.enabled) return;
+      config = await CM.getConfig();
+      if (config._migrated) {
+        showToast('Bot Commands updated to v' + config.version + ' — built-in profiles refreshed', 'success');
+        delete config._migrated;
+      }
+      if (!config.globalSettings.enabled) return;
 
-    currentRepo = detectRepo();
-    if (!currentRepo) return;
+      currentRepo = detectRepo();
+      if (!currentRepo) return;
 
-    let profiles = CM.getMatchingProfiles(config, currentRepo);
-    if (profiles.length === 0) return;
+      let profiles = CM.getMatchingProfiles(config, currentRepo);
+      if (profiles.length === 0) return;
 
-    const filterMode = config.globalSettings.pluginFilterMode || 'disabled';
-    const hasSources = config.pluginConfigSources && config.pluginConfigSources.some(s => s.enabled);
+      const filterMode = config.globalSettings.pluginFilterMode || 'disabled';
+      const hasSources = config.pluginConfigSources && config.pluginConfigSources.some(s => s.enabled);
 
-    if (filterMode !== 'disabled' && hasSources && CM.isContextValid()) {
-      try {
-        const response = await chrome.runtime.sendMessage({
-          action: 'getEnabledPlugins',
-          repo: currentRepo
-        });
-        if (response) {
-          lastPluginData = response;
-          if (response.plugins) {
-            profiles = CM.filterCommandsByPlugins(profiles, response.plugins, filterMode);
+      if (filterMode !== 'disabled' && hasSources && CM.isContextValid()) {
+        try {
+          const response = await chrome.runtime.sendMessage({
+            action: 'getEnabledPlugins',
+            repo: currentRepo
+          });
+          if (response) {
+            lastPluginData = response;
+            if (response.plugins) {
+              profiles = CM.filterCommandsByPlugins(profiles, response.plugins, filterMode);
+            }
           }
+        } catch (e) {
+          lastPluginData = null;
         }
-      } catch (e) {
+      } else {
         lastPluginData = null;
       }
-    } else {
-      lastPluginData = null;
-    }
 
-    lastPresubmitJobs = await fetchPresubmitJobs();
+      lastPresubmitJobs = await fetchPresubmitJobs();
 
-    const extraCommands = CM.getExtraCommands(config, currentRepo);
+      const extraCommands = CM.getExtraCommands(config, currentRepo);
 
-    injectGlobalCommandBar(profiles, extraCommands);
-    injectCheckButtons(profiles);
-    injectReviewToolbar(profiles, extraCommands);
-    injectReviewDialogBar(profiles, extraCommands);
-    registerShortcuts(profiles);
+      injectGlobalCommandBar(profiles, extraCommands);
+      injectCheckButtons(profiles);
+      injectReviewToolbar(profiles, extraCommands);
+      injectReviewDialogBar(profiles, extraCommands);
+      registerShortcuts(profiles);
     } catch (e) {
       console.error('[GHBCP] inject() failed:', e);
     }

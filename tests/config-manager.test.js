@@ -791,3 +791,66 @@ test('getExtraCommands: does not throw when config.repoOverrides is missing', ()
   const result = CM.getExtraCommands(config, 'org/repo');
   assert.equal(result.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// migrateConfig: custom (non-built-in) profiles are preserved
+// ---------------------------------------------------------------------------
+test('migrateConfig: custom profiles (not in BUILTIN_PROFILE_IDS) are preserved unchanged', async () => {
+  // A user may have created a custom profile with a non-built-in id.
+  // Migration must not remove or overwrite it.
+  const CM = makeContextWithStorage(null);
+  const v1config = {
+    version: 1,
+    profiles: [
+      {
+        id: 'profile-custom-user',
+        name: 'My Custom Profile',
+        enabled: true,
+        repoPatterns: ['myorg/*'],
+        globalCommands: [{ id: 'c1', label: 'Custom', command: '/custom', style: 'neutral' }],
+        checkCommands: [],
+        dynamicCommands: []
+      }
+    ],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v1config);
+  const config = await CM2.getConfig();
+  const custom = config.profiles.find(p => p.id === 'profile-custom-user');
+  assert.ok(custom, 'custom profile should be preserved after migration');
+  assert.equal(custom.name, 'My Custom Profile', 'custom profile name should be unchanged');
+  assert.equal(custom.globalCommands.length, 1, 'custom profile commands should be preserved');
+  assert.equal(custom.globalCommands[0].command, '/custom');
+});
+
+test('migrateConfig: migration adds built-in profiles without removing existing custom profiles', async () => {
+  // After migration, both the user-created custom profile and the new built-in
+  // profiles should coexist.
+  const CM = makeContextWithStorage(null);
+  const v1config = {
+    version: 1,
+    profiles: [
+      {
+        id: 'profile-my-org-ci',
+        name: 'My Org CI',
+        enabled: true,
+        repoPatterns: ['myorg/*'],
+        globalCommands: [],
+        checkCommands: [],
+        dynamicCommands: []
+      }
+    ],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v1config);
+  const config = await CM2.getConfig();
+  const custom = config.profiles.find(p => p.id === 'profile-my-org-ci');
+  assert.ok(custom, 'custom profile should survive migration');
+  // At least one built-in profile should also be present
+  const hasBuiltin = config.profiles.some(p => p.id === 'profile-tide-prow-universal');
+  assert.ok(hasBuiltin, 'built-in profiles should be added alongside the custom profile');
+});
