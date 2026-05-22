@@ -222,3 +222,17 @@ test('popup.js plugin config link has aria-label', () => {
   assert.match(popupJs, /aria-label="Edit plugin config on GitHub"/);
 });
 
+test('popup.html robot icon has aria-hidden so screen readers skip it', () => {
+  // The robot emoji (🤖) in the popup header is decorative; screen readers
+  // should skip it to avoid announcing "robot face" before the heading.
+  const popupHtml = fs.readFileSync(path.resolve(__dirname, '..', 'popup.html'), 'utf8');
+  assert.match(popupHtml, /aria-hidden="true">&#129302;</);
+});
+
+test('settings.html preset selector has aria-label for screen readers', () => {
+  // The "Add from Preset..." <select> has no associated <label> element;
+  // aria-label gives screen reader users the context they need.
+  const settingsHtml = fs.readFileSync(path.resolve(__dirname, '..', 'settings.html'), 'utf8');
+  assert.match(settingsHtml, /id="preset-select"[^>]*aria-label=|aria-label=[^>]*id="preset-select"/);
+});
+
