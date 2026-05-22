@@ -129,3 +129,16 @@ test('command groups have role=group and aria-labelledby for screen reader navig
   assert.match(contentJs, /groupLabel\.id = groupLabelId/);
 });
 
+test('settings command editor saves jobSource and joinMode fields', () => {
+  const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
+  // Both fields must be read from the form and saved in the command object
+  assert.match(settingsJs, /jobSource:\s*document\.getElementById\('cmd-jobsource'\)\.value/);
+  assert.match(settingsJs, /joinMode:\s*document\.getElementById\('cmd-joinmode'\)\.value/);
+});
+
+test('settings command editor loads jobSource and joinMode into form fields', () => {
+  const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
+  assert.match(settingsJs, /getElementById\('cmd-jobsource'\)\.value\s*=\s*cmd\.jobSource/);
+  assert.match(settingsJs, /getElementById\('cmd-joinmode'\)\.value\s*=\s*cmd\.joinMode/);
+});
+
