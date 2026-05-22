@@ -17,7 +17,8 @@
         { "id": "cmd-retest", "label": "Retest", "command": "/retest", "description": "Retest all failed tests", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "Alt+R" },
         { "id": "cmd-retest-required", "label": "Retest Required", "command": "/retest-required", "description": "Retest required tests", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
         { "id": "cmd-cc", "label": "CC User", "command": "/cc", "description": "CC a user", "style": "neutral", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "username", "commandTemplate": "/cc @{input}", "shortcut": "" },
-        { "id": "cmd-uncc", "label": "UnCC User", "command": "/uncc", "description": "Remove CC", "style": "neutral", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "username", "commandTemplate": "/uncc @{input}", "shortcut": "" }
+        { "id": "cmd-uncc", "label": "UnCC User", "command": "/uncc", "description": "Remove CC", "style": "neutral", "requireConfirm": false, "hasInput": true, "inputPlaceholder": "username", "commandTemplate": "/uncc @{input}", "shortcut": "" },
+        { "id": "cmd-ok-to-test", "label": "OK to Test", "command": "/ok-to-test", "description": "Allow CI testing for external contributors", "style": "success", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }
       ],
       "checkCommands": [
         { "id": "cmd-retest-this", "label": "Retest This", "command": "/retest", "description": "Retest this specific check", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" }

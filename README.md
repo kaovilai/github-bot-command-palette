@@ -68,7 +68,7 @@ Bot profile detail view with all commands, styles, and shortcuts:
 
 | Profile | Match Pattern | Commands |
 |---------|--------------|----------|
-| Tide/Prow — Universal | `*` (all repos) | `/lgtm`, `/approve`, `/hold`, `/retest`, `/cc` |
+| Tide/Prow — Universal | `*` (all repos) | `/lgtm`, `/approve`, `/hold`, `/retest`, `/cc`, `/ok-to-test` |
 | Prow — OpenShift Release | `openshift/release` | `/pj-rehearse ack`, `/pj-rehearse <test>` |
 | Mergify | `*` (disabled by default) | `/mergify requeue`, `/mergify refresh` |
 | Changesets Bot | `*` (disabled by default) | `/changeset <type>` |

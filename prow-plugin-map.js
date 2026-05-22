@@ -13,7 +13,7 @@ const GHBCP_PROW_PLUGIN_MAP = {
     description: 'Hold/unhold PR merging'
   },
   'trigger': {
-    commands: ['/retest', '/retest-required', '/test'],
+    commands: ['/retest', '/retest-required', '/test', '/ok-to-test'],
     description: 'Trigger CI tests'
   },
   'assign': {
