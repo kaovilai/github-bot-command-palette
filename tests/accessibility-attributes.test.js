@@ -24,6 +24,8 @@ test('content script adds accessibility attributes for injected picker and popov
 test('content script makes toast announcements available to assistive tech', () => {
   assert.match(contentJs, /toast\.setAttribute\('role', 'alert'\)/);
   assert.match(contentJs, /toast\.setAttribute\('aria-live', 'polite'\)/);
+  // aria-atomic ensures the full toast message is announced at once (not word-by-word)
+  assert.match(contentJs, /toast\.setAttribute\('aria-atomic', 'true'\)/);
 });
 
 test('job picker count span has aria-live for screen reader announcements', () => {
@@ -169,5 +171,21 @@ test('getCheckStatus maps cancelled and stale conclusions to pending (not passed
   assert.match(contentJs, /\[data-conclusion="stale"\]/);
   // Both must appear in the pending selector (same querySelector call as [data-conclusion="pending"])
   assert.match(contentJs, /\[data-conclusion="pending"\].*\[data-conclusion="cancelled"\].*\[data-conclusion="stale"\]|isPending.*cancelled.*stale/s);
+});
+
+test('SPA navigation event listeners are registered for GitHub turbo, pjax, popstate and hashchange', () => {
+  // GitHub uses Turbo (formerly Turbolinks) and pjax for SPA navigation.
+  // Without these listeners the extension fails to re-inject after page transitions.
+  assert.match(contentJs, /document\.addEventListener\('turbo:load'/);
+  assert.match(contentJs, /document\.addEventListener\('pjax:end'/);
+  assert.match(contentJs, /window\.addEventListener\('popstate'/);
+  assert.match(contentJs, /window\.addEventListener\('hashchange'/);
+});
+
+test('handleShortcut suppresses keyboard shortcuts when a GHBCP overlay is open', () => {
+  // Prevents accidental slash-command posting while the user interacts with the
+  // job-picker dialog or input popover that the extension itself rendered.
+  assert.match(contentJs, /document\.querySelector\('.ghbcp-popover, .ghbcp-job-picker'\)/);
+  assert.match(contentJs, /if.*document\.querySelector\('.ghbcp-popover, .ghbcp-job-picker'\).*return/s);
 });
 
