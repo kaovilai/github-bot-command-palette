@@ -663,3 +663,83 @@ test('resetToDefaults: returned config is a deep copy (not the same reference as
   result.profiles.push({ id: 'extra' });
   assert.ok(!CM.DEFAULT_CONFIG.profiles.some(p => p.id === 'extra'), 'DEFAULT_CONFIG should not be mutated');
 });
+
+// ---------------------------------------------------------------------------
+// createCommand
+// ---------------------------------------------------------------------------
+test('createCommand: returns object with required fields and defaults', () => {
+  const CM = makeContext();
+  const c = CM.createCommand('LGTM', '/lgtm', 'success');
+  assert.equal(c.label, 'LGTM');
+  assert.equal(c.command, '/lgtm');
+  assert.equal(c.style, 'success');
+  assert.equal(c.requireConfirm, false);
+  assert.equal(c.hasInput, false);
+  assert.equal(c.hasJobPicker, false);
+  assert.equal(c.jobPickerFilter, 'all');
+  assert.equal(c.joinMode, '');
+  assert.equal(c.inputPlaceholder, '');
+  assert.equal(c.commandTemplate, '');
+  assert.equal(c.shortcut, '');
+  assert.ok(typeof c.id === 'string' && c.id.length > 0, 'id should be a non-empty string');
+});
+
+test('createCommand: description defaults to the command string when not provided', () => {
+  const CM = makeContext();
+  const c = CM.createCommand('Label', '/label', 'neutral');
+  assert.equal(c.description, '/label');
+});
+
+test('createCommand: opts override defaults', () => {
+  const CM = makeContext();
+  const c = CM.createCommand('Test', '/test', 'primary', {
+    description: 'Run a CI job',
+    shortcut: 'Alt+T',
+    requireConfirm: true,
+    hasJobPicker: true,
+    commandTemplate: '/test {input}',
+    jobPickerFilter: 'failed'
+  });
+  assert.equal(c.description, 'Run a CI job');
+  assert.equal(c.shortcut, 'Alt+T');
+  assert.equal(c.requireConfirm, true);
+  assert.equal(c.hasJobPicker, true);
+  assert.equal(c.commandTemplate, '/test {input}');
+  assert.equal(c.jobPickerFilter, 'failed');
+});
+
+test('createCommand: style defaults to neutral when not provided', () => {
+  const CM = makeContext();
+  const c = CM.createCommand('Hold', '/hold', '');
+  assert.equal(c.style, 'neutral');
+});
+
+// ---------------------------------------------------------------------------
+// getMatchingProfiles / getExtraCommands: defensive against missing arrays
+// ---------------------------------------------------------------------------
+test('getMatchingProfiles: does not throw when config.repoOverrides is missing', () => {
+  const CM = makeContext();
+  const config = {
+    profiles: [{ id: 'p1', name: 'P1', enabled: true, repoPatterns: ['*'], globalCommands: [], checkCommands: [] }]
+    // repoOverrides intentionally absent
+  };
+  assert.doesNotThrow(() => CM.getMatchingProfiles(config, 'org/repo'));
+  const result = CM.getMatchingProfiles(config, 'org/repo');
+  assert.equal(result.length, 1);
+});
+
+test('getMatchingProfiles: does not throw when config.profiles is missing', () => {
+  const CM = makeContext();
+  const config = { repoOverrides: [] };
+  assert.doesNotThrow(() => CM.getMatchingProfiles(config, 'org/repo'));
+  const result = CM.getMatchingProfiles(config, 'org/repo');
+  assert.equal(result.length, 0);
+});
+
+test('getExtraCommands: does not throw when config.repoOverrides is missing', () => {
+  const CM = makeContext();
+  const config = { profiles: [] };
+  assert.doesNotThrow(() => CM.getExtraCommands(config, 'org/repo'));
+  const result = CM.getExtraCommands(config, 'org/repo');
+  assert.equal(result.length, 0);
+});

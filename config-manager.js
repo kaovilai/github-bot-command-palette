@@ -362,12 +362,12 @@ GHBCP.ConfigManager = (() => {
    * @returns {Object[]} Array of matched, filtered profile objects.
    */
   function getMatchingProfiles(config, repoFullName) {
-    const profiles = config.profiles.filter(p => {
+    const profiles = (config.profiles || []).filter(p => {
       if (!p.enabled) return false;
       return p.repoPatterns.some(pat => globMatch(pat, repoFullName));
     });
 
-    const overrides = config.repoOverrides.filter(o => globMatch(o.pattern, repoFullName));
+    const overrides = (config.repoOverrides || []).filter(o => globMatch(o.pattern, repoFullName));
 
     for (const override of overrides) {
       if (override.disabledProfiles) {
@@ -397,7 +397,7 @@ GHBCP.ConfigManager = (() => {
    * @returns {Object[]} Flat array of extra command objects.
    */
   function getExtraCommands(config, repoFullName) {
-    const overrides = config.repoOverrides.filter(o => globMatch(o.pattern, repoFullName));
+    const overrides = (config.repoOverrides || []).filter(o => globMatch(o.pattern, repoFullName));
     const cmds = [];
     for (const o of overrides) {
       if (o.extraCommands) cmds.push(...o.extraCommands);
