@@ -722,6 +722,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @param {HTMLElement}            overlay   - The overlay element to attach.
    * @param {HTMLElement|null}       anchorBtn - Button that triggered the overlay, or null.
    */
+  /**
+   * Attach a floating overlay element to the DOM, anchored to `anchorBtn` when
+   * possible. When no anchor button is present (keyboard-shortcut path), the
+   * overlay is appended to the `.ghbcp-command-bar` or `document.body`.
+   * @param {HTMLElement}          overlay   - The overlay element to attach.
+   * @param {HTMLElement|null}     anchorBtn - Button that triggered the overlay, or null.
+   */
   function attachOverlay(overlay, anchorBtn) {
     if (anchorBtn && anchorBtn.parentElement) {
       anchorBtn.parentElement.style.position = 'relative';
@@ -1053,6 +1060,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * "Files changed" tab.  No-ops when the current page is not the files tab or
    * when no matching `/lgtm` or `/approve` commands exist in the active profiles
    * or repo-level extra commands.
+   * @param {Object[]} profiles      - Matched, enabled profile objects.
+   * @param {Object[]} extraCommands - Additional commands from repo overrides.
+   */
+  /**
+   * Inject approve/LGTM buttons into the review-changes toolbar on the Files tab.
+   * Only injects when on a `/files` tab or when the diff container is present.
+   * Filters `profiles` and `extraCommands` to `/lgtm` and `/approve` only.
    * @param {Object[]} profiles      - Matched, enabled profile objects.
    * @param {Object[]} extraCommands - Additional commands from repo overrides.
    */

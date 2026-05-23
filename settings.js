@@ -221,6 +221,10 @@
   }
 
   /** Re-render the dynamic commands list inside the profile editor, wiring delete buttons. */
+  /**
+   * Re-render the dynamic commands list inside the profile editor, wiring delete buttons.
+   * Dynamic commands use a JS expression evaluated at click time rather than a fixed command string.
+   */
   function renderDynamicCmds() {
     const container = document.getElementById('pf-dynamic-cmds');
     container.innerHTML = '';
