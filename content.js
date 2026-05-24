@@ -66,7 +66,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       btn.classList.add('ghbcp-btn-plugin-disabled');
     }
     btn.textContent = command.label;
-    let tooltip = command.description + (command.shortcut ? ` (${command.shortcut})` : '');
+    let tooltip = (command.description || command.command || command.label || '') + (command.shortcut ? ` (${command.shortcut})` : '');
     if (command._pluginDisabled) {
       tooltip += ' — plugin not enabled for this repo';
     }

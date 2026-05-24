@@ -270,3 +270,18 @@ test('settings.html modal dialogs have role=dialog, aria-modal, and aria-labelle
   );
 });
 
+test('createButton tooltip/aria-label falls back to command then label when description is empty', () => {
+  // When a user saves a command without a description, the button title and
+  // aria-label must not be empty.  The fallback chain ensures the tooltip is
+  // always meaningful: description → command text → label → ''.
+  assert.match(contentJs, /command\.description \|\| command\.command \|\| command\.label/);
+});
+
+test('settings command editor defaults description to command text when left empty', () => {
+  // If the description field is blank on save, fall back to the command string
+  // so the button tooltip/aria-label is never empty for user-created commands.
+  const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
+  assert.match(settingsJs,
+    /getElementById\('cmd-description'\)\.value\.trim\(\) \|\| document\.getElementById\('cmd-command'\)\.value\.trim\(\)/);
+});
+

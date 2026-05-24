@@ -345,7 +345,7 @@
         : generateId(),
       label: document.getElementById('cmd-label').value.trim(),
       command: document.getElementById('cmd-command').value.trim(),
-      description: document.getElementById('cmd-description').value.trim(),
+      description: document.getElementById('cmd-description').value.trim() || document.getElementById('cmd-command').value.trim(),
       style: document.getElementById('cmd-style').value,
       shortcut: document.getElementById('cmd-shortcut').value.trim(),
       requireConfirm: document.getElementById('cmd-confirm').checked,
