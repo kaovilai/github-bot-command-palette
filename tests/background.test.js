@@ -28,7 +28,7 @@ const stripped = backgroundSrc
 const ctx = { jsyaml, console };
 vm.runInNewContext(stripped, ctx);
 
-const { extractPlugins, buildConfigFileUrl } = ctx;
+const { extractPlugins, extractOrgPlugins, buildConfigFileUrl } = ctx;
 
 // ── extractPlugins ────────────────────────────────────────────────────────────
 
@@ -134,4 +134,86 @@ test('buildConfigFileUrl: multiple trailing slashes in pathTemplate are stripped
   const url = buildConfigFileUrl(source, 'myorg', 'myrepo');
   assert.ok(!url.includes('//config'), `URL should not contain double slash before org: ${url}`);
   assert.equal(url, 'https://github.com/org/config/blob/main/config/myorg/myrepo/_pluginconfig.yaml');
+});
+
+// ── extractOrgPlugins ────────────────────────────────────────────────────────
+
+test('extractOrgPlugins: empty YAML returns []', () => {
+  assert.equal(extractOrgPlugins('', 'org/repo', 'org').length, 0);
+});
+
+test('extractOrgPlugins: extracts org-level default plugins', () => {
+  const yaml =
+    'plugins:\n' +
+    '  org:\n' +
+    '    plugins:\n' +
+    '      - trigger\n' +
+    '      - hold\n' +
+    '      - approve\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('trigger'));
+  assert.ok(result.includes('hold'));
+  assert.ok(result.includes('approve'));
+});
+
+test('extractOrgPlugins: returns [] when repo is in excluded_repos', () => {
+  const yaml =
+    'plugins:\n' +
+    '  org:\n' +
+    '    excluded_repos:\n' +
+    '      - org/repo\n' +
+    '    plugins:\n' +
+    '      - trigger\n' +
+    '      - hold\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.equal(result.length, 0);
+});
+
+test('extractOrgPlugins: non-excluded repo gets org defaults', () => {
+  const yaml =
+    'plugins:\n' +
+    '  org:\n' +
+    '    excluded_repos:\n' +
+    '      - org/other-repo\n' +
+    '    plugins:\n' +
+    '      - trigger\n' +
+    '      - lgtm\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('trigger'));
+  assert.ok(result.includes('lgtm'));
+});
+
+test('extractOrgPlugins: also picks up top-level plugin sections', () => {
+  const yaml =
+    'approve:\n' +
+    '  - repos:\n' +
+    '      - org/repo\n' +
+    '    require_self_approval: false\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('approve'));
+});
+
+test('extractOrgPlugins: merges plugins section and top-level sections', () => {
+  const yaml =
+    'plugins:\n' +
+    '  org:\n' +
+    '    plugins:\n' +
+    '      - trigger\n' +
+    'lgtm:\n' +
+    '  - repos:\n' +
+    '      - org\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('trigger'));
+  assert.ok(result.includes('lgtm'));
+});
+
+test('extractOrgPlugins: org key with plain list format (no nested plugins)', () => {
+  const yaml =
+    'plugins:\n' +
+    '  org:\n' +
+    '    - approve\n' +
+    '    - hold\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('approve'));
+  assert.ok(result.includes('hold'));
 });

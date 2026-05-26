@@ -139,8 +139,19 @@ async function getPluginsFromSource(source, org, repoName, fullRepo, forceRefres
 
   let plugins;
   try {
-    const yamlText = await fetchYaml(source, org, repoName);
-    plugins = extractPlugins(yamlText, fullRepo, org);
+    const repoYaml = await fetchYaml(source, org, repoName);
+    const repoPlugins = extractPlugins(repoYaml, fullRepo, org);
+
+    let orgPlugins = [];
+    if (source.format === 'sharded') {
+      try {
+        const orgYaml = await fetchOrgYaml(source, org);
+        orgPlugins = extractOrgPlugins(orgYaml, fullRepo, org);
+      } catch (_) { /* org-level config is optional */ }
+    }
+
+    const merged = new Set([...orgPlugins, ...repoPlugins]);
+    plugins = Array.from(merged);
   } catch (err) {
     sourceCache.repos[fullRepo] = { fetchedAt: Date.now(), plugins: null, error: err.message };
     cache[source.id] = sourceCache;
@@ -182,6 +193,66 @@ async function fetchYaml(source, org, repoName) {
     throw new Error(`HTTP ${resp.status} fetching ${url}`);
   }
   return resp.text();
+}
+
+/**
+ * Fetch the org-level plugin config YAML for sharded sources.
+ * @param {Object} source - Plugin config source descriptor.
+ * @param {string} org    - GitHub organisation name.
+ * @returns {Promise<string>} Raw YAML text.
+ * @throws {Error} When the HTTP response is not OK.
+ */
+async function fetchOrgYaml(source, org) {
+  const basePath = source.pathTemplate.replace(/\/+$/, '');
+  const url = `https://raw.githubusercontent.com/${source.configRepo}/${source.branch}/${basePath}/${org}/_pluginconfig.yaml`;
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} fetching ${url}`);
+  }
+  return resp.text();
+}
+
+/**
+ * Extract org-default plugins from an org-level YAML config, respecting excluded_repos.
+ * @param {string} yamlText - Raw org-level YAML content.
+ * @param {string} fullRepo - Full `org/repo` string.
+ * @param {string} org      - GitHub organisation name.
+ * @returns {string[]} Plugin names from org defaults (empty if repo is excluded).
+ */
+function extractOrgPlugins(yamlText, fullRepo, org) {
+  const parsed = jsyaml.load(yamlText);
+  if (!parsed) return [];
+
+  const plugins = new Set();
+
+  if (parsed.plugins) {
+    const entry = parsed.plugins[org];
+    if (entry) {
+      const excluded = entry.excluded_repos || [];
+      if (excluded.includes(fullRepo)) return [];
+
+      const pluginList = entry.plugins || (Array.isArray(entry) ? entry : []);
+      for (const p of pluginList) plugins.add(p);
+    }
+  }
+
+  // Also check top-level plugin sections (same as extractPlugins Method 2)
+  const knownPlugins = ['approve', 'lgtm', 'hold', 'trigger', 'assign', 'lifecycle',
+    'label', 'milestone', 'override', 'wip', 'retitle', 'cherrypick'];
+
+  for (const pluginName of knownPlugins) {
+    if (parsed[pluginName] && Array.isArray(parsed[pluginName])) {
+      for (const entry of parsed[pluginName]) {
+        if (entry.repos && Array.isArray(entry.repos)) {
+          if (entry.repos.includes(fullRepo) || entry.repos.includes(org)) {
+            plugins.add(pluginName);
+          }
+        }
+      }
+    }
+  }
+
+  return Array.from(plugins);
 }
 
 /**
@@ -356,7 +427,18 @@ async function handleTestSource(source, testRepo) {
 
   try {
     const yamlText = await fetchYaml(source, org, repoName);
-    const plugins = extractPlugins(yamlText, repo, org);
+    const repoPlugins = extractPlugins(yamlText, repo, org);
+
+    let orgPlugins = [];
+    if (source.format === 'sharded') {
+      try {
+        const orgYaml = await fetchOrgYaml(source, org);
+        orgPlugins = extractOrgPlugins(orgYaml, repo, org);
+      } catch (_) { /* org-level config is optional */ }
+    }
+
+    const merged = new Set([...orgPlugins, ...repoPlugins]);
+    const plugins = Array.from(merged);
     return {
       success: true,
       plugins,
