@@ -48,6 +48,8 @@
     document.getElementById('opt-theme').value = gs.theme;
     document.getElementById('opt-position').value = gs.buttonPosition;
     document.getElementById('opt-pluginfilter').value = gs.pluginFilterMode || 'disabled';
+    document.getElementById('opt-excluded-repos').value = (gs.excludedRepos || []).join('\n');
+    document.getElementById('opt-prow-autodetect').checked = gs.prowAutoDetect !== false;
   }
 
   /** Attach change-event listeners to global-settings form fields so each change auto-saves. */
@@ -60,6 +62,9 @@
       config.globalSettings.theme = document.getElementById('opt-theme').value;
       config.globalSettings.buttonPosition = document.getElementById('opt-position').value;
       config.globalSettings.pluginFilterMode = document.getElementById('opt-pluginfilter').value;
+      config.globalSettings.excludedRepos = document.getElementById('opt-excluded-repos').value
+        .split('\n').map(s => s.trim()).filter(s => s.length > 0);
+      config.globalSettings.prowAutoDetect = document.getElementById('opt-prow-autodetect').checked;
       try {
         await saveConfig();
         showStatus('Settings saved', 'success');
@@ -68,7 +73,7 @@
       }
     }
 
-    const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-theme', 'opt-position', 'opt-pluginfilter'];
+    const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-prow-autodetect', 'opt-theme', 'opt-position', 'opt-pluginfilter', 'opt-excluded-repos'];
     for (const id of fields) {
       document.getElementById(id).addEventListener('change', readAndSave);
     }

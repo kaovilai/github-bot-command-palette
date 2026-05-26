@@ -939,8 +939,6 @@ test('getExtraCommands: does not throw when config.repoOverrides is missing', ()
 // migrateConfig: custom (non-built-in) profiles are preserved
 // ---------------------------------------------------------------------------
 test('migrateConfig: custom profiles (not in BUILTIN_PROFILE_IDS) are preserved unchanged', async () => {
-  // A user may have created a custom profile with a non-built-in id.
-  // Migration must not remove or overwrite it.
   const CM = makeContextWithStorage(null);
   const v1config = {
     version: 1,
@@ -969,8 +967,6 @@ test('migrateConfig: custom profiles (not in BUILTIN_PROFILE_IDS) are preserved 
 });
 
 test('migrateConfig: migration adds built-in profiles without removing existing custom profiles', async () => {
-  // After migration, both the user-created custom profile and the new built-in
-  // profiles should coexist.
   const CM = makeContextWithStorage(null);
   const v1config = {
     version: 1,
@@ -993,7 +989,91 @@ test('migrateConfig: migration adds built-in profiles without removing existing 
   const config = await CM2.getConfig();
   const custom = config.profiles.find(p => p.id === 'profile-my-org-ci');
   assert.ok(custom, 'custom profile should survive migration');
-  // At least one built-in profile should also be present
   const hasBuiltin = config.profiles.some(p => p.id === 'profile-tide-prow-universal');
   assert.ok(hasBuiltin, 'built-in profiles should be added alongside the custom profile');
+});
+
+// ---------------------------------------------------------------------------
+// isRepoExcluded
+// ---------------------------------------------------------------------------
+test('isRepoExcluded: returns false when excludedRepos is empty', () => {
+  const CM = makeContext();
+  const config = { globalSettings: { excludedRepos: [] } };
+  assert.equal(CM.isRepoExcluded(config, 'org/repo'), false);
+});
+
+test('isRepoExcluded: returns false when excludedRepos is missing', () => {
+  const CM = makeContext();
+  const config = { globalSettings: {} };
+  assert.equal(CM.isRepoExcluded(config, 'org/repo'), false);
+});
+
+test('isRepoExcluded: exact match excludes repo', () => {
+  const CM = makeContext();
+  const config = { globalSettings: { excludedRepos: ['velero-io/velero'] } };
+  assert.equal(CM.isRepoExcluded(config, 'velero-io/velero'), true);
+  assert.equal(CM.isRepoExcluded(config, 'velero-io/other'), false);
+});
+
+test('isRepoExcluded: glob pattern excludes matching repos', () => {
+  const CM = makeContext();
+  const config = { globalSettings: { excludedRepos: ['some-org/*'] } };
+  assert.equal(CM.isRepoExcluded(config, 'some-org/repo1'), true);
+  assert.equal(CM.isRepoExcluded(config, 'some-org/repo2'), true);
+  assert.equal(CM.isRepoExcluded(config, 'other-org/repo1'), false);
+});
+
+test('isRepoExcluded: multiple patterns checked', () => {
+  const CM = makeContext();
+  const config = { globalSettings: { excludedRepos: ['org-a/repo', 'org-b/*'] } };
+  assert.equal(CM.isRepoExcluded(config, 'org-a/repo'), true);
+  assert.equal(CM.isRepoExcluded(config, 'org-b/anything'), true);
+  assert.equal(CM.isRepoExcluded(config, 'org-c/repo'), false);
+});
+
+test('migrateConfig: adds excludedRepos to globalSettings when missing', async () => {
+  const v3config = {
+    version: 3,
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: { enabled: true, confirmBeforePost: false, showOnlyFailedTests: true,
+                      theme: 'auto', buttonPosition: 'above-comment-box', autoSubmit: false,
+                      pluginFilterMode: 'filter' },
+    pluginConfigSources: []
+  };
+  const CM = makeContextWithStorage(v3config);
+  const config = await CM.getConfig();
+  assert.ok(Array.isArray(config.globalSettings.excludedRepos), 'excludedRepos should be an array after migration');
+  assert.equal(config.globalSettings.excludedRepos.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// isProwProfile
+// ---------------------------------------------------------------------------
+test('isProwProfile: returns true for built-in Prow profile IDs', () => {
+  const CM = makeContext();
+  assert.equal(CM.isProwProfile('profile-tide-prow-universal'), true);
+  assert.equal(CM.isProwProfile('profile-prow-openshift-release'), true);
+});
+
+test('isProwProfile: returns false for non-Prow profile IDs', () => {
+  const CM = makeContext();
+  assert.equal(CM.isProwProfile('profile-mergify'), false);
+  assert.equal(CM.isProwProfile('profile-claude'), false);
+  assert.equal(CM.isProwProfile('custom-profile'), false);
+});
+
+test('migrateConfig: adds prowAutoDetect to globalSettings when missing', async () => {
+  const v4config = {
+    version: 4,
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: { enabled: true, confirmBeforePost: false, showOnlyFailedTests: true,
+                      theme: 'auto', buttonPosition: 'above-comment-box', autoSubmit: false,
+                      pluginFilterMode: 'filter', excludedRepos: [] },
+    pluginConfigSources: []
+  };
+  const CM = makeContextWithStorage(v4config);
+  const config = await CM.getConfig();
+  assert.equal(config.globalSettings.prowAutoDetect, true, 'prowAutoDetect should default to true after migration');
 });

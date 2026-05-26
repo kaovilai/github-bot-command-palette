@@ -49,6 +49,9 @@
   html += '</div>';
 
   if (repoName && config.profiles) {
+    if (CM.isRepoExcluded(config, repoName)) {
+      html += '<div class="no-pr" style="margin:8px 0;font-size:13px">This repo is excluded from the command palette.</div>';
+    } else {
     const repoOverrides = config.repoOverrides || [];
     const overrides = repoOverrides.filter(o => CM.globMatch(o.pattern, repoName));
     const disabledByOverride = new Set(overrides.flatMap(o => o.disabledProfiles || []));
@@ -98,6 +101,7 @@
       } catch (e) {
         html += '<div class="plugin-status-msg">Plugin config: unavailable</div>';
       }
+    }
     }
   }
 

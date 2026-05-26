@@ -143,6 +143,10 @@
       <span class="toggle"><input type="checkbox" id="opt-failtests"><span class="slider"></span></span>
       Show buttons only for failed tests
     </label>
+    <label>
+      <span class="toggle"><input type="checkbox" id="opt-prow-autodetect"><span class="slider"></span></span>
+      Auto-hide Prow commands on non-Prow repos
+    </label>
     <div class="form-row" style="margin-top:12px">
       <label class="block" for="opt-theme">Theme</label>
       <select id="opt-theme">
@@ -158,6 +162,18 @@
         <option value="floating">Floating</option>
         <option value="inline-checks">Inline with checks</option>
       </select>
+    </div>
+  </div>
+
+  <h2>Repo Exclusions</h2>
+  <div class="section">
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+      Repos matching any pattern below will never show the command palette.
+      Use glob patterns: <code>org/repo</code> exact, <code>org/*</code> all in org. One per line.
+    </p>
+    <div class="form-row">
+      <label class="block" for="opt-excluded-repos">Excluded Repos</label>
+      <textarea id="opt-excluded-repos" placeholder="velero-io/velero&#10;some-org/*" rows="4" style="width:100%;font-family:monospace;font-size:13px"></textarea>
     </div>
   </div>
 

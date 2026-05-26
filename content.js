@@ -144,6 +144,19 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return names;
   }
 
+  const PROW_CHECK_PATTERN = /^(pull-|ci\/prow\/|tide$|branch-protection$)/;
+  const PROW_LABEL_PATTERN = /^(lgtm|approved|needs-ok-to-test|do-not-merge|size\/|needs-rebase|tide\/)/;
+
+  function detectProwSignals() {
+    const checks = scrapeCheckNames();
+    if (checks.some(c => PROW_CHECK_PATTERN.test(c.name))) return true;
+    const labels = document.querySelectorAll('.IssueLabel');
+    for (const el of labels) {
+      if (PROW_LABEL_PATTERN.test(el.textContent.trim())) return true;
+    }
+    return false;
+  }
+
   /**
    * Scrape rehearsal job names from REHEARSALNOTIFIER comment tables on the PR page.
    * @returns {{name: string, status: 'pending'}[]}
@@ -1197,6 +1210,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
       currentRepo = detectRepo();
       if (!currentRepo) return;
+      if (CM.isRepoExcluded(config, currentRepo)) return;
 
       let profiles = CM.getMatchingProfiles(config, currentRepo);
       if (profiles.length === 0) return;
@@ -1224,6 +1238,16 @@ const LEGACY_CHECK_ROW_SELECTOR =
       }
 
       lastPresubmitJobs = await fetchPresubmitJobs();
+
+      if (config.globalSettings.prowAutoDetect !== false) {
+        const hasProwSignals = detectProwSignals() ||
+          (lastPluginData && lastPluginData.plugins && lastPluginData.plugins.length > 0) ||
+          (lastPresubmitJobs && lastPresubmitJobs.length > 0);
+        if (!hasProwSignals) {
+          profiles = profiles.filter(p => !CM.isProwProfile(p.id));
+          if (profiles.length === 0) return;
+        }
+      }
 
       const extraCommands = CM.getExtraCommands(config, currentRepo);
 

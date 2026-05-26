@@ -135,6 +135,8 @@
     "theme": "auto",
     "confirmBeforePost": false,
     "showOnlyFailedTests": true,
-    "autoSubmit": false
+    "autoSubmit": false,
+    "excludedRepos": [],
+    "prowAutoDetect": true
   }
 }

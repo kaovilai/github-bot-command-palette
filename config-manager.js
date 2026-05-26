@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 3;
+  const SCHEMA_VERSION = 5;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -14,6 +14,14 @@ GHBCP.ConfigManager = (() => {
     'profile-claude',
     'profile-coderabbitai'
   ]);
+  const PROW_PROFILE_IDS = new Set([
+    'profile-tide-prow-universal',
+    'profile-prow-openshift-release'
+  ]);
+
+  function isProwProfile(profileId) {
+    return PROW_PROFILE_IDS.has(profileId);
+  }
 
   /** @returns {string} A new RFC-4122 v4 UUID string. */
   function generateId() {
@@ -192,7 +200,9 @@ GHBCP.ConfigManager = (() => {
       confirmBeforePost: false,
       showOnlyFailedTests: true,
       autoSubmit: false,
-      pluginFilterMode: 'filter'
+      pluginFilterMode: 'filter',
+      excludedRepos: [],
+      prowAutoDetect: true
     }
   };
 
@@ -245,6 +255,12 @@ GHBCP.ConfigManager = (() => {
     return regex.test(str);
   }
 
+  function isRepoExcluded(config, repoFullName) {
+    const excluded = config.globalSettings && config.globalSettings.excludedRepos;
+    if (!excluded || excluded.length === 0) return false;
+    return excluded.some(pat => globMatch(pat, repoFullName));
+  }
+
   /**
    * Migrate a stored config object to the current schema version.
    * Refreshes built-in profiles from DEFAULT_CONFIG while preserving user's `enabled` state,
@@ -269,6 +285,8 @@ GHBCP.ConfigManager = (() => {
         config.profiles.push(dp);
       }
     }
+    if (!config.globalSettings.excludedRepos) config.globalSettings.excludedRepos = [];
+    if (config.globalSettings.prowAutoDetect === undefined) config.globalSettings.prowAutoDetect = true;
     config.version = SCHEMA_VERSION;
     config._migrated = true;
     return config;
@@ -479,6 +497,9 @@ GHBCP.ConfigManager = (() => {
     getExtraCommands,
     filterCommandsByPlugins,
     globMatch,
+    isRepoExcluded,
+    isProwProfile,
+    PROW_PROFILE_IDS,
     sanitizeCommand,
     DEFAULT_CONFIG,
     PRESET_SOURCES,
