@@ -6,6 +6,13 @@ const CACHE_KEY = 'ghbcp_plugin_cache';
 
 const PRESUBMITS_CACHE_KEY = 'ghbcp_presubmits_cache';
 
+// Plugin names recognised in top-level YAML sections (e.g. `approve: [{repos: [...]}]`).
+// Must stay in sync with the keys of GHBCP_PROW_PLUGIN_MAP in prow-plugin-map.js.
+const KNOWN_PROW_PLUGINS = [
+  'approve', 'lgtm', 'hold', 'trigger', 'assign', 'lifecycle',
+  'label', 'milestone', 'override', 'wip', 'retitle', 'cherrypick'
+];
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getEnabledPlugins') {
     handleGetEnabledPlugins(msg.repo, false).then(sendResponse);
@@ -237,10 +244,7 @@ function extractOrgPlugins(yamlText, fullRepo, org) {
   }
 
   // Also check top-level plugin sections (same as extractPlugins Method 2)
-  const knownPlugins = ['approve', 'lgtm', 'hold', 'trigger', 'assign', 'lifecycle',
-    'label', 'milestone', 'override', 'wip', 'retitle', 'cherrypick'];
-
-  for (const pluginName of knownPlugins) {
+  for (const pluginName of KNOWN_PROW_PLUGINS) {
     if (parsed[pluginName] && Array.isArray(parsed[pluginName])) {
       for (const entry of parsed[pluginName]) {
         if (entry.repos && Array.isArray(entry.repos)) {
@@ -283,13 +287,9 @@ function extractPlugins(yamlText, fullRepo, org) {
 
   // Method 2: top-level plugin sections with repos lists
   // e.g. approve: [{repos: [org/repo], ...}]
-  // knownPlugins must stay in sync with the keys of GHBCP_PROW_PLUGIN_MAP in
-  // prow-plugin-map.js so that top-level plugin sections are recognised here
-  // even when new plugins are added to the map.
-  const knownPlugins = ['approve', 'lgtm', 'hold', 'trigger', 'assign', 'lifecycle',
-    'label', 'milestone', 'override', 'wip', 'retitle', 'cherrypick'];
-
-  for (const pluginName of knownPlugins) {
+  // knownPlugins is derived from KNOWN_PROW_PLUGINS (module-level constant above)
+  // so it automatically stays in sync in one place.
+  for (const pluginName of KNOWN_PROW_PLUGINS) {
     if (parsed[pluginName] && Array.isArray(parsed[pluginName])) {
       for (const entry of parsed[pluginName]) {
         if (entry.repos && Array.isArray(entry.repos)) {
