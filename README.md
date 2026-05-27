@@ -59,7 +59,7 @@ Bot profile detail view with all commands, styles, and shortcuts:
 - **Repo pattern matching** — glob patterns like `openshift/*` to scope profiles
 - **Inline check buttons** — retest buttons next to failed CI checks
 - **Dynamic commands** — auto-generate buttons from failed check names (e.g., `/pj-rehearse <job-name>`)
-- **Keyboard shortcuts** — Alt+L for LGTM, Alt+A for Approve, Alt+R for Retest
+- **Keyboard shortcuts** — Alt+L for LGTM, Alt+A for Approve, Alt+R for Retest, Alt+T for Test picker, Alt+O for Override picker
 - **GitHub theme support** — matches light/dark mode automatically
 - **SPA-aware** — works with GitHub's Turbo/PJAX navigation
 - **Accessible** — ARIA labels on all injected buttons and dialogs; screen-reader-friendly
@@ -68,13 +68,13 @@ Bot profile detail view with all commands, styles, and shortcuts:
 
 | Profile | Match Pattern | Commands |
 |---------|--------------|----------|
-| Tide/Prow — Universal | `*` (all repos) | `/lgtm`, `/approve`, `/hold`, `/retest`, `/cc`, `/ok-to-test` |
-| Prow — OpenShift Release | `openshift/release` | `/pj-rehearse ack`, `/pj-rehearse <test>` |
+| Tide/Prow — Universal | `*` (all repos) | `/lgtm`, `/lgtm cancel`, `/approve`, `/approve cancel`, `/hold`, `/hold cancel`, `/retest`, `/retest-required`, `/test …` (job picker), `/override …` (job picker), `/cc @user`, `/uncc @user`, `/ok-to-test` |
+| Prow — OpenShift Release | `openshift/release` | `/pj-rehearse ack`, `/pj-rehearse <tests>…` (job picker), `/pj-rehearse` (all) |
 | Mergify | `*` (disabled by default) | `/mergify requeue`, `/mergify refresh` |
 | Changesets Bot | `*` (disabled by default) | `/changeset <type>` |
-| Dependabot | `*` (disabled by default) | `@dependabot rebase`, `@dependabot merge`, `@dependabot ignore …` |
-| Claude | `*` (disabled by default) | `@claude review`, `@claude fix this`, `@claude implement …` |
-| CodeRabbit AI | `*` (disabled by default) | `@coderabbitai full review`, `@coderabbitai summary`, `@coderabbitai resolve` |
+| Dependabot | `*` (disabled by default) | `@dependabot rebase`, `@dependabot recreate`, `@dependabot merge`, `@dependabot squash and merge`, `@dependabot cancel merge`, `@dependabot reopen`, `@dependabot close`, `@dependabot ignore this major/minor version`, `@dependabot ignore this dependency` |
+| Claude | `*` (disabled by default) | `@claude <instruction>` (free-form input), `@claude review this PR`, `@claude fix this`, `@claude implement …` |
+| CodeRabbit AI | `*` (disabled by default) | `@coderabbitai full review`, `@coderabbitai review`, `@coderabbitai summary`, `@coderabbitai generate docstrings`, `@coderabbitai resolve`, `@coderabbitai pause`, `@coderabbitai resume`, `@coderabbitai help` |
 
 ## Adding a New Bot Profile
 
