@@ -5,6 +5,7 @@ node_modules/
 .test-profile/
 test-results/
 .playwright-mcp/
+pr-*.png
 
 # Build/package output
 *.zip
