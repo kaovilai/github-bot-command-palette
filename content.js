@@ -1024,9 +1024,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
           btnContainer.appendChild(createButton(testCmd, context));
 
           const overrideCmd = Object.assign({}, cmd, {
-            command: '/override ' + checkName,
+            command: '/override "' + checkName + '"',
             label: 'Override',
-            description: '/override ' + checkName,
+            description: '/override "' + checkName + '"',
             style: 'warning'
           });
           btnContainer.appendChild(createButton(overrideCmd, context));
