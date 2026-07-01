@@ -1023,10 +1023,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
           });
           btnContainer.appendChild(createButton(testCmd, context));
 
+          const overrideContext = CM.getOverrideContext(checkName);
           const overrideCmd = Object.assign({}, cmd, {
-            command: '/override "' + checkName + '"',
+            command: '/override "' + overrideContext + '"',
             label: 'Override',
-            description: '/override "' + checkName + '"',
+            description: '/override "' + overrideContext + '"',
             style: 'warning'
           });
           btnContainer.appendChild(createButton(overrideCmd, context));
