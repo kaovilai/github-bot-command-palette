@@ -45,6 +45,15 @@ test('job picker list has role=list and items have role=listitem', () => {
   assert.match(contentJs, /item\.setAttribute\('role', 'listitem'\)/);
 });
 
+test('content.js normalizes the /override context via CM.getOverrideContext', () => {
+  // Both the inline Override button and the Override job picker must map the
+  // scraped Checks-UI label to the Prow status context before building the
+  // /override command.
+  assert.match(contentJs, /CM\.getOverrideContext/);
+  // The inline Override button builds its command from the normalized context.
+  assert.match(contentJs, /overrideContext = CM\.getOverrideContext\(checkName\)/);
+});
+
 test('popup.js uses CM.escapeHtml for HTML escaping', () => {
   assert.match(popupJs, /CM\.escapeHtml/);
 });

@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 5;
+  const SCHEMA_VERSION = 6;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -78,7 +78,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Retest', '/retest', 'primary', { shortcut: 'Alt+R', description: 'Retest all failed tests' }),
           cmd('Retest Required', '/retest-required', 'primary', { description: 'Retest required tests' }),
           cmd('Test...', '/test', 'primary', { hasJobPicker: true, commandTemplate: '/test {input}', description: 'Trigger a specific CI job', shortcut: 'Alt+T' }),
-          cmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override {input}', description: 'Override a failed CI check', shortcut: 'Alt+O' }),
+          cmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override "{input}"', description: 'Override a failed CI check', shortcut: 'Alt+O' }),
           cmd('CC User', '/cc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/cc @{input}', description: 'CC a user' }),
           cmd('UnCC User', '/uncc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/uncc @{input}', description: 'Remove CC' }),
           cmd('OK to Test', '/ok-to-test', 'success', { description: 'Allow CI testing for external contributors' })
@@ -253,6 +253,61 @@ GHBCP.ConfigManager = (() => {
       .replace(/\*/g, '.*');
     const regex = new RegExp('^' + escaped + '$');
     return regex.test(str);
+  }
+
+  // GitHub Actions triggering events that can be appended to a check name in
+  // the Checks UI to disambiguate a job that runs on multiple events, e.g.
+  // "Lint / Lint (ubuntu-latest) (pull_request)". These are stripped from the
+  // /override context because Prow/tide only see the underlying status context.
+  const GITHUB_ACTIONS_EVENTS = new Set([
+    'branch_protection_rule', 'check_run', 'check_suite', 'create', 'delete',
+    'deployment', 'deployment_status', 'discussion', 'discussion_comment',
+    'fork', 'gollum', 'issue_comment', 'issues', 'label', 'merge_group',
+    'milestone', 'page_build', 'public', 'pull_request', 'pull_request_review',
+    'pull_request_review_comment', 'pull_request_target', 'push',
+    'registry_package', 'release', 'repository_dispatch', 'schedule', 'status',
+    'watch', 'workflow_call', 'workflow_dispatch', 'workflow_run'
+  ]);
+
+  /**
+   * Convert a CI check name as displayed in GitHub's Checks UI into the status
+   * context that Prow's `/override` command expects.
+   *
+   * GitHub Actions renders a check as "{workflow name} / {job name}" and, when
+   * the workflow is triggered by more than one event, appends the triggering
+   * event: "{workflow name} / {job name} ({event})". Prow/tide, however, only
+   * see the underlying status context — the job name alone, without the
+   * workflow-name prefix or the event suffix. For example the UI label
+   * "Lint / Lint (ubuntu-latest) (pull_request)" maps to the context
+   * "Lint (ubuntu-latest)".
+   *
+   * Non-Actions contexts (e.g. Prow's own "ci/prow/e2e" or "tide", which use
+   * "/" without surrounding spaces) are returned unchanged.
+   * @param {string} checkName - The check name scraped from the PR page.
+   * @returns {string} The context to pass to `/override`.
+   */
+  function getOverrideContext(checkName) {
+    if (typeof checkName !== 'string') return '';
+    let name = checkName.trim();
+
+    // Strip a trailing " (event)" suffix only when the parenthesised token is a
+    // known GitHub Actions event, so matrix values like "(ubuntu-latest)" are
+    // left intact. GitHub joins the event with a single space; matching one
+    // literal space (rather than \s+) keeps this linear-time.
+    const eventMatch = name.match(/ \(([a-z_]+)\)$/);
+    if (eventMatch && GITHUB_ACTIONS_EVENTS.has(eventMatch[1])) {
+      name = name.slice(0, eventMatch.index).trimEnd();
+    }
+
+    // Strip the leading "{workflow name} / " prefix. GitHub joins the workflow
+    // name and job name with " / " (spaces around the slash); Prow contexts
+    // such as "ci/prow/e2e" use "/" without spaces and are left untouched.
+    const sep = name.indexOf(' / ');
+    if (sep !== -1) {
+      name = name.slice(sep + 3).trim();
+    }
+
+    return name;
   }
 
   function isRepoExcluded(config, repoFullName) {
@@ -498,6 +553,7 @@ GHBCP.ConfigManager = (() => {
     filterCommandsByPlugins,
     globMatch,
     isRepoExcluded,
+    getOverrideContext,
     isProwProfile,
     PROW_PROFILE_IDS,
     sanitizeCommand,
