@@ -292,8 +292,9 @@ GHBCP.ConfigManager = (() => {
 
     // Strip a trailing " (event)" suffix only when the parenthesised token is a
     // known GitHub Actions event, so matrix values like "(ubuntu-latest)" are
-    // left intact.
-    const eventMatch = name.match(/\s+\(([a-z_]+)\)$/);
+    // left intact. GitHub joins the event with a single space; matching one
+    // literal space (rather than \s+) keeps this linear-time.
+    const eventMatch = name.match(/ \(([a-z_]+)\)$/);
     if (eventMatch && GITHUB_ACTIONS_EVENTS.has(eventMatch[1])) {
       name = name.slice(0, eventMatch.index).trimEnd();
     }
