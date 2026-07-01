@@ -104,6 +104,59 @@ test('globMatch: regex special chars in pattern are treated as literals', () => 
 });
 
 // ---------------------------------------------------------------------------
+// getOverrideContext
+// ---------------------------------------------------------------------------
+test('getOverrideContext: strips workflow prefix and event suffix', () => {
+  const CM = makeContext();
+  assert.equal(
+    CM.getOverrideContext('Lint / Lint (ubuntu-latest) (pull_request)'),
+    'Lint (ubuntu-latest)'
+  );
+});
+
+test('getOverrideContext: strips only the workflow prefix when no event suffix', () => {
+  const CM = makeContext();
+  assert.equal(CM.getOverrideContext('Lint / Lint (ubuntu-latest)'), 'Lint (ubuntu-latest)');
+  assert.equal(CM.getOverrideContext('CI / build'), 'build');
+});
+
+test('getOverrideContext: keeps matrix values that are not GitHub Actions events', () => {
+  const CM = makeContext();
+  // "(ubuntu-latest)" is a matrix value, not an event, so it must not be stripped.
+  assert.equal(CM.getOverrideContext('Test / unit (ubuntu-latest)'), 'unit (ubuntu-latest)');
+});
+
+test('getOverrideContext: leaves Prow-style contexts unchanged', () => {
+  const CM = makeContext();
+  // Prow contexts use "/" without surrounding spaces.
+  assert.equal(CM.getOverrideContext('ci/prow/e2e-aws'), 'ci/prow/e2e-aws');
+  assert.equal(CM.getOverrideContext('tide'), 'tide');
+  assert.equal(CM.getOverrideContext('license/snyk ( Hybrid Platforms )'), 'license/snyk ( Hybrid Platforms )');
+});
+
+test('getOverrideContext: preserves nested job names after the workflow prefix', () => {
+  const CM = makeContext();
+  // Only the leading workflow-name segment is removed; nested " / " is kept.
+  assert.equal(CM.getOverrideContext('Workflow / build / test (pull_request)'), 'build / test');
+});
+
+test('getOverrideContext: handles non-string and empty input', () => {
+  const CM = makeContext();
+  assert.equal(CM.getOverrideContext(undefined), '');
+  assert.equal(CM.getOverrideContext(null), '');
+  assert.equal(CM.getOverrideContext('  Docs / spellcheck  '), 'spellcheck');
+});
+
+test('DEFAULT_CONFIG: Override job-picker template quotes the context', () => {
+  const CM = makeContext();
+  const universal = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  const override = universal.globalCommands.find(c => c.command === '/override');
+  // Prow contexts often contain spaces (e.g. "Lint (ubuntu-latest)"), so the
+  // job-picker command must quote the inserted context.
+  assert.equal(override.commandTemplate, '/override "{input}"');
+});
+
+// ---------------------------------------------------------------------------
 // getMatchingProfiles
 // ---------------------------------------------------------------------------
 function makeConfig(overrides = {}) {

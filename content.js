@@ -415,7 +415,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
       e.preventDefault();
       e.stopPropagation();
       if (selected.size === 0) return;
-      const names = Array.from(selected).map(n => CM.sanitizeCommand(n));
+      // /override targets Prow status contexts, so normalize each scraped check
+      // name (e.g. "Lint / Lint (ubuntu-latest) (pull_request)") to the context
+      // Prow/tide actually see ("Lint (ubuntu-latest)"). Other commands (/test)
+      // use the job name as-is.
+      const isOverride = template.trimStart().startsWith('/override');
+      const names = Array.from(selected).map(n =>
+        CM.sanitizeCommand(isOverride ? CM.getOverrideContext(n) : n));
       const cmdText = command.joinMode === 'single-command'
         ? template.replace('{input}', names.join(' '))
         : names.map(n => template.replace('{input}', n)).join('\n');

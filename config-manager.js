@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 5;
+  const SCHEMA_VERSION = 6;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -78,7 +78,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Retest', '/retest', 'primary', { shortcut: 'Alt+R', description: 'Retest all failed tests' }),
           cmd('Retest Required', '/retest-required', 'primary', { description: 'Retest required tests' }),
           cmd('Test...', '/test', 'primary', { hasJobPicker: true, commandTemplate: '/test {input}', description: 'Trigger a specific CI job', shortcut: 'Alt+T' }),
-          cmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override {input}', description: 'Override a failed CI check', shortcut: 'Alt+O' }),
+          cmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override "{input}"', description: 'Override a failed CI check', shortcut: 'Alt+O' }),
           cmd('CC User', '/cc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/cc @{input}', description: 'CC a user' }),
           cmd('UnCC User', '/uncc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/uncc @{input}', description: 'Remove CC' }),
           cmd('OK to Test', '/ok-to-test', 'success', { description: 'Allow CI testing for external contributors' })
