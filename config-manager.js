@@ -310,6 +310,31 @@ GHBCP.ConfigManager = (() => {
     return name;
   }
 
+  /**
+   * Convert a CI check name as displayed in GitHub's Checks UI into the test
+   * target that Prow's `/test` command expects.
+   *
+   * Prow reports each presubmit's status under the context "ci/prow/{test}"
+   * (for example "ci/prow/unit-test"), but the `/test` command only accepts the
+   * bare test target ("unit-test"). Passing the full context back verbatim —
+   * e.g. `/test ci/prow/unit-test` — fails with "The specified target(s) for
+   * /test were not found", so the "ci/prow/" prefix must be stripped.
+   *
+   * Names that do not carry the "ci/prow/" prefix (already-bare targets such as
+   * "unit-test" or "images", or non-Prow contexts) are returned unchanged.
+   * @param {string} checkName - The check name scraped from the PR page.
+   * @returns {string} The target to pass to `/test`.
+   */
+  function getProwTestTarget(checkName) {
+    if (typeof checkName !== 'string') return '';
+    const name = checkName.trim();
+    const PROW_CONTEXT_PREFIX = 'ci/prow/';
+    if (name.startsWith(PROW_CONTEXT_PREFIX)) {
+      return name.slice(PROW_CONTEXT_PREFIX.length);
+    }
+    return name;
+  }
+
   function isRepoExcluded(config, repoFullName) {
     const excluded = config.globalSettings && config.globalSettings.excludedRepos;
     if (!excluded || excluded.length === 0) return false;
@@ -554,6 +579,7 @@ GHBCP.ConfigManager = (() => {
     globMatch,
     isRepoExcluded,
     getOverrideContext,
+    getProwTestTarget,
     isProwProfile,
     PROW_PROFILE_IDS,
     sanitizeCommand,
