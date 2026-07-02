@@ -54,14 +54,6 @@ test('content.js normalizes the /override context via CM.getOverrideContext', ()
   assert.match(contentJs, /overrideContext = CM\.getOverrideContext\(checkName\)/);
 });
 
-test('content.js derives the /test target via CM.getProwTestTarget', () => {
-  // Prow's /test accepts the bare test target, not the "ci/prow/{test}" status
-  // context. The inline Test button and the /test job picker must normalize the
-  // scraped check name before building the /test command.
-  assert.match(contentJs, /CM\.getProwTestTarget/);
-  assert.match(contentJs, /rerunJobName \|\| CM\.getProwTestTarget\(checkName\)/);
-});
-
 test('popup.js uses CM.escapeHtml for HTML escaping', () => {
   assert.match(popupJs, /CM\.escapeHtml/);
 });

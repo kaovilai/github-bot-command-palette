@@ -147,35 +147,6 @@ test('getOverrideContext: handles non-string and empty input', () => {
   assert.equal(CM.getOverrideContext('  Docs / spellcheck  '), 'spellcheck');
 });
 
-// ---------------------------------------------------------------------------
-// getProwTestTarget
-// ---------------------------------------------------------------------------
-test('getProwTestTarget: strips the ci/prow/ status-context prefix', () => {
-  const CM = makeContext();
-  assert.equal(CM.getProwTestTarget('ci/prow/unit-test'), 'unit-test');
-  assert.equal(CM.getProwTestTarget('ci/prow/4.19-e2e-test-aws'), '4.19-e2e-test-aws');
-  assert.equal(CM.getProwTestTarget('ci/prow/images'), 'images');
-});
-
-test('getProwTestTarget: leaves already-bare test targets unchanged', () => {
-  const CM = makeContext();
-  assert.equal(CM.getProwTestTarget('unit-test'), 'unit-test');
-  assert.equal(CM.getProwTestTarget('images'), 'images');
-});
-
-test('getProwTestTarget: leaves non-Prow contexts unchanged', () => {
-  const CM = makeContext();
-  assert.equal(CM.getProwTestTarget('tide'), 'tide');
-  assert.equal(CM.getProwTestTarget('Lint (ubuntu-latest)'), 'Lint (ubuntu-latest)');
-});
-
-test('getProwTestTarget: handles non-string and empty input', () => {
-  const CM = makeContext();
-  assert.equal(CM.getProwTestTarget(undefined), '');
-  assert.equal(CM.getProwTestTarget(null), '');
-  assert.equal(CM.getProwTestTarget('  ci/prow/unit-test  '), 'unit-test');
-});
-
 test('DEFAULT_CONFIG: Override job-picker template quotes the context', () => {
   const CM = makeContext();
   const universal = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');

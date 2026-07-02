@@ -417,18 +417,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
       if (selected.size === 0) return;
       // /override targets Prow status contexts, so normalize each scraped check
       // name (e.g. "Lint / Lint (ubuntu-latest) (pull_request)") to the context
-      // Prow/tide actually see ("Lint (ubuntu-latest)"). /test targets the bare
-      // Prow test target, so strip the "ci/prow/" status-context prefix from
-      // scraped names (e.g. "ci/prow/unit-test" -> "unit-test"); presubmit-derived
-      // names are already bare and pass through unchanged.
+      // Prow/tide actually see ("Lint (ubuntu-latest)"). Other commands (/test)
+      // use the job name as-is.
       const isOverride = template.trimStart().startsWith('/override');
-      const isTest = template.trimStart().startsWith('/test');
-      const names = Array.from(selected).map(n => {
-        let normalized = n;
-        if (isOverride) normalized = CM.getOverrideContext(n);
-        else if (isTest) normalized = CM.getProwTestTarget(n);
-        return CM.sanitizeCommand(normalized);
-      });
+      const names = Array.from(selected).map(n =>
+        CM.sanitizeCommand(isOverride ? CM.getOverrideContext(n) : n));
       const cmdText = command.joinMode === 'single-command'
         ? template.replace('{input}', names.join(' '))
         : names.map(n => template.replace('{input}', n)).join('\n');
@@ -1028,11 +1021,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
       for (const profile of profiles) {
         for (const cmd of profile.checkCommands) {
-          // Prow's /test accepts the bare test target (e.g. "unit-test"), not
-          // the GitHub status context ("ci/prow/unit-test"). Prefer the exact
-          // rerun target resolved from presubmit config; otherwise derive it
-          // from the check name by stripping the "ci/prow/" prefix.
-          const jobName = rerunJobName || CM.getProwTestTarget(checkName);
+          const jobName = rerunJobName || checkName;
           const testCmd = Object.assign({}, cmd, {
             command: '/test ' + jobName,
             label: 'Test',
