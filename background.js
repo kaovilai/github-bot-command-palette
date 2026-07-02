@@ -391,6 +391,7 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
           const name = entry.rerun_command.replace(/^\/test\s+/, '');
           jobs.push({
             name,
+            jobName: entry.name || '',
             context: entry.context || '',
             always_run: entry.always_run || false,
             optional: entry.optional || false
