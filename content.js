@@ -1008,7 +1008,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
       let rerunJobName = null;
       if (lastPresubmitJobs) {
-        const match = lastPresubmitJobs.find(j => j.context === checkName);
+        // The check row may surface either Prow's status context
+        // ("ci/prow/images") or the full prowjob name
+        // ("pull-ci-...-images"); match on either so the bare /test target
+        // from the YAML's rerun_command is used instead of the raw context.
+        const match = lastPresubmitJobs.find(
+          j => j.context === checkName || j.jobName === checkName
+        );
         if (match) rerunJobName = match.name;
       }
 
