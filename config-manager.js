@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 6;
+  const SCHEMA_VERSION = 7;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -342,6 +342,13 @@ GHBCP.ConfigManager = (() => {
     }
     if (!config.globalSettings.excludedRepos) config.globalSettings.excludedRepos = [];
     if (config.globalSettings.prowAutoDetect === undefined) config.globalSettings.prowAutoDetect = true;
+    // Sources saved before presubmitsBasePath existed can't resolve /test
+    // rerun_command targets; backfill the known path for openshift/release.
+    for (const src of (config.pluginConfigSources || [])) {
+      if (src.configRepo === 'openshift/release' && !src.presubmitsBasePath) {
+        src.presubmitsBasePath = 'ci-operator/jobs';
+      }
+    }
     config.version = SCHEMA_VERSION;
     config._migrated = true;
     return config;

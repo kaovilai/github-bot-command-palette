@@ -217,3 +217,39 @@ test('extractOrgPlugins: org key with plain list format (no nested plugins)', ()
   assert.ok(result.includes('approve'));
   assert.ok(result.includes('hold'));
 });
+
+// ── resolvePresubmitSource ────────────────────────────────────────────────────
+
+test('resolvePresubmitSource: falls back to openshift/release when config is null', () => {
+  const src = ctx.resolvePresubmitSource(null);
+  assert.equal(src.configRepo, 'openshift/release');
+  assert.equal(src.presubmitsBasePath, 'ci-operator/jobs');
+});
+
+test('resolvePresubmitSource: falls back when no configured source has presubmitsBasePath', () => {
+  const src = ctx.resolvePresubmitSource({
+    pluginConfigSources: [{ enabled: true, configRepo: 'openshift/release', branch: 'master' }]
+  });
+  assert.equal(src.configRepo, 'openshift/release');
+  assert.equal(src.presubmitsBasePath, 'ci-operator/jobs');
+});
+
+test('resolvePresubmitSource: ignores disabled sources', () => {
+  const src = ctx.resolvePresubmitSource({
+    pluginConfigSources: [
+      { enabled: false, configRepo: 'my/prow', presubmitsBasePath: 'jobs' }
+    ]
+  });
+  assert.equal(src.configRepo, 'openshift/release');
+});
+
+test('resolvePresubmitSource: prefers an enabled configured source', () => {
+  const src = ctx.resolvePresubmitSource({
+    pluginConfigSources: [
+      { enabled: false, configRepo: 'a/b', presubmitsBasePath: 'x' },
+      { enabled: true, configRepo: 'my/prow', branch: 'main', presubmitsBasePath: 'jobs' }
+    ]
+  });
+  assert.equal(src.configRepo, 'my/prow');
+  assert.equal(src.presubmitsBasePath, 'jobs');
+});

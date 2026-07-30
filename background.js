@@ -343,6 +343,32 @@ async function resolveBaseBranch(repo, prNumber, hintBranch) {
   }
 }
 
+// Fallback presubmit source: when no configured plugin source provides a
+// presubmitsBasePath (e.g. default config ships no sources, or a stored source
+// predates the field), rerun_command targets are still resolved from the
+// openshift/release Prow job config instead of falling back to the raw check
+// context. Lookups for repos not onboarded to OpenShift CI simply 404 and are
+// cached as empty.
+const DEFAULT_PRESUBMIT_SOURCE = {
+  name: 'OpenShift CI (openshift/release)',
+  configRepo: 'openshift/release',
+  branch: 'master',
+  presubmitsBasePath: 'ci-operator/jobs',
+  cacheTTLMinutes: 60
+};
+
+/**
+ * Pick the plugin config source used for presubmit job lookups.
+ * Prefers an enabled configured source with a presubmitsBasePath; otherwise
+ * falls back to DEFAULT_PRESUBMIT_SOURCE.
+ * @param {Object|null} config - Stored extension config, or null.
+ * @returns {Object} Source descriptor with a presubmitsBasePath.
+ */
+function resolvePresubmitSource(config) {
+  const sources = (config && config.pluginConfigSources) || [];
+  return sources.find(s => s.enabled && s.presubmitsBasePath) || DEFAULT_PRESUBMIT_SOURCE;
+}
+
 /**
  * Fetch the list of presubmit CI jobs for a repo/branch from the Prow config.
  * @param {string}      repo         - Full `org/repo` string.
@@ -353,12 +379,7 @@ async function resolveBaseBranch(repo, prNumber, hintBranch) {
  */
 async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
   const config = await getConfig();
-  if (!config || !config.pluginConfigSources) {
-    return { jobs: null };
-  }
-
-  const source = config.pluginConfigSources.find(s => s.enabled && s.presubmitsBasePath);
-  if (!source) return { jobs: null };
+  const source = resolvePresubmitSource(config);
 
   const resolvedBranch = await resolveBaseBranch(repo, prNumber, branch);
   if (!resolvedBranch) return { jobs: null };

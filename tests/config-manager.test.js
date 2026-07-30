@@ -1130,3 +1130,38 @@ test('migrateConfig: adds prowAutoDetect to globalSettings when missing', async 
   const config = await CM.getConfig();
   assert.equal(config.globalSettings.prowAutoDetect, true, 'prowAutoDetect should default to true after migration');
 });
+
+test('migrateConfig: backfills presubmitsBasePath on openshift/release sources', async () => {
+  const v6config = {
+    version: 6,
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: { enabled: true },
+    pluginConfigSources: [
+      { id: 's1', name: 'OpenShift CI', enabled: true, configRepo: 'openshift/release', branch: 'master' },
+      { id: 's2', name: 'Other', enabled: true, configRepo: 'kubernetes/test-infra', branch: 'master' }
+    ]
+  };
+  const CM = makeContextWithStorage(v6config);
+  const config = await CM.getConfig();
+  const os = config.pluginConfigSources.find(s => s.id === 's1');
+  const other = config.pluginConfigSources.find(s => s.id === 's2');
+  assert.equal(os.presubmitsBasePath, 'ci-operator/jobs', 'openshift/release source should be backfilled');
+  assert.equal(other.presubmitsBasePath, undefined, 'non-openshift sources should be untouched');
+});
+
+test('migrateConfig: does not overwrite a custom presubmitsBasePath', async () => {
+  const v6config = {
+    version: 6,
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: { enabled: true },
+    pluginConfigSources: [
+      { id: 's1', enabled: true, configRepo: 'openshift/release', presubmitsBasePath: 'custom/path' }
+    ]
+  };
+  const CM = makeContextWithStorage(v6config);
+  const config = await CM.getConfig();
+  assert.equal(config.pluginConfigSources[0].presubmitsBasePath, 'custom/path',
+    'user-set presubmitsBasePath should be preserved by migration');
+});
