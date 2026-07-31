@@ -253,3 +253,44 @@ test('resolvePresubmitSource: prefers an enabled configured source', () => {
   assert.equal(src.configRepo, 'my/prow');
   assert.equal(src.presubmitsBasePath, 'jobs');
 });
+
+// ── parseRehearsalJobList / isAllowedRehearsalListUrl ─────────────────────────
+
+test('parseRehearsalJobList: parses pipe-table rows and skips the header', () => {
+  const text =
+    'Test Name | Repo | Type | Reason\n' +
+    'pull-ci-openshift-velero-oadp-1.6-images | openshift/velero | presubmit | Ci-operator config changed\n' +
+    'pull-ci-migtools-kubevirt-velero-plugin-main-images | migtools/kubevirt-velero-plugin | presubmit | Ci-operator config changed\n';
+  const jobs = ctx.parseRehearsalJobList(text);
+  assert.equal(jobs.length, 2);
+  assert.equal(jobs[0].name, 'pull-ci-openshift-velero-oadp-1.6-images');
+  assert.equal(jobs[0].repo, 'openshift/velero');
+  assert.equal(jobs[0].type, 'presubmit');
+  assert.equal(jobs[0].reason, 'Ci-operator config changed');
+});
+
+test('parseRehearsalJobList: skips blank and non-table lines', () => {
+  const text =
+    'Test Name | Repo | Type | Reason\n' +
+    '\n' +
+    'some stray line without pipes\n' +
+    'pull-ci-org-repo-main-e2e | org/repo | presubmit | reason\n' +
+    '   \n';
+  const jobs = ctx.parseRehearsalJobList(text);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].name, 'pull-ci-org-repo-main-e2e');
+});
+
+test('parseRehearsalJobList: empty or null input returns []', () => {
+  assert.equal(ctx.parseRehearsalJobList('').length, 0);
+  assert.equal(ctx.parseRehearsalJobList(null).length, 0);
+});
+
+test('isAllowedRehearsalListUrl: accepts pj-rehearse GCS listing URLs only', () => {
+  assert.equal(ctx.isAllowedRehearsalListUrl(
+    'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/openshift/release/82734/2caacb352141ae8c61046d584bf3c88fe08b2b51'), true);
+  assert.equal(ctx.isAllowedRehearsalListUrl(
+    'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/other-bucket/thing'), false);
+  assert.equal(ctx.isAllowedRehearsalListUrl('https://evil.example.com/pj-rehearse/x'), false);
+  assert.equal(ctx.isAllowedRehearsalListUrl(null), false);
+});

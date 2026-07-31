@@ -359,6 +359,11 @@
       jobSource: document.getElementById('cmd-jobsource').value,
       jobPickerFilter: document.getElementById('cmd-jobpickerfilter').value,
       joinMode: document.getElementById('cmd-joinmode').value,
+      // Not exposed in the editor UI; carry over so editing e.g. "Rehearse All"
+      // does not silently drop its expand-to-job-list behavior.
+      expandRehearsalJobs: editingCmdIndex >= 0
+        ? ((editingCmdTarget === 'global' ? editingProfile.globalCommands : editingProfile.checkCommands)[editingCmdIndex].expandRehearsalJobs || false)
+        : false,
       inputPlaceholder: document.getElementById('cmd-inputplaceholder').value.trim(),
       commandTemplate: document.getElementById('cmd-template').value.trim()
     };

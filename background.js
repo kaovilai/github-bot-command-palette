@@ -23,6 +23,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleGetPresubmitJobs(msg.repo, msg.branch, msg.forceRefresh, msg.prNumber).then(sendResponse);
     return true;
   }
+  if (msg.action === 'getRehearsalJobs') {
+    handleGetRehearsalJobs(msg.url).then(sendResponse);
+    return true;
+  }
 });
 
 function storageGet(area, key, defaultValue) {
@@ -340,6 +344,52 @@ async function resolveBaseBranch(repo, prNumber, hintBranch) {
     return data.base && data.base.ref ? data.base.ref : null;
   } catch (e) {
     return null;
+  }
+}
+
+// pj-rehearse truncates the REHEARSALNOTIFIER comment table to 25 rows but
+// uploads the full affected-jobs listing to GCS and links it from the comment.
+// The listing is a plain pipe-table: "Test Name | Repo | Type | Reason", one
+// row per job. Only URLs under this prefix are fetched (the URL comes from
+// page DOM, so it must be allowlisted here, not trusted).
+const REHEARSAL_LIST_URL_PREFIX = 'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/';
+
+function isAllowedRehearsalListUrl(url) {
+  return typeof url === 'string' && url.startsWith(REHEARSAL_LIST_URL_PREFIX);
+}
+
+/**
+ * Parse the pj-rehearse affected-jobs pipe-table into job objects.
+ * @param {string} text - Raw listing ("Test Name | Repo | Type | Reason" header + rows).
+ * @returns {{name: string, repo: string, type: string, reason: string}[]}
+ */
+function parseRehearsalJobList(text) {
+  const jobs = [];
+  if (!text) return jobs;
+  for (const line of text.split('\n')) {
+    const parts = line.split('|').map(p => p.trim());
+    const name = parts[0];
+    if (!name || name === 'Test Name' || parts.length < 2) continue;
+    jobs.push({ name, repo: parts[1] || '', type: parts[2] || '', reason: parts[3] || '' });
+  }
+  return jobs;
+}
+
+/**
+ * Fetch and parse the full affected-jobs listing linked from a
+ * REHEARSALNOTIFIER comment.
+ * @param {string} url - GCS listing URL scraped from the comment.
+ * @returns {Promise<{jobs: Object[]|null}>}
+ */
+async function handleGetRehearsalJobs(url) {
+  if (!isAllowedRehearsalListUrl(url)) return { jobs: null };
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const jobs = parseRehearsalJobList(await resp.text());
+    return { jobs: jobs.length > 0 ? jobs : null };
+  } catch (e) {
+    return { jobs: null };
   }
 }
 

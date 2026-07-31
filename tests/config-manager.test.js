@@ -1165,3 +1165,20 @@ test('migrateConfig: does not overwrite a custom presubmitsBasePath', async () =
   assert.equal(config.pluginConfigSources[0].presubmitsBasePath, 'custom/path',
     'user-set presubmitsBasePath should be preserved by migration');
 });
+
+test('DEFAULT_CONFIG: Rehearse All expands to explicit job list with confirmation', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-prow-openshift-release');
+  assert.ok(profile, 'openshift/release profile should exist');
+  const rehearseAll = profile.globalCommands.find(c => c.label === 'Rehearse All');
+  assert.ok(rehearseAll, 'Rehearse All command should exist');
+  assert.equal(rehearseAll.expandRehearsalJobs, true);
+  assert.equal(rehearseAll.requireConfirm, true);
+  assert.equal(rehearseAll.command, '/pj-rehearse');
+});
+
+test('createCommand: expandRehearsalJobs defaults to false and is settable', () => {
+  const CM = makeContextWithStorage(null);
+  assert.equal(CM.createCommand('X', '/x', 'primary').expandRehearsalJobs, false);
+  assert.equal(CM.createCommand('X', '/x', 'primary', { expandRehearsalJobs: true }).expandRehearsalJobs, true);
+});

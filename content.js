@@ -19,6 +19,8 @@ const LEGACY_CHECK_ROW_SELECTOR =
   let debounceTimer = null;
   let lastPluginData = null;
   let lastPresubmitJobs = null;
+  let lastRehearsalJobsUrl = null;
+  let lastRehearsalJobs = null;
   let shortcutMap = {};
 
   /** @returns {string|null} Full `org/repo` path extracted from the current URL, or null. */
@@ -184,6 +186,53 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return names;
   }
 
+  // Must match the background allowlist; only links under this prefix in a
+  // REHEARSALNOTIFIER comment point at the full affected-jobs listing.
+  const REHEARSAL_LIST_URL_PREFIX = 'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/';
+
+  /**
+   * Find the link to the full affected-jobs listing in the latest
+   * REHEARSALNOTIFIER comment. The comment table itself is truncated to 25
+   * rows; the linked GCS listing has every affected job.
+   * @returns {string|null} Listing URL, or null when no comment links one.
+   */
+  function findRehearsalListUrl() {
+    let url = null;
+    const comments = document.querySelectorAll('.timeline-comment, .js-comment-container, [id^="issuecomment-"]');
+    for (const comment of comments) {
+      const body = comment.querySelector('.comment-body, .js-comment-body, .markdown-body');
+      if (!body) continue;
+      if (!body.textContent.includes('REHEARSALNOTIFIER')) continue;
+      const link = body.querySelector(`a[href^="${REHEARSAL_LIST_URL_PREFIX}"]`);
+      if (link) url = link.href;
+    }
+    return url;
+  }
+
+  /**
+   * Fetch the full affected-jobs list for the current PR via the background
+   * worker, caching per listing URL. Returns null when no REHEARSALNOTIFIER
+   * listing link exists or the fetch fails — callers fall back to the scraped
+   * (25-row) comment table.
+   * @returns {Promise<{name: string, status: 'pending'}[]|null>}
+   */
+  async function fetchFullRehearsalJobs() {
+    const url = findRehearsalListUrl();
+    if (!url || !CM.isContextValid()) return null;
+    if (url === lastRehearsalJobsUrl && lastRehearsalJobs) return lastRehearsalJobs;
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: 'getRehearsalJobs', url });
+      if (resp && resp.jobs && resp.jobs.length > 0) {
+        lastRehearsalJobsUrl = url;
+        lastRehearsalJobs = resp.jobs.map(j => ({ name: j.name, status: 'pending' }));
+        return lastRehearsalJobs;
+      }
+    } catch (e) {
+      // fall through to scraped table
+    }
+    return null;
+  }
+
   /**
    * Ask the background service worker for presubmit CI jobs for the current repo
    * and base branch.  Returns null when the extension context is invalid, the repo
@@ -225,7 +274,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     let jobs;
 
     if (command.jobSource === 'rehearsals') {
-      jobs = scrapeRehearsalNames();
+      jobs = await fetchFullRehearsalJobs() || scrapeRehearsalNames();
     } else if (usePresubmits && lastPresubmitJobs && lastPresubmitJobs.length > 0) {
       jobs = lastPresubmitJobs.map(j => ({
         name: j.name,
@@ -504,6 +553,10 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @param {HTMLButtonElement|null} btn - The clicked button, used to anchor overlays.
    */
   function handleCommandClick(command, context, btn) {
+    if (command.expandRehearsalJobs) {
+      expandAndPostRehearseAll(command);
+      return;
+    }
     if (command.hasJobPicker) {
       showTestJobPicker(command, context, btn);
       return;
@@ -520,6 +573,30 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
     if (shouldConfirm(command)) {
       if (!confirm(`Post "${cmdText}"?`)) return;
+    }
+
+    fillComment(cmdText);
+  }
+
+  /**
+   * "Rehearse All" — a bare /pj-rehearse only runs a limited subset of
+   * affected jobs, so expand the command to name every affected job from the
+   * full GCS listing (or the scraped 25-row comment table as fallback).
+   * Posts the bare command when no job list can be found at all.
+   * @param {Object} command - Command descriptor (command, requireConfirm).
+   */
+  async function expandAndPostRehearseAll(command) {
+    let jobs = await fetchFullRehearsalJobs();
+    if (!jobs || jobs.length === 0) jobs = scrapeRehearsalNames();
+    const base = CM.sanitizeCommand(command.command);
+    const names = jobs.map(j => CM.sanitizeCommand(j.name)).filter(Boolean);
+    const cmdText = names.length > 0 ? base + ' ' + names.join(' ') : base;
+
+    if (shouldConfirm(command)) {
+      // The expanded command can list hundreds of jobs; confirm with a count
+      // instead of the full text.
+      const preview = names.length > 0 ? `${base} … (${names.length} jobs listed)` : cmdText;
+      if (!confirm(`Post "${preview}"?`)) return;
     }
 
     fillComment(cmdText);

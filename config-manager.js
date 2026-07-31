@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 7;
+  const SCHEMA_VERSION = 8;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -53,6 +53,7 @@ GHBCP.ConfigManager = (() => {
       jobPickerFilter: opts.jobPickerFilter || 'all',
       jobSource: opts.jobSource || '',
       joinMode: opts.joinMode || '',
+      expandRehearsalJobs: opts.expandRehearsalJobs || false,
       inputPlaceholder: opts.inputPlaceholder || '',
       commandTemplate: opts.commandTemplate || '',
       shortcut: opts.shortcut || ''
@@ -97,7 +98,7 @@ GHBCP.ConfigManager = (() => {
         globalCommands: [
           cmd('Rehearse ACK', '/pj-rehearse ack', 'warning', { requireConfirm: true, description: 'Acknowledge rehearsal' }),
           cmd('Rehearse...', '/pj-rehearse', 'primary', { hasJobPicker: true, jobSource: 'rehearsals', joinMode: 'single-command', commandTemplate: '/pj-rehearse {input}', description: 'Rehearse specific tests from REHEARSALNOTIFIER' }),
-          cmd('Rehearse All', '/pj-rehearse', 'primary', { description: 'Rehearse all tests' })
+          cmd('Rehearse All', '/pj-rehearse', 'primary', { expandRehearsalJobs: true, requireConfirm: true, description: 'Rehearse all affected jobs, listing each one explicitly' })
         ],
         checkCommands: [],
         dynamicCommands: [
