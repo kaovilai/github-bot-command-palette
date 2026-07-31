@@ -27,6 +27,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleGetRehearsalJobs(msg.url).then(sendResponse);
     return true;
   }
+  if (msg.action === 'getRepoBranches') {
+    handleGetRepoBranches(msg.repo).then(sendResponse);
+    return true;
+  }
 });
 
 function storageGet(area, key, defaultValue) {
@@ -305,6 +309,17 @@ function extractPlugins(yamlText, fullRepo, org) {
     }
   }
 
+  // Method 3: external_plugins section — maps org/repo or org to a list of
+  // {name, endpoint, events} objects (e.g. cherrypick, needs-rebase, refresh).
+  if (parsed.external_plugins) {
+    const entry = parsed.external_plugins[fullRepo] || parsed.external_plugins[org];
+    if (Array.isArray(entry)) {
+      for (const p of entry) {
+        if (p && p.name) plugins.add(p.name);
+      }
+    }
+  }
+
   return Array.from(plugins);
 }
 
@@ -345,6 +360,48 @@ async function resolveBaseBranch(repo, prNumber, hintBranch) {
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Sort branch names for the cherry-pick picker: long-lived release branches
+ * (no "/") first, bot/feature branches ("dependabot/...", "copilot/...") last,
+ * alphabetical within each group.
+ * @param {string[]} branches - Branch names (sorted in place).
+ * @returns {string[]} The same array, sorted.
+ */
+function sortBranchNames(branches) {
+  return branches.sort((a, b) =>
+    (a.includes('/') - b.includes('/')) || a.localeCompare(b));
+}
+
+/**
+ * Fetch the branch names of a repo from the GitHub API (unauthenticated),
+ * for the cherry-pick branch picker. Paginates up to 3 pages of 100.
+ * @param {string} repo - Full `org/repo` string.
+ * @returns {Promise<{branches: string[]|null}>}
+ */
+async function handleGetRepoBranches(repo) {
+  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return { branches: null };
+  const branches = [];
+  try {
+    for (let page = 1; page <= 3; page++) {
+      const resp = await fetch(
+        `https://api.github.com/repos/${repo}/branches?per_page=100&page=${page}`,
+        { headers: { 'Accept': 'application/vnd.github.v3+json' } }
+      );
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (!Array.isArray(data)) break;
+      for (const b of data) {
+        if (b && b.name) branches.push(b.name);
+      }
+      if (data.length < 100) break;
+    }
+  } catch (e) {
+    // a partial list from earlier pages is still useful
+  }
+  if (branches.length === 0) return { branches: null };
+  return { branches: sortBranchNames(branches) };
 }
 
 // pj-rehearse truncates the REHEARSALNOTIFIER comment table to 25 rows but

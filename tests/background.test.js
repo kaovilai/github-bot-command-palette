@@ -294,3 +294,54 @@ test('isAllowedRehearsalListUrl: accepts pj-rehearse GCS listing URLs only', () 
   assert.equal(ctx.isAllowedRehearsalListUrl('https://evil.example.com/pj-rehearse/x'), false);
   assert.equal(ctx.isAllowedRehearsalListUrl(null), false);
 });
+
+// ── extractPlugins: external_plugins section ──────────────────────────────────
+
+test('extractPlugins: external_plugins repo entry adds plugin names', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  migtools/oadp-cli:\n' +
+    '  - endpoint: http://cherrypick\n' +
+    '    events:\n' +
+    '    - issue_comment\n' +
+    '    - pull_request\n' +
+    '    name: cherrypick\n' +
+    '  - endpoint: http://needs-rebase\n' +
+    '    name: needs-rebase\n' +
+    'plugins:\n' +
+    '  migtools/oadp-cli:\n' +
+    '    plugins:\n' +
+    '      - trigger\n';
+  const result = extractPlugins(yaml, 'migtools/oadp-cli', 'migtools');
+  assert.ok(result.includes('cherrypick'), 'external cherrypick plugin should be detected');
+  assert.ok(result.includes('needs-rebase'));
+  assert.ok(result.includes('trigger'));
+});
+
+test('extractPlugins: external_plugins org-level fallback', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  org:\n' +
+    '  - name: cherrypick\n' +
+    '    endpoint: http://cherrypick\n';
+  const result = extractPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('cherrypick'));
+});
+
+test('extractPlugins: external_plugins entries without name are skipped', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  org/repo:\n' +
+    '  - endpoint: http://mystery\n';
+  const result = extractPlugins(yaml, 'org/repo', 'org');
+  assert.equal(result.length, 0);
+});
+
+test('sortBranchNames: release branches first, slash-y bot branches last', () => {
+  const sorted = ctx.sortBranchNames([
+    'dependabot/go_modules/x-1.2.3', 'oadp-1.4', 'main', 'copilot/fix-thing', 'oadp-1.3'
+  ]);
+  assert.deepEqual(sorted, [
+    'main', 'oadp-1.3', 'oadp-1.4', 'copilot/fix-thing', 'dependabot/go_modules/x-1.2.3'
+  ]);
+});

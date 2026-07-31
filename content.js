@@ -21,6 +21,8 @@ const LEGACY_CHECK_ROW_SELECTOR =
   let lastPresubmitJobs = null;
   let lastRehearsalJobsUrl = null;
   let lastRehearsalJobs = null;
+  let lastRepoBranches = null;
+  let lastRepoBranchesRepo = null;
   let shortcutMap = {};
 
   /** @returns {string|null} Full `org/repo` path extracted from the current URL, or null. */
@@ -234,6 +236,27 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
+   * Fetch branch names for the current repo via the background worker
+   * (GitHub API) for the cherry-pick branch picker. Cached per repo.
+   * @returns {Promise<{name: string, status: 'pending'}[]|null>}
+   */
+  async function fetchRepoBranches() {
+    if (!CM.isContextValid() || !currentRepo) return null;
+    if (lastRepoBranches && lastRepoBranchesRepo === currentRepo) return lastRepoBranches;
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: 'getRepoBranches', repo: currentRepo });
+      if (resp && resp.branches && resp.branches.length > 0) {
+        lastRepoBranchesRepo = currentRepo;
+        lastRepoBranches = resp.branches.map(name => ({ name, status: 'pending' }));
+        return lastRepoBranches;
+      }
+    } catch (e) {
+      // fall through to free-form input
+    }
+    return null;
+  }
+
+  /**
    * Ask the background service worker for presubmit CI jobs for the current repo
    * and base branch.  Returns null when the extension context is invalid, the repo
    * is unknown, or the background worker returns no data.
@@ -275,6 +298,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
     if (command.jobSource === 'rehearsals') {
       jobs = await fetchFullRehearsalJobs() || scrapeRehearsalNames();
+    } else if (command.jobSource === 'branches') {
+      jobs = await fetchRepoBranches();
+      if (!jobs) {
+        // Branch list unavailable (rate limit, offline) — free-form input instead.
+        showInputPopover(command, context, anchorBtn);
+        return;
+      }
     } else if (usePresubmits && lastPresubmitJobs && lastPresubmitJobs.length > 0) {
       jobs = lastPresubmitJobs.map(j => ({
         name: j.name,

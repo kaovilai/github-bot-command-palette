@@ -1182,3 +1182,13 @@ test('createCommand: expandRehearsalJobs defaults to false and is settable', () 
   assert.equal(CM.createCommand('X', '/x', 'primary').expandRehearsalJobs, false);
   assert.equal(CM.createCommand('X', '/x', 'primary', { expandRehearsalJobs: true }).expandRehearsalJobs, true);
 });
+
+test('DEFAULT_CONFIG: Cherry-pick command uses the branch picker', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  const cherryPick = profile.globalCommands.find(c => c.label === 'Cherry-pick...');
+  assert.ok(cherryPick, 'Cherry-pick... command should exist in the universal Prow profile');
+  assert.equal(cherryPick.hasJobPicker, true);
+  assert.equal(cherryPick.jobSource, 'branches');
+  assert.equal(cherryPick.commandTemplate, '/cherry-pick {input}');
+});
