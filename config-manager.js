@@ -4,10 +4,14 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 9;
+  const SCHEMA_VERSION = 10;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
+    'profile-payload-openshift',
+    'profile-openshift-labels',
+    'profile-openshift-priv',
+    'profile-openshift-specialized',
     'profile-mergify',
     'profile-changesets',
     'profile-dependabot',
@@ -16,7 +20,11 @@ GHBCP.ConfigManager = (() => {
   ]);
   const PROW_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
-    'profile-prow-openshift-release'
+    'profile-prow-openshift-release',
+    'profile-payload-openshift',
+    'profile-openshift-labels',
+    'profile-openshift-priv',
+    'profile-openshift-specialized'
   ]);
 
   function isProwProfile(profileId) {
@@ -83,7 +91,17 @@ GHBCP.ConfigManager = (() => {
           cmd('Cherry-pick...', '/cherry-pick', 'neutral', { hasJobPicker: true, jobSource: 'branches', commandTemplate: '/cherry-pick {input}', inputPlaceholder: 'target branch', description: 'Cherry-pick this PR to selected branches' }),
           cmd('CC User', '/cc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/cc @{input}', description: 'CC a user' }),
           cmd('UnCC User', '/uncc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/uncc @{input}', description: 'Remove CC' }),
-          cmd('OK to Test', '/ok-to-test', 'success', { description: 'Allow CI testing for external contributors' })
+          cmd('OK to Test', '/ok-to-test', 'success', { description: 'Allow CI testing for external contributors' }),
+          // jira-lifecycle-plugin commands (plugin filtering hides these where
+          // the external plugin is not enabled)
+          cmd('Verified By...', '/verified by', 'success', { hasInput: true, inputPlaceholder: 'test name, user, or job (comma-separated)', commandTemplate: '/verified by {input}', description: 'Cite pre-merge verification (test, person, or Prow job)' }),
+          cmd('Verified Later...', '/verified later', 'warning', { hasInput: true, inputPlaceholder: '@username (comma-separated)', commandTemplate: '/verified later {input}', description: 'Post-merge verification will be performed by named user(s)' }),
+          cmd('Verified Bypass', '/verified bypass', 'warning', { requireConfirm: true, description: 'Assert change is non-functional; no testing needed' }),
+          cmd('Verified Remove', '/verified remove', 'danger', { description: 'Remove verified/verified-later labels' }),
+          cmd('Jira Refresh', '/jira refresh', 'neutral', { description: 'Resync Jira validation status on this PR' }),
+          cmd('Jira Backport...', '/jira backport', 'primary', { hasJobPicker: true, jobSource: 'branches', joinMode: 'single-command-comma', commandTemplate: '/jira backport {input}', inputPlaceholder: 'branch1,branch2', description: 'Create backport Jira issues + queue cherry-picks (comma-separated branches)' }),
+          cmd('Jira Cherry-pick...', '/jira cherrypick', 'neutral', { hasInput: true, inputPlaceholder: 'OCPBUGS-1234', commandTemplate: '/jira cherrypick {input}', description: 'Clone a Jira bug onto this manually-created cherry-pick PR' }),
+          cmd('Cherry-pick Chain...', '/cherrypick', 'neutral', { hasJobPicker: true, jobSource: 'branches', joinMode: 'single-command', commandTemplate: '/cherrypick {input}', inputPlaceholder: 'branch1 branch2', description: 'Serial cherry-pick chain: first branch now, remaining branches hop after each merge' })
         ],
         checkCommands: [
           cmd('Retest This', '/retest', 'primary', { description: 'Retest this specific check' })
@@ -111,6 +129,72 @@ GHBCP.ConfigManager = (() => {
             style: 'primary'
           }
         ]
+      },
+      {
+        id: 'profile-payload-openshift',
+        name: 'OpenShift Payload Testing',
+        description: 'Release payload testing commands (payload-testing-prow-plugin)',
+        enabled: true,
+        repoPatterns: ['openshift/*'],
+        globalCommands: [
+          cmd('Payload...', '/payload', 'primary', { hasInput: true, inputPlaceholder: '4.20 nightly blocking', commandTemplate: '/payload {input}', description: 'Test PR against a payload: <version> <ci|nightly> <informing|blocking>' }),
+          cmd('Payload Job...', '/payload-job', 'primary', { hasInput: true, inputPlaceholder: 'periodic-ci-... [more jobs]', commandTemplate: '/payload-job {input}', description: 'Run specific release-controller periodic job(s) against this PR' }),
+          cmd('Payload Aggregate...', '/payload-aggregate', 'primary', { hasInput: true, inputPlaceholder: 'periodic-ci-... 10', commandTemplate: '/payload-aggregate {input}', description: 'Run a periodic job N times for flake detection: <job> <count>' }),
+          cmd('Payload w/ PRs...', '/payload-with-prs', 'neutral', { hasInput: true, inputPlaceholder: '4.20 nightly blocking org/repo#123 [more PRs]', commandTemplate: '/payload-with-prs {input}', description: 'Payload test combining changes from additional PRs (one command per comment)' }),
+          cmd('Payload Job w/ PRs...', '/payload-job-with-prs', 'neutral', { hasInput: true, inputPlaceholder: 'periodic-ci-... org/repo#123 [more PRs]', commandTemplate: '/payload-job-with-prs {input}', description: 'Specific job with changes from additional PRs (one command per comment)' }),
+          cmd('Payload Aggregate w/ PRs...', '/payload-aggregate-with-prs', 'neutral', { hasInput: true, inputPlaceholder: 'periodic-ci-... 10 org/repo#123 [more PRs]', commandTemplate: '/payload-aggregate-with-prs {input}', description: 'Aggregate run with changes from additional PRs (one command per comment)' }),
+          cmd('Abort Payload', '/payload-abort', 'danger', { requireConfirm: true, description: 'Cancel all running payload jobs for this PR' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
+      },
+      {
+        id: 'profile-openshift-labels',
+        name: 'OpenShift Labels',
+        description: 'One-click /label shortcuts for common OpenShift gating labels',
+        enabled: true,
+        repoPatterns: ['openshift/*', 'openshift-priv/*'],
+        globalCommands: [
+          cmd('cherry-pick-approved', '/label cherry-pick-approved', 'neutral', { description: 'QE/Staff Eng approval for backport merge (restricted: patch managers only)' }),
+          cmd('backport-risk-assessed', '/label backport-risk-assessed', 'neutral', { description: 'Backport risk evaluated (restricted: sustaining engineers only)' }),
+          cmd('qe-approved', '/label qe-approved', 'neutral', { description: 'QE sign-off' }),
+          cmd('docs-approved', '/label docs-approved', 'neutral', { description: 'Documentation team sign-off' }),
+          cmd('px-approved', '/label px-approved', 'neutral', { description: 'Product Support sign-off' }),
+          cmd('staff-eng-approved', '/label staff-eng-approved', 'neutral', { description: 'Staff Engineer approval (restricted: staff engineers only)' }),
+          cmd('Squash Merge', '/label tide/merge-method-squash', 'neutral', { description: 'Force squash merge via Tide' }),
+          cmd('Merge Commit', '/label tide/merge-method-merge', 'neutral', { description: 'Force merge commit via Tide' }),
+          cmd('Rebase Merge', '/label tide/merge-method-rebase', 'neutral', { description: 'Force rebase merge via Tide' }),
+          cmd('skip-dependent-bug-check', '/label jira/skip-dependent-bug-check', 'neutral', { description: 'Skip dependent bug validation (restricted: release oversight only)' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
+      },
+      {
+        id: 'profile-openshift-priv',
+        name: 'OpenShift Private (embargoed CVE)',
+        description: 'Commands for openshift-priv repos',
+        enabled: true,
+        repoPatterns: ['openshift-priv/*'],
+        globalCommands: [
+          cmd('Publicize', '/publicize', 'warning', { requireConfirm: true, description: 'Merge commit history to the public upstream repo (merged PRs only, irreversible)' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
+      },
+      {
+        id: 'profile-openshift-specialized',
+        name: 'OpenShift Specialized',
+        description: 'Multi-PR testing, backport validation, gated pipelines',
+        enabled: true,
+        repoPatterns: ['openshift/*'],
+        globalCommands: [
+          cmd('Test With...', '/testwith', 'primary', { hasInput: true, inputPlaceholder: 'org/repo/branch/test org/repo#123 [more PRs]', commandTemplate: '/testwith {input}', description: 'Run a test with source built from this PR plus additional PRs (at least one PR required)' }),
+          cmd('Abort Testwith', '/testwith abort', 'danger', { description: 'Abort in-flight /testwith jobs' }),
+          cmd('Validate Backports', '/validate-backports', 'primary', { description: 'Re-evaluate backports/unvalidated-commits check' }),
+          cmd('Pipeline Required', '/pipeline required', 'primary', { description: 'Trigger all required second-stage gated jobs' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
       },
       {
         id: 'profile-mergify',

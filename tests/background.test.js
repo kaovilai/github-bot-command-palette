@@ -345,3 +345,38 @@ test('sortBranchNames: release branches first, slash-y bot branches last', () =>
     'main', 'oadp-1.3', 'oadp-1.4', 'copilot/fix-thing', 'dependabot/go_modules/x-1.2.3'
   ]);
 });
+
+// ── extractOrgPlugins: external_plugins at org level ──────────────────────────
+// openshift/openshift-priv declare external plugins (cherrypick,
+// jira-lifecycle-plugin, payload-testing-prow-plugin, publicize, ...) ONLY in
+// the org-level _pluginconfig.yaml; repo-level files carry none.
+
+test('extractOrgPlugins: org-level external_plugins names are detected', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  openshift:\n' +
+    '  - endpoint: http://cherrypick\n' +
+    '    name: cherrypick\n' +
+    '  - endpoint: http://jira-lifecycle-plugin\n' +
+    '    name: jira-lifecycle-plugin\n' +
+    '  - endpoint: http://payload-testing-prow-plugin\n' +
+    '    name: payload-testing-prow-plugin\n' +
+    'plugins:\n' +
+    '  openshift:\n' +
+    '    plugins:\n' +
+    '      - label\n';
+  const result = extractOrgPlugins(yaml, 'openshift/oadp-operator', 'openshift');
+  assert.ok(result.includes('cherrypick'), 'org-level external cherrypick should be detected');
+  assert.ok(result.includes('jira-lifecycle-plugin'));
+  assert.ok(result.includes('payload-testing-prow-plugin'));
+  assert.ok(result.includes('label'));
+});
+
+test('extractOrgPlugins: external_plugins entries without name are skipped', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  org:\n' +
+    '  - endpoint: http://mystery\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.equal(result.length, 0);
+});

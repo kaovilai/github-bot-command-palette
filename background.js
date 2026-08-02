@@ -260,6 +260,19 @@ function extractOrgPlugins(yamlText, fullRepo, org) {
     }
   }
 
+  // external_plugins (cherrypick, jira-lifecycle-plugin, payload-testing-prow-plugin,
+  // publicize, ...) are declared at the ORG level for openshift/openshift-priv —
+  // repo-level files carry none — so the org pass must parse them too, same as
+  // extractPlugins Method 3.
+  if (parsed.external_plugins) {
+    const entry = parsed.external_plugins[fullRepo] || parsed.external_plugins[org];
+    if (Array.isArray(entry)) {
+      for (const p of entry) {
+        if (p && p.name) plugins.add(p.name);
+      }
+    }
+  }
+
   return Array.from(plugins);
 }
 

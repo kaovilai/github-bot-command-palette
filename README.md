@@ -68,8 +68,12 @@ Bot profile detail view with all commands, styles, and shortcuts:
 
 | Profile | Match Pattern | Commands |
 |---------|--------------|----------|
-| Tide/Prow — Universal | `*` (all repos) | `/lgtm`, `/lgtm cancel`, `/approve`, `/approve cancel`, `/hold`, `/hold cancel`, `/retest`, `/retest-required`, `/test …` (job picker), `/override …` (job picker), `/cc @user`, `/uncc @user`, `/ok-to-test` |
+| Tide/Prow — Universal | `*` (all repos) | `/lgtm`, `/lgtm cancel`, `/approve`, `/approve cancel`, `/hold`, `/hold cancel`, `/retest`, `/retest-required`, `/test …` (job picker), `/override …` (job picker), `/cherry-pick …` (branch picker), `/cc @user`, `/uncc @user`, `/ok-to-test`, `/verified by/later/bypass/remove`, `/jira refresh/backport/cherrypick`, `/cherrypick …` (serial chain, branch picker) |
 | Prow — OpenShift Release | `openshift/release` | `/pj-rehearse ack`, `/pj-rehearse <tests>…` (job picker), `/pj-rehearse` (all) |
+| OpenShift Payload Testing | `openshift/*` | `/payload`, `/payload-job`, `/payload-aggregate`, `/payload-with-prs`, `/payload-job-with-prs`, `/payload-aggregate-with-prs`, `/payload-abort` |
+| OpenShift Labels | `openshift/*`, `openshift-priv/*` | `/label` shortcuts: `cherry-pick-approved`, `backport-risk-assessed`, `qe-approved`, `docs-approved`, `px-approved`, `staff-eng-approved`, `tide/merge-method-*`, `jira/skip-dependent-bug-check` |
+| OpenShift Private (embargoed CVE) | `openshift-priv/*` | `/publicize` |
+| OpenShift Specialized | `openshift/*` | `/testwith`, `/testwith abort`, `/validate-backports`, `/pipeline required` |
 | Mergify | `*` (disabled by default) | `/mergify requeue`, `/mergify refresh` |
 | Changesets Bot | `*` (disabled by default) | `/changeset <type>` |
 | Dependabot | `*` (disabled by default) | `@dependabot rebase`, `@dependabot recreate`, `@dependabot merge`, `@dependabot squash and merge`, `@dependabot cancel merge`, `@dependabot reopen`, `@dependabot close`, `@dependabot ignore this major/minor version`, `@dependabot ignore this dependency` |
