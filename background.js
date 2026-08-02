@@ -221,6 +221,28 @@ async function fetchOrgYaml(source, org) {
 }
 
 /**
+ * Collect external plugin names into `plugins`. Prow's hook server matches
+ * external_plugins entries keyed by either the full repo OR the org — a
+ * union, not a precedence — and external plugins are not subject to
+ * plugins.<org>.excluded_repos.
+ * @param {Object} parsed   - Parsed plugin config YAML.
+ * @param {string} fullRepo - Full `org/repo` string.
+ * @param {string} org      - GitHub organisation name.
+ * @param {Set}    plugins  - Accumulator set (mutated).
+ */
+function collectExternalPlugins(parsed, fullRepo, org, plugins) {
+  if (!parsed.external_plugins) return;
+  for (const key of [fullRepo, org]) {
+    const entry = parsed.external_plugins[key];
+    if (Array.isArray(entry)) {
+      for (const p of entry) {
+        if (p && p.name) plugins.add(p.name);
+      }
+    }
+  }
+}
+
+/**
  * Extract org-default plugins from an org-level YAML config, respecting excluded_repos.
  * @param {string} yamlText - Raw org-level YAML content.
  * @param {string} fullRepo - Full `org/repo` string.
@@ -236,11 +258,13 @@ function extractOrgPlugins(yamlText, fullRepo, org) {
   if (parsed.plugins) {
     const entry = parsed.plugins[org];
     if (entry) {
+      // excluded_repos only removes the repo from the org's plugins stanza;
+      // top-level sections and external plugins still apply to it.
       const excluded = entry.excluded_repos || [];
-      if (excluded.includes(fullRepo)) return [];
-
-      const pluginList = entry.plugins || (Array.isArray(entry) ? entry : []);
-      for (const p of pluginList) plugins.add(p);
+      if (!excluded.includes(fullRepo)) {
+        const pluginList = entry.plugins || (Array.isArray(entry) ? entry : []);
+        for (const p of pluginList) plugins.add(p);
+      }
     }
   }
 
@@ -262,16 +286,8 @@ function extractOrgPlugins(yamlText, fullRepo, org) {
 
   // external_plugins (cherrypick, jira-lifecycle-plugin, payload-testing-prow-plugin,
   // publicize, ...) are declared at the ORG level for openshift/openshift-priv —
-  // repo-level files carry none — so the org pass must parse them too, same as
-  // extractPlugins Method 3.
-  if (parsed.external_plugins) {
-    const entry = parsed.external_plugins[fullRepo] || parsed.external_plugins[org];
-    if (Array.isArray(entry)) {
-      for (const p of entry) {
-        if (p && p.name) plugins.add(p.name);
-      }
-    }
-  }
+  // repo-level files carry none — so the org pass must parse them too.
+  collectExternalPlugins(parsed, fullRepo, org, plugins);
 
   return Array.from(plugins);
 }
@@ -322,16 +338,9 @@ function extractPlugins(yamlText, fullRepo, org) {
     }
   }
 
-  // Method 3: external_plugins section — maps org/repo or org to a list of
-  // {name, endpoint, events} objects (e.g. cherrypick, needs-rebase, refresh).
-  if (parsed.external_plugins) {
-    const entry = parsed.external_plugins[fullRepo] || parsed.external_plugins[org];
-    if (Array.isArray(entry)) {
-      for (const p of entry) {
-        if (p && p.name) plugins.add(p.name);
-      }
-    }
-  }
+  // Method 3: external_plugins section — union of org/repo- and org-keyed
+  // entries (e.g. cherrypick, needs-rebase, refresh).
+  collectExternalPlugins(parsed, fullRepo, org, plugins);
 
   return Array.from(plugins);
 }

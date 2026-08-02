@@ -381,7 +381,9 @@ test('extractOrgPlugins: external_plugins entries without name are skipped', () 
   assert.equal(result.length, 0);
 });
 
-test('extractOrgPlugins: full-repo external_plugins key takes precedence over org key', () => {
+test('extractOrgPlugins: repo- and org-keyed external_plugins entries are unioned', () => {
+  // Prow's hook server matches external_plugins keyed by either the full repo
+  // OR the org — both apply, neither shadows the other.
   const yaml =
     'external_plugins:\n' +
     '  openshift/oadp-operator:\n' +
@@ -391,6 +393,37 @@ test('extractOrgPlugins: full-repo external_plugins key takes precedence over or
     '  - name: org-wide-plugin\n' +
     '    endpoint: http://org-wide-plugin\n';
   const result = extractOrgPlugins(yaml, 'openshift/oadp-operator', 'openshift');
-  assert.ok(result.includes('repo-specific-plugin'), 'full-repo entry should be used');
-  assert.ok(!result.includes('org-wide-plugin'), 'org entry is skipped when a full-repo entry exists');
+  assert.ok(result.includes('repo-specific-plugin'), 'full-repo entry should be included');
+  assert.ok(result.includes('org-wide-plugin'), 'org entry should be included too (union)');
+});
+
+test('extractPlugins: repo- and org-keyed external_plugins entries are unioned', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  org/repo:\n' +
+    '  - name: repo-plugin\n' +
+    '  org:\n' +
+    '  - name: org-plugin\n';
+  const result = extractPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('repo-plugin'));
+  assert.ok(result.includes('org-plugin'));
+});
+
+test('extractOrgPlugins: excluded_repos does not suppress external_plugins', () => {
+  // plugins.<org>.excluded_repos only removes the repo from the org plugins
+  // stanza; Prow still serves external plugins to excluded repos.
+  const yaml =
+    'plugins:\n' +
+    '  openshift:\n' +
+    '    excluded_repos:\n' +
+    '      - openshift/foo\n' +
+    '    plugins:\n' +
+    '      - label\n' +
+    'external_plugins:\n' +
+    '  openshift:\n' +
+    '  - name: cherrypick\n' +
+    '    endpoint: http://cherrypick\n';
+  const result = extractOrgPlugins(yaml, 'openshift/foo', 'openshift');
+  assert.ok(!result.includes('label'), 'excluded repo should not inherit the org plugins stanza');
+  assert.ok(result.includes('cherrypick'), 'external plugins still apply to excluded repos');
 });
