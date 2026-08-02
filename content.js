@@ -507,7 +507,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
       if (command.joinMode === 'single-command') {
         cmdText = template.replace('{input}', names.join(' '));
       } else if (command.joinMode === 'single-command-comma') {
-        cmdText = template.replace('{input}', names.join(','));
+        // A comma inside a name can't be expressed in a comma-joined argument
+        // (the /jira backport parser has no escaping) — drop such names rather
+        // than emit an ambiguous command.
+        const safe = names.filter(n => !n.includes(','));
+        if (safe.length === 0) return;
+        cmdText = template.replace('{input}', safe.join(','));
       } else {
         cmdText = names.map(n => template.replace('{input}', n)).join('\n');
       }

@@ -380,3 +380,17 @@ test('extractOrgPlugins: external_plugins entries without name are skipped', () 
   const result = extractOrgPlugins(yaml, 'org/repo', 'org');
   assert.equal(result.length, 0);
 });
+
+test('extractOrgPlugins: full-repo external_plugins key takes precedence over org key', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  openshift/oadp-operator:\n' +
+    '  - name: repo-specific-plugin\n' +
+    '    endpoint: http://repo-specific-plugin\n' +
+    '  openshift:\n' +
+    '  - name: org-wide-plugin\n' +
+    '    endpoint: http://org-wide-plugin\n';
+  const result = extractOrgPlugins(yaml, 'openshift/oadp-operator', 'openshift');
+  assert.ok(result.includes('repo-specific-plugin'), 'full-repo entry should be used');
+  assert.ok(!result.includes('org-wide-plugin'), 'org entry is skipped when a full-repo entry exists');
+});
