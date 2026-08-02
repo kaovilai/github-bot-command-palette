@@ -289,8 +289,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @returns {Promise<void>}
    */
   async function showTestJobPicker(command, context, anchorBtn) {
-    const existing = document.querySelector('.ghbcp-job-picker');
-    if (existing) existing.remove();
+    closeExistingDialog('.ghbcp-job-picker');
 
     const usePresubmits = (command.commandTemplate || '').startsWith('/test');
     const filter = command.jobPickerFilter || 'all';
@@ -569,6 +568,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       document.removeEventListener('click', onClickOutside);
       if (anchorBtn) anchorBtn.focus();
     }
+    picker._ghbcpClose = closePicker;
 
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
@@ -651,6 +651,22 @@ const LEGACY_CHECK_ROW_SELECTOR =
     fillComment(cmdText);
   }
 
+  /**
+   * Close a previously-opened GHBCP dialog via its stored close function so
+   * its document-level click listener is removed too; falls back to removing
+   * the element for dialogs created before the close handoff existed.
+   * @param {string} selector - Dialog selector ('.ghbcp-job-picker' or '.ghbcp-popover').
+   */
+  function closeExistingDialog(selector) {
+    const existing = document.querySelector(selector);
+    if (!existing) return;
+    if (typeof existing._ghbcpClose === 'function') {
+      existing._ghbcpClose();
+    } else {
+      existing.remove();
+    }
+  }
+
   // Field layout per payload command (docs.ci.openshift.org
   // release-oversight/pull-request-testing). The -with-prs variants accept
   // only one command per comment, so the picker always emits a single line.
@@ -674,7 +690,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
       const matches = check.name.match(/\b[45]\.\d{1,2}\b/g);
       if (matches) matches.forEach(v => versions.add(v));
     }
-    return Array.from(versions).sort((a, b) => parseFloat(b) - parseFloat(a));
+    return Array.from(versions).sort((a, b) => {
+      const [aMaj, aMin] = a.split('.').map(Number);
+      const [bMaj, bMin] = b.split('.').map(Number);
+      return (bMaj - aMaj) || (bMin - aMin);
+    });
   }
 
   /**
@@ -686,8 +706,8 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the picker, or null.
    */
   function showPayloadPicker(command, context, anchorBtn) {
-    const existing = document.querySelector('.ghbcp-job-picker');
-    if (existing) existing.remove();
+    closeExistingDialog('.ghbcp-job-picker');
+    closeExistingDialog('.ghbcp-popover');
 
     const fields = PAYLOAD_FORMS[command.command] || ['version', 'suite', 'type'];
 
@@ -799,6 +819,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       document.removeEventListener('click', onClickOutside);
       if (anchorBtn) anchorBtn.focus();
     }
+    picker._ghbcpClose = closePayloadPicker;
 
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
@@ -812,7 +833,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       const parts = [];
       for (const field of fields) {
         const value = inputs[field].value.trim();
-        if (!value) {
+        if (!value || (field === 'count' && !(Number(value) >= 1))) {
           inputs[field].focus();
           return;
         }
@@ -863,8 +884,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the popover, or null.
    */
   function showInputPopover(command, context, anchorBtn) {
-    const existing = document.querySelector('.ghbcp-popover');
-    if (existing) existing.remove();
+    closeExistingDialog('.ghbcp-popover');
 
     const popover = document.createElement('div');
     popover.className = 'ghbcp-popover';
@@ -896,6 +916,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
       popover.remove();
       document.removeEventListener('click', onClickOutside);
     }
+    // Let a replacing dialog tear this one down cleanly (removes the
+    // document-level click listener, which a bare .remove() would leak).
+    popover._ghbcpClose = closePopover;
 
     function doPost() {
       const val = input.value.trim();
