@@ -1274,3 +1274,18 @@ test('isProwProfile: new OpenShift profiles are Prow profiles (prowAutoDetect ga
     assert.equal(CM.isProwProfile(id), true, `${id} should be a Prow profile`);
   }
 });
+
+test('DEFAULT_CONFIG: specialized profile exposes its OpenShift commands', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-openshift-specialized');
+  assert.ok(profile, 'specialized profile should exist');
+  assert.deepEqual([...profile.repoPatterns], ['openshift/*']);
+  assert.deepEqual([...profile.globalCommands].map(c => c.command), [
+    '/testwith',
+    '/testwith abort',
+    '/validate-backports',
+    '/pipeline required'
+  ]);
+  assert.equal(profile.globalCommands.find(c => c.command === '/testwith abort').requireConfirm, true,
+    'aborting in-flight jobs should require confirmation');
+});
