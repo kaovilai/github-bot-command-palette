@@ -85,6 +85,39 @@ test('CommandToPlugin: standard commands map to expected plugins', () => {
   }
 });
 
+test('CommandToPlugin: OpenShift external-plugin commands map to expected plugins', () => {
+  const { commandToPlugin } = loadMap();
+  const expected = {
+    '/cherry-pick': 'cherrypick',
+    '/cherrypick': 'cherrypick',
+    '/jira': 'jira-lifecycle-plugin',
+    '/jira refresh': 'jira-lifecycle-plugin',
+    '/jira backport': 'jira-lifecycle-plugin',
+    '/jira cherrypick': 'jira-lifecycle-plugin',
+    '/verified': 'jira-lifecycle-plugin',
+    '/verified by': 'jira-lifecycle-plugin',
+    '/verified later': 'jira-lifecycle-plugin',
+    '/verified bypass': 'jira-lifecycle-plugin',
+    '/verified remove': 'jira-lifecycle-plugin',
+    '/payload': 'payload-testing-prow-plugin',
+    '/payload-job': 'payload-testing-prow-plugin',
+    '/payload-with-prs': 'payload-testing-prow-plugin',
+    '/payload-job-with-prs': 'payload-testing-prow-plugin',
+    '/payload-aggregate': 'payload-testing-prow-plugin',
+    '/payload-aggregate-with-prs': 'payload-testing-prow-plugin',
+    '/payload-abort': 'payload-testing-prow-plugin',
+    '/publicize': 'publicize',
+    '/testwith': 'multi-pr-prow-plugin',
+    '/testwith abort': 'multi-pr-prow-plugin',
+    '/validate-backports': 'backport-verifier',
+    '/pipeline': 'pipeline-controller',
+    '/pipeline required': 'pipeline-controller'
+  };
+  for (const [cmd, plugin] of Object.entries(expected)) {
+    assert.equal(commandToPlugin[cmd], plugin, `"${cmd}" should map to "${plugin}"`);
+  }
+});
+
 test('CommandToPlugin: every command in ProwPluginMap appears in the reverse map', () => {
   const { pluginMap, commandToPlugin } = loadMap();
   for (const [plugin, info] of Object.entries(pluginMap)) {

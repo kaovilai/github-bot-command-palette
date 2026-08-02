@@ -1222,12 +1222,15 @@ test('DEFAULT_CONFIG: payload profile targets openshift/* with all seven command
   const commands = profile.globalCommands.map(c => c.command);
   assert.deepEqual([...commands].sort(), ['/payload', '/payload-abort', '/payload-aggregate',
     '/payload-aggregate-with-prs', '/payload-job', '/payload-job-with-prs', '/payload-with-prs'].sort());
-  for (const c of profile.globalCommands) {
-    if (c.hasInput) {
-      assert.ok(c.commandTemplate.includes('{input}'), `${c.command} template should contain {input}`);
-    }
+  const inputCommands = ['/payload', '/payload-job', '/payload-aggregate',
+    '/payload-with-prs', '/payload-job-with-prs', '/payload-aggregate-with-prs'];
+  for (const name of inputCommands) {
+    const c = profile.globalCommands.find(x => x.command === name);
+    assert.equal(c.hasInput, true, `${name} should take free-form input`);
+    assert.ok(c.commandTemplate.includes('{input}'), `${name} template should contain {input}`);
   }
   const abort = profile.globalCommands.find(c => c.command === '/payload-abort');
+  assert.equal(abort.hasInput, false, '/payload-abort takes no input');
   assert.equal(abort.requireConfirm, true);
 });
 
@@ -1236,10 +1239,19 @@ test('DEFAULT_CONFIG: OpenShift labels profile has only /label commands', () => 
   const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-openshift-labels');
   assert.ok(profile, 'labels profile should exist');
   assert.deepEqual([...profile.repoPatterns], ['openshift/*', 'openshift-priv/*']);
-  assert.equal(profile.globalCommands.length, 10);
-  for (const c of profile.globalCommands) {
-    assert.ok(c.command.startsWith('/label '), `${c.command} should be a /label command`);
-  }
+  const labelCommands = profile.globalCommands.map(c => c.command);
+  assert.deepEqual([...labelCommands].sort(), [
+    '/label backport-risk-assessed',
+    '/label cherry-pick-approved',
+    '/label docs-approved',
+    '/label jira/skip-dependent-bug-check',
+    '/label px-approved',
+    '/label qe-approved',
+    '/label staff-eng-approved',
+    '/label tide/merge-method-merge',
+    '/label tide/merge-method-rebase',
+    '/label tide/merge-method-squash'
+  ]);
 });
 
 test('DEFAULT_CONFIG: /publicize is scoped to openshift-priv/* and requires confirm', () => {
