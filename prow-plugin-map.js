@@ -49,7 +49,11 @@ const GHBCP_PROW_PLUGIN_MAP = {
     description: 'Cherry-pick to branch'
   },
   'jira-lifecycle-plugin': {
-    commands: ['/jira', '/verified'],
+    commands: [
+      '/jira', '/jira refresh', '/jira backport', '/jira cherrypick',
+      '/verified', '/verified by', '/verified later',
+      '/verified bypass', '/verified remove'
+    ],
     description: 'Jira lifecycle & pre-merge verification'
   },
   'payload-testing-prow-plugin': {
@@ -62,7 +66,7 @@ const GHBCP_PROW_PLUGIN_MAP = {
     description: 'Publish private repo changes upstream'
   },
   'multi-pr-prow-plugin': {
-    commands: ['/testwith'],
+    commands: ['/testwith', '/testwith abort'],
     description: 'Multi-PR test triggering'
   },
   'backport-verifier': {
@@ -70,7 +74,7 @@ const GHBCP_PROW_PLUGIN_MAP = {
     description: 'Backport commit validation'
   },
   'pipeline-controller': {
-    commands: ['/pipeline'],
+    commands: ['/pipeline', '/pipeline required'],
     description: 'Two-stage gated pipelines'
   }
 };

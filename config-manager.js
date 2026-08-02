@@ -189,7 +189,7 @@ GHBCP.ConfigManager = (() => {
         repoPatterns: ['openshift/*'],
         globalCommands: [
           cmd('Test With...', '/testwith', 'primary', { hasInput: true, inputPlaceholder: 'org/repo/branch/test org/repo#123 [more PRs]', commandTemplate: '/testwith {input}', description: 'Run a test with source built from this PR plus additional PRs (at least one PR required)' }),
-          cmd('Abort Testwith', '/testwith abort', 'danger', { description: 'Abort in-flight /testwith jobs' }),
+          cmd('Abort Testwith', '/testwith abort', 'danger', { requireConfirm: true, description: 'Abort in-flight /testwith jobs' }),
           cmd('Validate Backports', '/validate-backports', 'primary', { description: 'Re-evaluate backports/unvalidated-commits check' }),
           cmd('Pipeline Required', '/pipeline required', 'primary', { description: 'Trigger all required second-stage gated jobs' })
         ],
