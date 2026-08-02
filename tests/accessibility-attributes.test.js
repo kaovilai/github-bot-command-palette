@@ -74,6 +74,17 @@ test('job picker has a keyboard focus trap', () => {
   assert.match(contentJs, /addFocusTrap\(picker, searchInput\)/);
 });
 
+test('payload picker dialog is accessible and focus-trapped', () => {
+  assert.match(contentJs, /ghbcp-payload-picker/);
+  assert.match(contentJs, /picker\.setAttribute\('aria-label', command\.label \|\| command\.command\)/);
+  assert.match(contentJs, /setAttribute\('aria-label', 'Release version'\)/);
+  assert.match(contentJs, /setAttribute\('aria-label', 'Payload suite'\)/);
+  assert.match(contentJs, /setAttribute\('aria-label', 'Payload type'\)/);
+  assert.match(contentJs, /setAttribute\('aria-label', 'Aggregation count'\)/);
+  assert.match(contentJs, /submitBtn\.setAttribute\('aria-label', 'Post payload command'\)/);
+  assert.match(contentJs, /addFocusTrap\(picker, firstField\)/);
+});
+
 test('settings page edit buttons have aria-label', () => {
   const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
   assert.match(settingsJs, /aria-label="Edit profile \$\{esc\(p\.name\)\}"/);

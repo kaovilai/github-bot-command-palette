@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 10;
+  const SCHEMA_VERSION = 11;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -58,6 +58,7 @@ GHBCP.ConfigManager = (() => {
       requireConfirm: opts.requireConfirm || false,
       hasInput: opts.hasInput || false,
       hasJobPicker: opts.hasJobPicker || false,
+      hasPayloadPicker: opts.hasPayloadPicker || false,
       jobPickerFilter: opts.jobPickerFilter || 'all',
       jobSource: opts.jobSource || '',
       joinMode: opts.joinMode || '',
@@ -137,12 +138,12 @@ GHBCP.ConfigManager = (() => {
         enabled: true,
         repoPatterns: ['openshift/*'],
         globalCommands: [
-          cmd('Payload...', '/payload', 'primary', { hasInput: true, inputPlaceholder: '4.20 nightly blocking', commandTemplate: '/payload {input}', description: 'Test PR against a payload: <version> <ci|nightly> <informing|blocking>' }),
-          cmd('Payload Job...', '/payload-job', 'primary', { hasInput: true, inputPlaceholder: 'periodic-ci-... [more jobs]', commandTemplate: '/payload-job {input}', description: 'Run specific release-controller periodic job(s) against this PR' }),
-          cmd('Payload Aggregate...', '/payload-aggregate', 'primary', { hasInput: true, inputPlaceholder: 'periodic-ci-... 10', commandTemplate: '/payload-aggregate {input}', description: 'Run a periodic job N times for flake detection: <job> <count>' }),
-          cmd('Payload w/ PRs...', '/payload-with-prs', 'neutral', { hasInput: true, inputPlaceholder: '4.20 nightly blocking org/repo#123 [more PRs]', commandTemplate: '/payload-with-prs {input}', description: 'Payload test combining changes from additional PRs (one command per comment)' }),
-          cmd('Payload Job w/ PRs...', '/payload-job-with-prs', 'neutral', { hasInput: true, inputPlaceholder: 'periodic-ci-... org/repo#123 [more PRs]', commandTemplate: '/payload-job-with-prs {input}', description: 'Specific job with changes from additional PRs (one command per comment)' }),
-          cmd('Payload Aggregate w/ PRs...', '/payload-aggregate-with-prs', 'neutral', { hasInput: true, inputPlaceholder: 'periodic-ci-... 10 org/repo#123 [more PRs]', commandTemplate: '/payload-aggregate-with-prs {input}', description: 'Aggregate run with changes from additional PRs (one command per comment)' }),
+          cmd('Payload...', '/payload', 'primary', { hasPayloadPicker: true, description: 'Test PR against a payload: <version> <ci|nightly> <informing|blocking>' }),
+          cmd('Payload Job...', '/payload-job', 'primary', { hasPayloadPicker: true, description: 'Run specific release-controller periodic job(s) against this PR' }),
+          cmd('Payload Aggregate...', '/payload-aggregate', 'primary', { hasPayloadPicker: true, description: 'Run a periodic job N times for flake detection: <job> <count>' }),
+          cmd('Payload w/ PRs...', '/payload-with-prs', 'neutral', { hasPayloadPicker: true, description: 'Payload test combining changes from additional PRs (one command per comment)' }),
+          cmd('Payload Job w/ PRs...', '/payload-job-with-prs', 'neutral', { hasPayloadPicker: true, description: 'Specific job with changes from additional PRs (one command per comment)' }),
+          cmd('Payload Aggregate w/ PRs...', '/payload-aggregate-with-prs', 'neutral', { hasPayloadPicker: true, description: 'Aggregate run with changes from additional PRs (one command per comment)' }),
           cmd('Abort Payload', '/payload-abort', 'danger', { requireConfirm: true, description: 'Cancel all running payload jobs for this PR' })
         ],
         checkCommands: [],

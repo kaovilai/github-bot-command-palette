@@ -364,6 +364,9 @@
       expandRehearsalJobs: editingCmdIndex >= 0
         ? ((editingCmdTarget === 'global' ? editingProfile.globalCommands : editingProfile.checkCommands)[editingCmdIndex].expandRehearsalJobs || false)
         : false,
+      hasPayloadPicker: editingCmdIndex >= 0
+        ? ((editingCmdTarget === 'global' ? editingProfile.globalCommands : editingProfile.checkCommands)[editingCmdIndex].hasPayloadPicker || false)
+        : false,
       inputPlaceholder: document.getElementById('cmd-inputplaceholder').value.trim(),
       commandTemplate: document.getElementById('cmd-template').value.trim()
     };

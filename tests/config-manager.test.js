@@ -1226,10 +1226,11 @@ test('DEFAULT_CONFIG: payload profile targets openshift/* with all seven command
     '/payload-with-prs', '/payload-job-with-prs', '/payload-aggregate-with-prs'];
   for (const name of inputCommands) {
     const c = profile.globalCommands.find(x => x.command === name);
-    assert.equal(c.hasInput, true, `${name} should take free-form input`);
-    assert.ok(c.commandTemplate.includes('{input}'), `${name} template should contain {input}`);
+    assert.equal(c.hasPayloadPicker, true, `${name} should open the payload picker`);
+    assert.equal(c.hasInput, false, `${name} uses the structured picker, not free-form input`);
   }
   const abort = profile.globalCommands.find(c => c.command === '/payload-abort');
+  assert.equal(abort.hasPayloadPicker, false, '/payload-abort posts directly');
   assert.equal(abort.hasInput, false, '/payload-abort takes no input');
   assert.equal(abort.requireConfirm, true);
 });

@@ -602,6 +602,10 @@ const LEGACY_CHECK_ROW_SELECTOR =
       expandAndPostRehearseAll(command);
       return;
     }
+    if (command.hasPayloadPicker) {
+      showPayloadPicker(command, context, btn);
+      return;
+    }
     if (command.hasJobPicker) {
       showTestJobPicker(command, context, btn);
       return;
@@ -645,6 +649,209 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
 
     fillComment(cmdText);
+  }
+
+  // Field layout per payload command (docs.ci.openshift.org
+  // release-oversight/pull-request-testing). The -with-prs variants accept
+  // only one command per comment, so the picker always emits a single line.
+  const PAYLOAD_FORMS = {
+    '/payload':                    ['version', 'suite', 'type'],
+    '/payload-with-prs':           ['version', 'suite', 'type', 'prs'],
+    '/payload-job':                ['jobs'],
+    '/payload-job-with-prs':       ['job', 'prs'],
+    '/payload-aggregate':          ['job', 'count'],
+    '/payload-aggregate-with-prs': ['job', 'count', 'prs']
+  };
+
+  /**
+   * Guess relevant OCP release versions from the PR's CI check names
+   * (e.g. "ci/prow/e2e-aws-4.20") to prefill the payload version field.
+   * @returns {string[]} Unique versions, newest first.
+   */
+  function detectReleaseVersions() {
+    const versions = new Set();
+    for (const check of scrapeCheckNames()) {
+      const matches = check.name.match(/\b[45]\.\d{1,2}\b/g);
+      if (matches) matches.forEach(v => versions.add(v));
+    }
+    return Array.from(versions).sort((a, b) => parseFloat(b) - parseFloat(a));
+  }
+
+  /**
+   * Structured form dialog for the /payload command family: release version +
+   * suite + type for /payload, periodic job name(s) and aggregation count for
+   * the job/aggregate variants, and a PR list for the -with-prs variants.
+   * @param {Object}                 command   - Command descriptor (hasPayloadPicker).
+   * @param {Object}                 context   - Context data (repoName, prNumber).
+   * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the picker, or null.
+   */
+  function showPayloadPicker(command, context, anchorBtn) {
+    const existing = document.querySelector('.ghbcp-job-picker');
+    if (existing) existing.remove();
+
+    const fields = PAYLOAD_FORMS[command.command] || ['version', 'suite', 'type'];
+
+    const picker = document.createElement('div');
+    picker.className = 'ghbcp-job-picker ghbcp-payload-picker';
+    picker.setAttribute('role', 'dialog');
+    picker.setAttribute('aria-modal', 'true');
+    picker.setAttribute('aria-label', command.label || command.command);
+
+    const form = document.createElement('div');
+    form.className = 'ghbcp-payload-form';
+
+    const inputs = {};
+
+    function addRow(key, labelText, el) {
+      const row = document.createElement('div');
+      row.className = 'ghbcp-payload-row';
+      const label = document.createElement('label');
+      label.textContent = labelText;
+      const id = 'ghbcp-payload-' + key;
+      label.setAttribute('for', id);
+      el.id = id;
+      row.appendChild(label);
+      row.appendChild(el);
+      form.appendChild(row);
+      inputs[key] = el;
+    }
+
+    for (const field of fields) {
+      if (field === 'version') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        const detected = detectReleaseVersions();
+        input.value = detected[0] || '';
+        input.placeholder = 'e.g. 4.20';
+        input.setAttribute('aria-label', 'Release version');
+        if (detected.length > 0) {
+          const listId = 'ghbcp-payload-versions';
+          const datalist = document.createElement('datalist');
+          datalist.id = listId;
+          for (const v of detected) {
+            const opt = document.createElement('option');
+            opt.value = v;
+            datalist.appendChild(opt);
+          }
+          picker.appendChild(datalist);
+          input.setAttribute('list', listId);
+        }
+        addRow(field, 'Version', input);
+      } else if (field === 'suite') {
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', 'Payload suite');
+        for (const v of ['nightly', 'ci']) {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          select.appendChild(opt);
+        }
+        addRow(field, 'Suite', select);
+      } else if (field === 'type') {
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', 'Payload type');
+        for (const v of ['blocking', 'informing']) {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          select.appendChild(opt);
+        }
+        addRow(field, 'Type', select);
+      } else if (field === 'count') {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '1';
+        input.value = '10';
+        input.setAttribute('aria-label', 'Aggregation count');
+        addRow(field, 'Runs', input);
+      } else if (field === 'jobs' || field === 'job') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = field === 'jobs' ? 'periodic-ci-... [more jobs]' : 'periodic-ci-...';
+        input.setAttribute('aria-label', field === 'jobs' ? 'Periodic job name(s)' : 'Periodic job name');
+        addRow(field, field === 'jobs' ? 'Job(s)' : 'Job', input);
+      } else if (field === 'prs') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'org/repo#123 org/repo#456';
+        input.setAttribute('aria-label', 'Additional PRs');
+        addRow(field, 'PRs', input);
+      }
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'ghbcp-job-picker-footer';
+
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
+    submitBtn.className = 'ghbcp-btn ghbcp-btn-primary';
+    submitBtn.textContent = 'Post';
+    submitBtn.setAttribute('aria-label', 'Post payload command');
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'ghbcp-btn ghbcp-btn-neutral';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.setAttribute('aria-label', 'Cancel');
+
+    function closePayloadPicker() {
+      picker.remove();
+      document.removeEventListener('click', onClickOutside);
+      if (anchorBtn) anchorBtn.focus();
+    }
+
+    function onClickOutside(e) {
+      if (!picker.contains(e.target) && e.target !== anchorBtn) {
+        closePayloadPicker();
+      }
+    }
+
+    submitBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const parts = [];
+      for (const field of fields) {
+        const value = inputs[field].value.trim();
+        if (!value) {
+          inputs[field].focus();
+          return;
+        }
+        parts.push(value);
+      }
+      const cmdText = CM.sanitizeCommand(command.command + ' ' + parts.join(' '));
+      if (shouldConfirm(command)) {
+        if (!confirm(`Post "${cmdText}"?`)) return;
+      }
+      fillComment(cmdText);
+      closePayloadPicker();
+    });
+
+    cancelBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closePayloadPicker();
+    });
+
+    picker.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closePayloadPicker();
+      if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
+        e.preventDefault();
+        submitBtn.click();
+      }
+    });
+
+    footer.appendChild(cancelBtn);
+    footer.appendChild(submitBtn);
+    picker.appendChild(form);
+    picker.appendChild(footer);
+
+    const firstField = inputs[fields[0]];
+    addFocusTrap(picker, firstField);
+
+    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
+
+    attachOverlay(picker, anchorBtn);
+    requestAnimationFrame(() => firstField.focus());
   }
 
   /**
