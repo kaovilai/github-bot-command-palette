@@ -290,6 +290,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    */
   async function showTestJobPicker(command, context, anchorBtn) {
     closeExistingDialog('.ghbcp-job-picker');
+    closeExistingDialog('.ghbcp-popover');
 
     const usePresubmits = (command.commandTemplate || '').startsWith('/test');
     const filter = command.jobPickerFilter || 'all';
@@ -885,6 +886,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    */
   function showInputPopover(command, context, anchorBtn) {
     closeExistingDialog('.ghbcp-popover');
+    closeExistingDialog('.ghbcp-job-picker');
 
     const popover = document.createElement('div');
     popover.className = 'ghbcp-popover';
