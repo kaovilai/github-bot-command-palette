@@ -289,8 +289,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @returns {Promise<void>}
    */
   async function showTestJobPicker(command, context, anchorBtn) {
-    closeExistingDialog('.ghbcp-job-picker');
-    closeExistingDialog('.ghbcp-popover');
+    closeOpenDialogs();
 
     const usePresubmits = (command.commandTemplate || '').startsWith('/test');
     const filter = command.jobPickerFilter || 'all';
@@ -687,6 +686,14 @@ const LEGACY_CHECK_ROW_SELECTOR =
     }
   }
 
+  /**
+   * Close whichever GHBCP dialog is currently open, so only one is ever shown.
+   */
+  function closeOpenDialogs() {
+    closeExistingDialog('.ghbcp-job-picker');
+    closeExistingDialog('.ghbcp-popover');
+  }
+
   // Field layout per payload command (docs.ci.openshift.org
   // release-oversight/pull-request-testing). The -with-prs variants accept
   // only one command per comment, so the picker always emits a single line.
@@ -726,15 +733,18 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the picker, or null.
    */
   function showPayloadPicker(command, context, anchorBtn) {
-    closeExistingDialog('.ghbcp-job-picker');
-    closeExistingDialog('.ghbcp-popover');
-
     // Commands are user-editable, so resolve the form as an own property only —
-    // a command named e.g. "toString" must not pick up an Object.prototype member.
+    // a command named e.g. "toString" must not pick up an Object.prototype
+    // member. A command with no known form gets the free-form popover instead
+    // of a payload form whose fields would not match its arguments.
     const formKey = String(command.command || '').trim();
-    const fields = Object.prototype.hasOwnProperty.call(PAYLOAD_FORMS, formKey)
-      ? PAYLOAD_FORMS[formKey]
-      : ['version', 'suite', 'type'];
+    if (!Object.prototype.hasOwnProperty.call(PAYLOAD_FORMS, formKey)) {
+      showInputPopover(command, context, anchorBtn);
+      return;
+    }
+    const fields = PAYLOAD_FORMS[formKey];
+
+    closeOpenDialogs();
 
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker ghbcp-payload-picker';
@@ -951,8 +961,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the popover, or null.
    */
   function showInputPopover(command, context, anchorBtn) {
-    closeExistingDialog('.ghbcp-popover');
-    closeExistingDialog('.ghbcp-job-picker');
+    closeOpenDialogs();
 
     const popover = document.createElement('div');
     popover.className = 'ghbcp-popover';
