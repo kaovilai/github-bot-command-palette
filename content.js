@@ -836,16 +836,14 @@ const LEGACY_CHECK_ROW_SELECTOR =
         input.min = '1';
         input.step = '1';
         input.value = '10';
-        input.setAttribute('aria-label', 'Aggregation count');
-        addRow(field, 'Runs', input);
+        addRow(field, 'Runs (aggregation count)', input);
       } else if (field === 'jobs' || field === 'job') {
         const input = document.createElement('input');
         input.type = 'text';
         input.placeholder = field === 'jobs' ? 'periodic-ci-... [more jobs]' : 'periodic-ci-...';
         // The aggregate/-with-prs variants take exactly one job name.
         if (field === 'job') input.pattern = '\\S+';
-        input.setAttribute('aria-label', field === 'jobs' ? 'Periodic job name(s)' : 'Periodic job name');
-        addRow(field, field === 'jobs' ? 'Job(s)' : 'Job', input);
+        addRow(field, field === 'jobs' ? 'Periodic job(s)' : 'Periodic job', input);
       } else if (field === 'prs') {
         const input = document.createElement('input');
         input.type = 'text';
@@ -902,7 +900,8 @@ const LEGACY_CHECK_ROW_SELECTOR =
           if (typeof input.reportValidity === 'function') input.reportValidity();
           return;
         }
-        parts.push(value);
+        // Post the canonical numeral, so "007" does not reach Prow verbatim.
+        parts.push(field === 'count' ? String(Number(value)) : value);
       }
       const cmdText = CM.sanitizeCommand(command.command + ' ' + parts.join(' '));
       if (shouldConfirm(command)) {
