@@ -722,6 +722,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
     form.className = 'ghbcp-payload-form';
 
     const inputs = {};
+    // Only fields that actually rendered a control; the submit handler and
+    // initial focus read this rather than the requested field list.
+    const rendered = [];
 
     function addRow(key, labelText, el) {
       const row = document.createElement('div');
@@ -735,6 +738,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       row.appendChild(el);
       form.appendChild(row);
       inputs[key] = el;
+      rendered.push(key);
     }
 
     for (const field of fields) {
@@ -832,10 +836,16 @@ const LEGACY_CHECK_ROW_SELECTOR =
       e.preventDefault();
       e.stopPropagation();
       const parts = [];
-      for (const field of fields) {
-        const value = inputs[field].value.trim();
-        if (!value || (field === 'count' && !(Number(value) >= 1))) {
-          inputs[field].focus();
+      for (const field of rendered) {
+        const input = inputs[field];
+        const value = input.value.trim();
+        // 'count' is the aggregation run count: a whole number of runs, so
+        // reject blanks, fractions, and anything the number input can't hold.
+        const invalid = !value ||
+          (field === 'count' && !(Number.isSafeInteger(Number(value)) && Number(value) >= 1));
+        if (invalid) {
+          input.focus();
+          if (typeof input.reportValidity === 'function') input.reportValidity();
           return;
         }
         parts.push(value);
@@ -867,7 +877,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     picker.appendChild(form);
     picker.appendChild(footer);
 
-    const firstField = inputs[fields[0]];
+    const firstField = inputs[rendered[0]];
     addFocusTrap(picker, firstField);
 
     setTimeout(() => document.addEventListener('click', onClickOutside), 0);
