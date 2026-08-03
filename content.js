@@ -710,7 +710,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     closeExistingDialog('.ghbcp-job-picker');
     closeExistingDialog('.ghbcp-popover');
 
-    const fields = PAYLOAD_FORMS[command.command] || ['version', 'suite', 'type'];
+    // Commands are user-editable, so resolve the form as an own property only —
+    // a command named e.g. "toString" must not pick up an Object.prototype member.
+    const formKey = String(command.command || '').trim();
+    const fields = Object.prototype.hasOwnProperty.call(PAYLOAD_FORMS, formKey)
+      ? PAYLOAD_FORMS[formKey]
+      : ['version', 'suite', 'type'];
 
     const picker = document.createElement('div');
     picker.className = 'ghbcp-job-picker ghbcp-payload-picker';
@@ -884,7 +889,11 @@ const LEGACY_CHECK_ROW_SELECTOR =
     });
 
     picker.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closePayloadPicker();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closePayloadPicker();
+        return;
+      }
       if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
         // The picker lives inside GitHub's comment form, so Enter must never
         // reach it. Advance through the fields instead of submitting from the
