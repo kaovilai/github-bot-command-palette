@@ -858,6 +858,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
           input.setCustomValidity('Enter a whole number of runs, e.g. 10');
         }
         const invalid = !value ||
+          (typeof input.checkValidity === 'function' && !input.checkValidity()) ||
           (field === 'count' && !(/^\d+$/.test(value) && Number(value) >= 1 &&
             Number.isSafeInteger(Number(value))));
         if (invalid) {
