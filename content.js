@@ -737,6 +737,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       // Constraints let reportValidity() surface a native message; the submit
       // handler's own checks stay authoritative.
       el.required = true;
+      el.addEventListener('input', () => el.setCustomValidity(''));
       row.appendChild(label);
       row.appendChild(el);
       form.appendChild(row);
@@ -751,6 +752,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const detected = detectReleaseVersions();
         input.value = detected[0] || '';
         input.placeholder = 'e.g. 4.20';
+        // A single token: the suite and type go in their own fields, so reject
+        // a pasted "4.20 nightly blocking" rather than duplicating them.
+        input.pattern = '\\S+';
         input.setAttribute('aria-label', 'Release version');
         if (detected.length > 0) {
           const listId = 'ghbcp-payload-versions';
@@ -797,6 +801,8 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const input = document.createElement('input');
         input.type = 'text';
         input.placeholder = field === 'jobs' ? 'periodic-ci-... [more jobs]' : 'periodic-ci-...';
+        // The aggregate/-with-prs variants take exactly one job name.
+        if (field === 'job') input.pattern = '\\S+';
         input.setAttribute('aria-label', field === 'jobs' ? 'Periodic job name(s)' : 'Periodic job name');
         addRow(field, field === 'jobs' ? 'Job(s)' : 'Job', input);
       } else if (field === 'prs') {
@@ -843,10 +849,17 @@ const LEGACY_CHECK_ROW_SELECTOR =
       for (const field of rendered) {
         const input = inputs[field];
         const value = input.value.trim();
-        // 'count' is the aggregation run count: a whole number of runs, so
-        // reject blanks, fractions, and anything the number input can't hold.
+        // Write the trimmed value back so a whitespace-only entry trips the
+        // native `required` constraint and reportValidity() actually speaks.
+        if (input.value !== value) input.value = value;
+        // 'count' is a whole number of runs: reject fractions, exponent
+        // notation (Prow parses the literal text), and out-of-range values.
+        if (field === 'count' && value && !/^\d+$/.test(value)) {
+          input.setCustomValidity('Enter a whole number of runs, e.g. 10');
+        }
         const invalid = !value ||
-          (field === 'count' && !(Number.isSafeInteger(Number(value)) && Number(value) >= 1));
+          (field === 'count' && !(/^\d+$/.test(value) && Number(value) >= 1 &&
+            Number.isSafeInteger(Number(value))));
         if (invalid) {
           input.focus();
           if (typeof input.reportValidity === 'function') input.reportValidity();
@@ -871,8 +884,15 @@ const LEGACY_CHECK_ROW_SELECTOR =
     picker.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closePayloadPicker();
       if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
+        // The picker lives inside GitHub's comment form, so Enter must never
+        // reach it. Advance through the fields instead of submitting from the
+        // first one — that also keeps Enter from racing the version field's
+        // datalist suggestion commit.
         e.preventDefault();
-        submitBtn.click();
+        const idx = rendered.indexOf(e.target.id.replace('ghbcp-payload-', ''));
+        const next = idx >= 0 && idx < rendered.length - 1 ? inputs[rendered[idx + 1]] : null;
+        if (next) next.focus();
+        else submitBtn.click();
       }
     });
 

@@ -273,6 +273,7 @@
     document.getElementById('cmd-confirm').checked = cmd.requireConfirm;
     document.getElementById('cmd-hasinput').checked = cmd.hasInput;
     document.getElementById('cmd-hasjobpicker').checked = cmd.hasJobPicker || false;
+    document.getElementById('cmd-haspayloadpicker').checked = cmd.hasPayloadPicker || false;
     document.getElementById('cmd-jobsource').value = cmd.jobSource || '';
     document.getElementById('cmd-jobpickerfilter').value = cmd.jobPickerFilter || 'all';
     document.getElementById('cmd-joinmode').value = cmd.joinMode || '';
@@ -364,9 +365,7 @@
       expandRehearsalJobs: editingCmdIndex >= 0
         ? ((editingCmdTarget === 'global' ? editingProfile.globalCommands : editingProfile.checkCommands)[editingCmdIndex].expandRehearsalJobs || false)
         : false,
-      hasPayloadPicker: editingCmdIndex >= 0
-        ? ((editingCmdTarget === 'global' ? editingProfile.globalCommands : editingProfile.checkCommands)[editingCmdIndex].hasPayloadPicker || false)
-        : false,
+      hasPayloadPicker: document.getElementById('cmd-haspayloadpicker').checked,
       inputPlaceholder: document.getElementById('cmd-inputplaceholder').value.trim(),
       commandTemplate: document.getElementById('cmd-template').value.trim()
     };
