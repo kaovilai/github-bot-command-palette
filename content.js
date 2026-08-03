@@ -854,13 +854,14 @@ const LEGACY_CHECK_ROW_SELECTOR =
         if (input.value !== value) input.value = value;
         // 'count' is a whole number of runs: reject fractions, exponent
         // notation (Prow parses the literal text), and out-of-range values.
-        if (field === 'count' && value && !/^\d+$/.test(value)) {
+        const countOk = field !== 'count' ||
+          (/^\d+$/.test(value) && Number(value) >= 1 && Number.isSafeInteger(Number(value)));
+        if (value && !countOk) {
           input.setCustomValidity('Enter a whole number of runs, e.g. 10');
         }
         const invalid = !value ||
           (typeof input.checkValidity === 'function' && !input.checkValidity()) ||
-          (field === 'count' && !(/^\d+$/.test(value) && Number(value) >= 1 &&
-            Number.isSafeInteger(Number(value))));
+          !countOk;
         if (invalid) {
           input.focus();
           if (typeof input.reportValidity === 'function') input.reportValidity();
