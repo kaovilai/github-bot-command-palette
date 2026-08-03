@@ -734,6 +734,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
       const id = 'ghbcp-payload-' + key;
       label.setAttribute('for', id);
       el.id = id;
+      // Constraints let reportValidity() surface a native message; the submit
+      // handler's own checks stay authoritative.
+      el.required = true;
       row.appendChild(label);
       row.appendChild(el);
       form.appendChild(row);
@@ -786,6 +789,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const input = document.createElement('input');
         input.type = 'number';
         input.min = '1';
+        input.step = '1';
         input.value = '10';
         input.setAttribute('aria-label', 'Aggregation count');
         addRow(field, 'Runs', input);
@@ -877,7 +881,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
     picker.appendChild(form);
     picker.appendChild(footer);
 
-    const firstField = inputs[rendered[0]];
+    const firstField = inputs[rendered[0]] || submitBtn;
     addFocusTrap(picker, firstField);
 
     setTimeout(() => document.addEventListener('click', onClickOutside), 0);
