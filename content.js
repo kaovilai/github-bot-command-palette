@@ -900,6 +900,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
         // first one — that also keeps Enter from racing the version field's
         // datalist suggestion commit.
         e.preventDefault();
+        e.stopPropagation();
         const idx = rendered.indexOf(e.target.id.replace('ghbcp-payload-', ''));
         const next = idx >= 0 && idx < rendered.length - 1 ? inputs[rendered[idx + 1]] : null;
         if (next) next.focus();
