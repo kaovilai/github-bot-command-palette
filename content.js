@@ -658,9 +658,14 @@ const LEGACY_CHECK_ROW_SELECTOR =
    */
   function createDialogCloser(dialog, onOutside, anchorBtn) {
     const close = () => {
+      // Only take focus back if it still sits in the dialog (or nowhere):
+      // posting moves focus to the comment textarea, and clicking outside
+      // means the user has already chosen where to go.
+      const active = document.activeElement;
+      const hadFocus = !active || active === document.body || dialog.contains(active);
       dialog.remove();
       document.removeEventListener('click', onOutside);
-      if (anchorBtn) anchorBtn.focus();
+      if (anchorBtn && hadFocus) anchorBtn.focus();
     };
     dialog._ghbcpClose = close;
     return close;
