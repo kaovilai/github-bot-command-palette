@@ -564,18 +564,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     picker.appendChild(footer);
     renderJobs('');
 
-    function closePicker() {
-      picker.remove();
-      document.removeEventListener('click', onClickOutside);
-      if (anchorBtn) anchorBtn.focus();
-    }
-    picker._ghbcpClose = closePicker;
-
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
         closePicker();
       }
     }
+    const closePicker = createDialogCloser(picker, onClickOutside, anchorBtn);
     setTimeout(() => document.addEventListener('click', onClickOutside), 0);
 
     attachOverlay(picker, anchorBtn);
@@ -653,6 +647,26 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
+   * Build the close function shared by every GHBCP dialog: detach the dialog,
+   * drop its document-level click listener, and hand focus back to the button
+   * that opened it. The result is also stored on the element so a replacing
+   * dialog can tear this one down cleanly.
+   * @param {HTMLElement}            dialog    - The dialog element.
+   * @param {Function}               onOutside - Its document click handler.
+   * @param {HTMLButtonElement|null} anchorBtn - Button that opened it, or null.
+   * @returns {Function} The close function.
+   */
+  function createDialogCloser(dialog, onOutside, anchorBtn) {
+    const close = () => {
+      dialog.remove();
+      document.removeEventListener('click', onOutside);
+      if (anchorBtn) anchorBtn.focus();
+    };
+    dialog._ghbcpClose = close;
+    return close;
+  }
+
+  /**
    * Close a previously-opened GHBCP dialog via its stored close function so
    * its document-level click listener is removed too; falls back to removing
    * the element for dialogs created before the close handoff existed.
@@ -725,6 +739,13 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
     const form = document.createElement('div');
     form.className = 'ghbcp-payload-form';
+
+    // The dialog has no search field to identify it the way the job picker
+    // does, so name the command on screen as well as in aria-label.
+    const title = document.createElement('div');
+    title.className = 'ghbcp-payload-title';
+    title.textContent = command.label || command.command;
+    picker.appendChild(title);
 
     const inputs = {};
     // Only fields that actually rendered a control; the submit handler and
@@ -834,18 +855,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     cancelBtn.textContent = 'Cancel';
     cancelBtn.setAttribute('aria-label', 'Cancel');
 
-    function closePayloadPicker() {
-      picker.remove();
-      document.removeEventListener('click', onClickOutside);
-      if (anchorBtn) anchorBtn.focus();
-    }
-    picker._ghbcpClose = closePayloadPicker;
-
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
         closePayloadPicker();
       }
     }
+    const closePayloadPicker = createDialogCloser(picker, onClickOutside, anchorBtn);
 
     submitBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -960,13 +975,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
     cancelBtn.textContent = '✕';
     cancelBtn.setAttribute('aria-label', 'Cancel');
 
-    function closePopover() {
-      popover.remove();
-      document.removeEventListener('click', onClickOutside);
-    }
-    // Let a replacing dialog tear this one down cleanly (removes the
-    // document-level click listener, which a bare .remove() would leak).
-    popover._ghbcpClose = closePopover;
+    // Declared before its first use at click time; the handler below is
+    // hoisted, so the pair can reference each other.
+    const closePopover = createDialogCloser(popover, onClickOutside, anchorBtn);
 
     function doPost() {
       const val = input.value.trim();
@@ -1021,7 +1032,6 @@ const LEGACY_CHECK_ROW_SELECTOR =
       }
     }
     setTimeout(() => document.addEventListener('click', onClickOutside), 0);
-
     attachOverlay(popover, anchorBtn);
     requestAnimationFrame(() => input.focus());
   }

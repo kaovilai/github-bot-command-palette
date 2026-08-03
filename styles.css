@@ -423,6 +423,14 @@ html[data-color-mode="dark"] {
   font-size: 12px;
 }
 
+.ghbcp-payload-title {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ghbcp-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ghbcp-text);
+}
+
 .ghbcp-payload-form {
   display: flex;
   flex-direction: column;
