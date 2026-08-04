@@ -45,8 +45,37 @@ const GHBCP_PROW_PLUGIN_MAP = {
     description: 'Rename PR title'
   },
   'cherrypick': {
-    commands: ['/cherry-pick'],
+    commands: ['/cherry-pick', '/cherrypick'],
     description: 'Cherry-pick to branch'
+  },
+  'jira-lifecycle-plugin': {
+    commands: [
+      '/jira', '/jira refresh', '/jira backport', '/jira cherrypick',
+      '/verified', '/verified by', '/verified later',
+      '/verified bypass', '/verified remove'
+    ],
+    description: 'Jira lifecycle & pre-merge verification'
+  },
+  'payload-testing-prow-plugin': {
+    commands: ['/payload', '/payload-job', '/payload-with-prs', '/payload-job-with-prs',
+      '/payload-aggregate', '/payload-aggregate-with-prs', '/payload-abort'],
+    description: 'Release payload testing'
+  },
+  'publicize': {
+    commands: ['/publicize'],
+    description: 'Publish private repo changes upstream'
+  },
+  'multi-pr-prow-plugin': {
+    commands: ['/testwith', '/testwith abort'],
+    description: 'Multi-PR test triggering'
+  },
+  'backport-verifier': {
+    commands: ['/validate-backports'],
+    description: 'Backport commit validation'
+  },
+  'pipeline-controller': {
+    commands: ['/pipeline', '/pipeline required'],
+    description: 'Two-stage gated pipelines'
   }
 };
 

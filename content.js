@@ -501,9 +501,24 @@ const LEGACY_CHECK_ROW_SELECTOR =
       const isOverride = template.trimStart().startsWith('/override');
       const names = Array.from(selected).map(n =>
         CM.sanitizeCommand(isOverride ? CM.getOverrideContext(n) : n));
-      const cmdText = command.joinMode === 'single-command'
-        ? template.replace('{input}', names.join(' '))
-        : names.map(n => template.replace('{input}', n)).join('\n');
+      // 'single-command' joins space-separated (/cherrypick a b); the comma
+      // variant exists for /jira backport, whose plugin requires "a,b".
+      let cmdText;
+      if (command.joinMode === 'single-command') {
+        cmdText = template.replace('{input}', names.join(' '));
+      } else if (command.joinMode === 'single-command-comma') {
+        // A comma inside a name can't be expressed in a comma-joined argument
+        // (the /jira backport parser has no escaping) — surface the conflict
+        // and keep the picker open instead of emitting an ambiguous command.
+        const unsafe = names.filter(n => n.includes(','));
+        if (unsafe.length > 0) {
+          alert(`Comma-separated submission cannot include: ${unsafe.join(' ')}`);
+          return;
+        }
+        cmdText = template.replace('{input}', names.join(','));
+      } else {
+        cmdText = names.map(n => template.replace('{input}', n)).join('\n');
+      }
 
       if (shouldConfirm(command)) {
         if (!confirm(`Post:\n${cmdText}`)) return;

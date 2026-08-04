@@ -161,7 +161,7 @@ test('extractOrgPlugins: returns [] when repo is in excluded_repos', () => {
     'plugins:\n' +
     '  org:\n' +
     '    excluded_repos:\n' +
-    '      - org/repo\n' +
+    '      - repo\n' +
     '    plugins:\n' +
     '      - trigger\n' +
     '      - hold\n';
@@ -174,7 +174,7 @@ test('extractOrgPlugins: non-excluded repo gets org defaults', () => {
     'plugins:\n' +
     '  org:\n' +
     '    excluded_repos:\n' +
-    '      - org/other-repo\n' +
+    '      - other-repo\n' +
     '    plugins:\n' +
     '      - trigger\n' +
     '      - lgtm\n';
@@ -344,4 +344,86 @@ test('sortBranchNames: release branches first, slash-y bot branches last', () =>
   assert.deepEqual(sorted, [
     'main', 'oadp-1.3', 'oadp-1.4', 'copilot/fix-thing', 'dependabot/go_modules/x-1.2.3'
   ]);
+});
+
+// ── extractOrgPlugins: external_plugins at org level ──────────────────────────
+// openshift/openshift-priv declare external plugins (cherrypick,
+// jira-lifecycle-plugin, payload-testing-prow-plugin, publicize, ...) ONLY in
+// the org-level _pluginconfig.yaml; repo-level files carry none.
+
+test('extractOrgPlugins: org-level external_plugins names are detected', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  openshift:\n' +
+    '  - endpoint: http://cherrypick\n' +
+    '    name: cherrypick\n' +
+    '  - endpoint: http://jira-lifecycle-plugin\n' +
+    '    name: jira-lifecycle-plugin\n' +
+    '  - endpoint: http://payload-testing-prow-plugin\n' +
+    '    name: payload-testing-prow-plugin\n' +
+    'plugins:\n' +
+    '  openshift:\n' +
+    '    plugins:\n' +
+    '      - label\n';
+  const result = extractOrgPlugins(yaml, 'openshift/oadp-operator', 'openshift');
+  assert.ok(result.includes('cherrypick'), 'org-level external cherrypick should be detected');
+  assert.ok(result.includes('jira-lifecycle-plugin'));
+  assert.ok(result.includes('payload-testing-prow-plugin'));
+  assert.ok(result.includes('label'));
+});
+
+test('extractOrgPlugins: external_plugins entries without name are skipped', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  org:\n' +
+    '  - endpoint: http://mystery\n';
+  const result = extractOrgPlugins(yaml, 'org/repo', 'org');
+  assert.equal(result.length, 0);
+});
+
+test('extractOrgPlugins: repo- and org-keyed external_plugins entries are unioned', () => {
+  // Prow's hook server matches external_plugins keyed by either the full repo
+  // OR the org — both apply, neither shadows the other.
+  const yaml =
+    'external_plugins:\n' +
+    '  openshift/oadp-operator:\n' +
+    '  - name: repo-specific-plugin\n' +
+    '    endpoint: http://repo-specific-plugin\n' +
+    '  openshift:\n' +
+    '  - name: org-wide-plugin\n' +
+    '    endpoint: http://org-wide-plugin\n';
+  const result = extractOrgPlugins(yaml, 'openshift/oadp-operator', 'openshift');
+  assert.ok(result.includes('repo-specific-plugin'), 'full-repo entry should be included');
+  assert.ok(result.includes('org-wide-plugin'), 'org entry should be included too (union)');
+});
+
+test('extractPlugins: repo- and org-keyed external_plugins entries are unioned', () => {
+  const yaml =
+    'external_plugins:\n' +
+    '  org/repo:\n' +
+    '  - name: repo-plugin\n' +
+    '  org:\n' +
+    '  - name: org-plugin\n';
+  const result = extractPlugins(yaml, 'org/repo', 'org');
+  assert.ok(result.includes('repo-plugin'));
+  assert.ok(result.includes('org-plugin'));
+});
+
+test('extractOrgPlugins: excluded_repos does not suppress external_plugins', () => {
+  // plugins.<org>.excluded_repos only removes the repo from the org plugins
+  // stanza; Prow still serves external plugins to excluded repos.
+  const yaml =
+    'plugins:\n' +
+    '  openshift:\n' +
+    '    excluded_repos:\n' +
+    '      - foo\n' +
+    '    plugins:\n' +
+    '      - label\n' +
+    'external_plugins:\n' +
+    '  openshift:\n' +
+    '  - name: cherrypick\n' +
+    '    endpoint: http://cherrypick\n';
+  const result = extractOrgPlugins(yaml, 'openshift/foo', 'openshift');
+  assert.ok(!result.includes('label'), 'excluded repo should not inherit the org plugins stanza');
+  assert.ok(result.includes('cherrypick'), 'external plugins still apply to excluded repos');
 });

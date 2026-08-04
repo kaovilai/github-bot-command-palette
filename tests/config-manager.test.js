@@ -1192,3 +1192,100 @@ test('DEFAULT_CONFIG: Cherry-pick command uses the branch picker', () => {
   assert.equal(cherryPick.jobSource, 'branches');
   assert.equal(cherryPick.commandTemplate, '/cherry-pick {input}');
 });
+
+test('DEFAULT_CONFIG: verified and jira commands exist in universal profile', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  const commands = profile.globalCommands.map(c => c.command);
+  for (const expected of ['/verified by', '/verified later', '/verified bypass', '/verified remove',
+                          '/jira refresh', '/jira backport', '/jira cherrypick', '/cherrypick']) {
+    assert.ok(commands.includes(expected), `${expected} should exist in universal profile`);
+  }
+});
+
+test('DEFAULT_CONFIG: /jira backport joins branches with commas, /cherrypick with spaces', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  const backport = profile.globalCommands.find(c => c.command === '/jira backport');
+  assert.equal(backport.joinMode, 'single-command-comma');
+  assert.equal(backport.jobSource, 'branches');
+  const chain = profile.globalCommands.find(c => c.command === '/cherrypick');
+  assert.equal(chain.joinMode, 'single-command');
+  assert.equal(chain.jobSource, 'branches');
+});
+
+test('DEFAULT_CONFIG: payload profile targets openshift/* with all seven commands', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-payload-openshift');
+  assert.ok(profile, 'payload profile should exist');
+  assert.deepEqual([...profile.repoPatterns], ['openshift/*']);
+  const commands = profile.globalCommands.map(c => c.command);
+  assert.deepEqual([...commands].sort(), ['/payload', '/payload-abort', '/payload-aggregate',
+    '/payload-aggregate-with-prs', '/payload-job', '/payload-job-with-prs', '/payload-with-prs'].sort());
+  const inputCommands = ['/payload', '/payload-job', '/payload-aggregate',
+    '/payload-with-prs', '/payload-job-with-prs', '/payload-aggregate-with-prs'];
+  for (const name of inputCommands) {
+    const c = profile.globalCommands.find(x => x.command === name);
+    assert.equal(c.hasInput, true, `${name} should take free-form input`);
+    assert.ok(c.commandTemplate.includes('{input}'), `${name} template should contain {input}`);
+  }
+  const abort = profile.globalCommands.find(c => c.command === '/payload-abort');
+  assert.equal(abort.hasInput, false, '/payload-abort takes no input');
+  assert.equal(abort.requireConfirm, true);
+});
+
+test('DEFAULT_CONFIG: OpenShift labels profile has only /label commands', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-openshift-labels');
+  assert.ok(profile, 'labels profile should exist');
+  assert.deepEqual([...profile.repoPatterns], ['openshift/*', 'openshift-priv/*']);
+  const labelCommands = profile.globalCommands.map(c => c.command);
+  assert.deepEqual([...labelCommands].sort(), [
+    '/label backport-risk-assessed',
+    '/label cherry-pick-approved',
+    '/label docs-approved',
+    '/label jira/skip-dependent-bug-check',
+    '/label px-approved',
+    '/label qe-approved',
+    '/label staff-eng-approved',
+    '/label tide/merge-method-merge',
+    '/label tide/merge-method-rebase',
+    '/label tide/merge-method-squash'
+  ]);
+});
+
+test('DEFAULT_CONFIG: /publicize is scoped to openshift-priv/* and requires confirm', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-openshift-priv');
+  assert.ok(profile, 'openshift-priv profile should exist');
+  assert.deepEqual([...profile.repoPatterns], ['openshift-priv/*']);
+  const publicize = profile.globalCommands.find(c => c.command === '/publicize');
+  assert.ok(publicize);
+  assert.equal(publicize.requireConfirm, true);
+  assert.equal(CM.globMatch('openshift-priv/*', 'openshift/origin'), false,
+    'openshift-priv pattern must not match openshift org');
+  assert.equal(CM.globMatch('openshift-priv/*', 'openshift-priv/origin'), true);
+});
+
+test('isProwProfile: new OpenShift profiles are Prow profiles (prowAutoDetect gating)', () => {
+  const CM = makeContextWithStorage(null);
+  for (const id of ['profile-payload-openshift', 'profile-openshift-labels',
+                    'profile-openshift-priv', 'profile-openshift-specialized']) {
+    assert.equal(CM.isProwProfile(id), true, `${id} should be a Prow profile`);
+  }
+});
+
+test('DEFAULT_CONFIG: specialized profile exposes its OpenShift commands', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-openshift-specialized');
+  assert.ok(profile, 'specialized profile should exist');
+  assert.deepEqual([...profile.repoPatterns], ['openshift/*']);
+  assert.deepEqual([...profile.globalCommands].map(c => c.command), [
+    '/testwith',
+    '/testwith abort',
+    '/validate-backports',
+    '/pipeline required'
+  ]);
+  assert.equal(profile.globalCommands.find(c => c.command === '/testwith abort').requireConfirm, true,
+    'aborting in-flight jobs should require confirmation');
+});
