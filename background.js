@@ -261,7 +261,8 @@ function extractOrgPlugins(yamlText, fullRepo, org) {
       // excluded_repos only removes the repo from the org's plugins stanza;
       // top-level sections and external plugins still apply to it.
       const excluded = entry.excluded_repos || [];
-      if (!excluded.includes(fullRepo)) {
+      const repoName = fullRepo.slice(org.length + 1);
+      if (!excluded.includes(repoName)) {
         const pluginList = entry.plugins || (Array.isArray(entry) ? entry : []);
         for (const p of pluginList) plugins.add(p);
       }

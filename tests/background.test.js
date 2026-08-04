@@ -161,7 +161,7 @@ test('extractOrgPlugins: returns [] when repo is in excluded_repos', () => {
     'plugins:\n' +
     '  org:\n' +
     '    excluded_repos:\n' +
-    '      - org/repo\n' +
+    '      - repo\n' +
     '    plugins:\n' +
     '      - trigger\n' +
     '      - hold\n';
@@ -174,7 +174,7 @@ test('extractOrgPlugins: non-excluded repo gets org defaults', () => {
     'plugins:\n' +
     '  org:\n' +
     '    excluded_repos:\n' +
-    '      - org/other-repo\n' +
+    '      - other-repo\n' +
     '    plugins:\n' +
     '      - trigger\n' +
     '      - lgtm\n';
@@ -416,7 +416,7 @@ test('extractOrgPlugins: excluded_repos does not suppress external_plugins', () 
     'plugins:\n' +
     '  openshift:\n' +
     '    excluded_repos:\n' +
-    '      - openshift/foo\n' +
+    '      - foo\n' +
     '    plugins:\n' +
     '      - label\n' +
     'external_plugins:\n' +
