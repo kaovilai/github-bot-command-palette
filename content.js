@@ -569,7 +569,6 @@ const LEGACY_CHECK_ROW_SELECTOR =
       }
     }
     const closePicker = createDialogCloser(picker, onClickOutside, anchorBtn);
-    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
 
     attachOverlay(picker, anchorBtn);
     requestAnimationFrame(() => searchInput.focus());
@@ -656,7 +655,16 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @returns {Function} The close function.
    */
   function createDialogCloser(dialog, onOutside, anchorBtn) {
+    // Deferred via setTimeout so the click that opened the dialog (still
+    // bubbling to document) doesn't immediately trigger onOutside. Guard
+    // against a close() that fires before this timeout: cancel it in close()
+    // and skip attaching if the dialog is already gone, or the listener
+    // would be added but nothing would ever remove it.
+    const attachTimer = setTimeout(() => {
+      if (dialog.isConnected) document.addEventListener('click', onOutside);
+    }, 0);
     const close = () => {
+      clearTimeout(attachTimer);
       // Only take focus back if it still sits in the dialog (or nowhere):
       // posting moves focus to the comment textarea, and clicking outside
       // means the user has already chosen where to go.
@@ -945,8 +953,6 @@ const LEGACY_CHECK_ROW_SELECTOR =
     const firstField = inputs[rendered[0]] || submitBtn;
     addFocusTrap(picker, firstField);
 
-    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
-
     attachOverlay(picker, anchorBtn);
     requestAnimationFrame(() => firstField.focus());
   }
@@ -1044,7 +1050,6 @@ const LEGACY_CHECK_ROW_SELECTOR =
         closePopover();
       }
     }
-    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
     attachOverlay(popover, anchorBtn);
     requestAnimationFrame(() => input.focus());
   }
