@@ -289,8 +289,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @returns {Promise<void>}
    */
   async function showTestJobPicker(command, context, anchorBtn) {
-    const existing = document.querySelector('.ghbcp-job-picker');
-    if (existing) existing.remove();
+    closeOpenDialogs();
 
     const usePresubmits = (command.commandTemplate || '').startsWith('/test');
     const filter = command.jobPickerFilter || 'all';
@@ -564,18 +563,12 @@ const LEGACY_CHECK_ROW_SELECTOR =
     picker.appendChild(footer);
     renderJobs('');
 
-    function closePicker() {
-      picker.remove();
-      document.removeEventListener('click', onClickOutside);
-      if (anchorBtn) anchorBtn.focus();
-    }
-
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
         closePicker();
       }
     }
-    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
+    const closePicker = createDialogCloser(picker, onClickOutside, anchorBtn);
 
     attachOverlay(picker, anchorBtn);
     requestAnimationFrame(() => searchInput.focus());
@@ -600,6 +593,10 @@ const LEGACY_CHECK_ROW_SELECTOR =
   function handleCommandClick(command, context, btn) {
     if (command.expandRehearsalJobs) {
       expandAndPostRehearseAll(command);
+      return;
+    }
+    if (command.hasPayloadPicker) {
+      showPayloadPicker(command, context, btn);
       return;
     }
     if (command.hasJobPicker) {
@@ -648,6 +645,319 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
+   * Build the close function shared by every GHBCP dialog: detach the dialog,
+   * drop its document-level click listener, and hand focus back to the button
+   * that opened it. The result is also stored on the element so a replacing
+   * dialog can tear this one down cleanly.
+   * @param {HTMLElement}            dialog    - The dialog element.
+   * @param {Function}               onOutside - Its document click handler.
+   * @param {HTMLButtonElement|null} anchorBtn - Button that opened it, or null.
+   * @returns {Function} The close function.
+   */
+  function createDialogCloser(dialog, onOutside, anchorBtn) {
+    // Deferred via setTimeout so the click that opened the dialog (still
+    // bubbling to document) doesn't immediately trigger onOutside. Guard
+    // against a close() that fires before this timeout: cancel it in close()
+    // and skip attaching if the dialog is already gone, or the listener
+    // would be added but nothing would ever remove it.
+    const attachTimer = setTimeout(() => {
+      if (dialog.isConnected) document.addEventListener('click', onOutside);
+    }, 0);
+    const close = () => {
+      clearTimeout(attachTimer);
+      // Only take focus back if it still sits in the dialog (or nowhere):
+      // posting moves focus to the comment textarea, and clicking outside
+      // means the user has already chosen where to go.
+      const active = document.activeElement;
+      const hadFocus = !active || active === document.body || dialog.contains(active);
+      dialog.remove();
+      document.removeEventListener('click', onOutside);
+      if (anchorBtn && hadFocus) anchorBtn.focus();
+    };
+    dialog._ghbcpClose = close;
+    return close;
+  }
+
+  /**
+   * Close a previously-opened GHBCP dialog via its stored close function so
+   * its document-level click listener is removed too; falls back to removing
+   * the element for dialogs created before the close handoff existed.
+   * @param {string} selector - Dialog selector ('.ghbcp-job-picker' or '.ghbcp-popover').
+   */
+  function closeExistingDialog(selector) {
+    const existing = document.querySelector(selector);
+    if (!existing) return;
+    if (typeof existing._ghbcpClose === 'function') {
+      existing._ghbcpClose();
+    } else {
+      existing.remove();
+    }
+  }
+
+  /**
+   * Close whichever GHBCP dialog is currently open, so only one is ever shown.
+   */
+  function closeOpenDialogs() {
+    closeExistingDialog('.ghbcp-job-picker');
+    closeExistingDialog('.ghbcp-popover');
+  }
+
+  // Field layout per payload command (docs.ci.openshift.org
+  // release-oversight/pull-request-testing). The -with-prs variants accept
+  // only one command per comment, so the picker always emits a single line.
+  const PAYLOAD_FORMS = {
+    '/payload':                    ['version', 'suite', 'type'],
+    '/payload-with-prs':           ['version', 'suite', 'type', 'prs'],
+    '/payload-job':                ['jobs'],
+    '/payload-job-with-prs':       ['job', 'prs'],
+    '/payload-aggregate':          ['job', 'count'],
+    '/payload-aggregate-with-prs': ['job', 'count', 'prs']
+  };
+
+  /**
+   * Guess relevant OCP release versions from the PR's CI check names
+   * (e.g. "ci/prow/e2e-aws-4.20") to prefill the payload version field.
+   * @returns {string[]} Unique versions, newest first.
+   */
+  function detectReleaseVersions() {
+    const versions = new Set();
+    for (const check of scrapeCheckNames()) {
+      const matches = check.name.match(/\b[45]\.\d{1,2}\b/g);
+      if (matches) matches.forEach(v => versions.add(v));
+    }
+    return Array.from(versions).sort((a, b) => {
+      const [aMaj, aMin] = a.split('.').map(Number);
+      const [bMaj, bMin] = b.split('.').map(Number);
+      return (bMaj - aMaj) || (bMin - aMin);
+    });
+  }
+
+  /**
+   * Structured form dialog for the /payload command family: release version +
+   * suite + type for /payload, periodic job name(s) and aggregation count for
+   * the job/aggregate variants, and a PR list for the -with-prs variants.
+   * @param {Object}                 command   - Command descriptor (hasPayloadPicker).
+   * @param {Object}                 context   - Context data (repoName, prNumber).
+   * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the picker, or null.
+   */
+  function showPayloadPicker(command, context, anchorBtn) {
+    // Commands are user-editable, so resolve the form as an own property only —
+    // a command named e.g. "toString" must not pick up an Object.prototype
+    // member. A command with no known form gets the free-form popover instead
+    // of a payload form whose fields would not match its arguments.
+    const formKey = String(command.command || '').trim();
+    if (!Object.prototype.hasOwnProperty.call(PAYLOAD_FORMS, formKey)) {
+      showInputPopover(command, context, anchorBtn);
+      return;
+    }
+    const fields = PAYLOAD_FORMS[formKey];
+
+    closeOpenDialogs();
+
+    const picker = document.createElement('div');
+    picker.className = 'ghbcp-job-picker ghbcp-payload-picker';
+    picker.setAttribute('role', 'dialog');
+    picker.setAttribute('aria-modal', 'true');
+    picker.setAttribute('aria-label', command.label || command.command);
+
+    const form = document.createElement('div');
+    form.className = 'ghbcp-payload-form';
+
+    // The dialog has no search field to identify it the way the job picker
+    // does, so name the command on screen as well as in aria-label.
+    const title = document.createElement('div');
+    title.className = 'ghbcp-payload-title';
+    title.textContent = command.label || command.command;
+    picker.appendChild(title);
+
+    const inputs = {};
+    // Only fields that actually rendered a control; the submit handler and
+    // initial focus read this rather than the requested field list.
+    const rendered = [];
+
+    function addRow(key, labelText, el) {
+      const row = document.createElement('div');
+      row.className = 'ghbcp-payload-row';
+      const label = document.createElement('label');
+      label.textContent = labelText;
+      const id = 'ghbcp-payload-' + key;
+      label.setAttribute('for', id);
+      el.id = id;
+      // Constraints let reportValidity() surface a native message; the submit
+      // handler's own checks stay authoritative.
+      el.required = true;
+      el.addEventListener('input', () => el.setCustomValidity(''));
+      row.appendChild(label);
+      row.appendChild(el);
+      form.appendChild(row);
+      inputs[key] = el;
+      rendered.push(key);
+    }
+
+    for (const field of fields) {
+      if (field === 'version') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        const detected = detectReleaseVersions();
+        input.value = detected[0] || '';
+        input.placeholder = 'e.g. 4.20';
+        // A single token: the suite and type go in their own fields, so reject
+        // a pasted "4.20 nightly blocking" rather than duplicating them.
+        input.pattern = '\\S+';
+        input.setAttribute('aria-label', 'Release version');
+        if (detected.length > 0) {
+          const listId = 'ghbcp-payload-versions';
+          const datalist = document.createElement('datalist');
+          datalist.id = listId;
+          for (const v of detected) {
+            const opt = document.createElement('option');
+            opt.value = v;
+            datalist.appendChild(opt);
+          }
+          picker.appendChild(datalist);
+          input.setAttribute('list', listId);
+        }
+        addRow(field, 'Version', input);
+      } else if (field === 'suite') {
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', 'Payload suite');
+        for (const v of ['nightly', 'ci']) {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          select.appendChild(opt);
+        }
+        addRow(field, 'Suite', select);
+      } else if (field === 'type') {
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', 'Payload type');
+        for (const v of ['blocking', 'informing']) {
+          const opt = document.createElement('option');
+          opt.value = v;
+          opt.textContent = v;
+          select.appendChild(opt);
+        }
+        addRow(field, 'Type', select);
+      } else if (field === 'count') {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '1';
+        input.step = '1';
+        input.value = '10';
+        addRow(field, 'Runs (aggregation count)', input);
+      } else if (field === 'jobs' || field === 'job') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = field === 'jobs' ? 'periodic-ci-... [more jobs]' : 'periodic-ci-...';
+        // The aggregate/-with-prs variants take exactly one job name.
+        if (field === 'job') input.pattern = '\\S+';
+        addRow(field, field === 'jobs' ? 'Periodic job(s)' : 'Periodic job', input);
+      } else if (field === 'prs') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'org/repo#123 org/repo#456';
+        input.setAttribute('aria-label', 'Additional PRs');
+        addRow(field, 'PRs', input);
+      }
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'ghbcp-job-picker-footer';
+
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
+    submitBtn.className = 'ghbcp-btn ghbcp-btn-primary';
+    submitBtn.textContent = 'Post';
+    submitBtn.setAttribute('aria-label', 'Post payload command');
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'ghbcp-btn ghbcp-btn-neutral';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.setAttribute('aria-label', 'Cancel');
+
+    function onClickOutside(e) {
+      if (!picker.contains(e.target) && e.target !== anchorBtn) {
+        closePayloadPicker();
+      }
+    }
+    const closePayloadPicker = createDialogCloser(picker, onClickOutside, anchorBtn);
+
+    submitBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const parts = [];
+      for (const field of rendered) {
+        const input = inputs[field];
+        const value = input.value.trim();
+        // Write the trimmed value back so a whitespace-only entry trips the
+        // native `required` constraint and reportValidity() actually speaks.
+        if (input.value !== value) input.value = value;
+        // 'count' is a whole number of runs: reject fractions, exponent
+        // notation (Prow parses the literal text), and out-of-range values.
+        const countOk = field !== 'count' ||
+          (/^\d+$/.test(value) && Number(value) >= 1 && Number.isSafeInteger(Number(value)));
+        if (value && !countOk) {
+          input.setCustomValidity('Enter a whole number of runs, e.g. 10');
+        }
+        const invalid = !value ||
+          (typeof input.checkValidity === 'function' && !input.checkValidity()) ||
+          !countOk;
+        if (invalid) {
+          input.focus();
+          if (typeof input.reportValidity === 'function') input.reportValidity();
+          return;
+        }
+        // Post the canonical numeral, so "007" does not reach Prow verbatim.
+        parts.push(field === 'count' ? String(Number(value)) : value);
+      }
+      const cmdText = CM.sanitizeCommand(command.command + ' ' + parts.join(' '));
+      if (shouldConfirm(command)) {
+        if (!confirm(`Post "${cmdText}"?`)) return;
+      }
+      fillComment(cmdText);
+      closePayloadPicker();
+    });
+
+    cancelBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closePayloadPicker();
+    });
+
+    picker.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closePayloadPicker();
+        return;
+      }
+      if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
+        // The picker lives inside GitHub's comment form, so Enter must never
+        // reach it. Advance through the fields instead of submitting from the
+        // first one — that also keeps Enter from racing the version field's
+        // datalist suggestion commit.
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = rendered.indexOf(e.target.id.replace('ghbcp-payload-', ''));
+        const next = idx >= 0 && idx < rendered.length - 1 ? inputs[rendered[idx + 1]] : null;
+        if (next) next.focus();
+        else submitBtn.click();
+      }
+    });
+
+    footer.appendChild(cancelBtn);
+    footer.appendChild(submitBtn);
+    picker.appendChild(form);
+    picker.appendChild(footer);
+
+    const firstField = inputs[rendered[0]] || submitBtn;
+    addFocusTrap(picker, firstField);
+
+    attachOverlay(picker, anchorBtn);
+    requestAnimationFrame(() => firstField.focus());
+  }
+
+  /**
    * Show a floating input popover anchored to `anchorBtn` for commands that need
    * free-form user input before posting.  Handles Enter/Escape keyboard shortcuts,
    * optional confirmation, and click-outside dismissal.
@@ -656,8 +966,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the popover, or null.
    */
   function showInputPopover(command, context, anchorBtn) {
-    const existing = document.querySelector('.ghbcp-popover');
-    if (existing) existing.remove();
+    closeOpenDialogs();
 
     const popover = document.createElement('div');
     popover.className = 'ghbcp-popover';
@@ -685,10 +994,9 @@ const LEGACY_CHECK_ROW_SELECTOR =
     cancelBtn.textContent = '✕';
     cancelBtn.setAttribute('aria-label', 'Cancel');
 
-    function closePopover() {
-      popover.remove();
-      document.removeEventListener('click', onClickOutside);
-    }
+    // Declared before its first use at click time; the handler below is
+    // hoisted, so the pair can reference each other.
+    const closePopover = createDialogCloser(popover, onClickOutside, anchorBtn);
 
     function doPost() {
       const val = input.value.trim();
@@ -742,8 +1050,6 @@ const LEGACY_CHECK_ROW_SELECTOR =
         closePopover();
       }
     }
-    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
-
     attachOverlay(popover, anchorBtn);
     requestAnimationFrame(() => input.focus());
   }

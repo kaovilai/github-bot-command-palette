@@ -423,6 +423,45 @@ html[data-color-mode="dark"] {
   font-size: 12px;
 }
 
+.ghbcp-payload-title {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ghbcp-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ghbcp-text);
+}
+
+.ghbcp-payload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.ghbcp-payload-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ghbcp-payload-row label {
+  min-width: 64px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ghbcp-text);
+}
+
+.ghbcp-payload-row input,
+.ghbcp-payload-row select {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  background: var(--ghbcp-bg);
+  color: var(--ghbcp-text);
+}
+
 .ghbcp-job-picker-select-all {
   display: flex;
   align-items: center;
