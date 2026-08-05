@@ -77,6 +77,14 @@ html[data-color-mode="dark"] {
 
 /* Command Bar */
 .ghbcp-command-bar {
+  box-sizing: border-box;
+  width: 100%;
+  /* Some GitHub dialogs (e.g. the review "Finish your review" overlay) lay
+     their form out as a flex row; without this the bar becomes just another
+     flex item squeezed beside the comment textarea instead of sitting above
+     it. align-self (not flex-basis) avoids claiming space on the main axis,
+     so it can't shrink a sibling textarea in a column-direction flex parent. */
+  align-self: stretch;
   background: var(--ghbcp-bg-secondary);
   border: 1px solid var(--ghbcp-border);
   border-radius: 6px;
