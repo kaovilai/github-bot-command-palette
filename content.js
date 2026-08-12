@@ -44,15 +44,34 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
   /**
    * Detect the base branch of the current PR by querying the DOM.
-   * Tries the modern Primer React `.base-ref` selector first, then falls back
-   * to legacy selectors for older GitHub UI layouts.
+   * GitHub's PR header always renders "<author> wants to merge N commits into
+   * <base> from <head>", with the base link appearing first and always
+   * pointing at the current repo (the head may be on a fork). Filtering
+   * `/tree/` links to the current repo's prefix and taking the first match
+   * yields the base branch reliably without depending on GitHub's
+   * frequently-changing generated CSS class names.
+   *
+   * `.base-ref`/`.commit-ref` (previously used here) no longer match the base
+   * branch on the modern Primer React PR header: `.commit-ref` in particular
+   * belongs to unrelated "force-pushed the X branch" timeline events and
+   * resolves to the *head* branch, which 404s against openshift/release's
+   * presubmits config and silently falls back to raw (unresolved) check names.
    * @returns {string|null} Branch name, or null if the page does not expose it.
    */
   function detectTargetBranch() {
+    const repo = detectRepo();
+    if (repo) {
+      const prefix = `/${repo}/tree/`;
+      const treeLink = Array.from(document.querySelectorAll('a[href]'))
+        .find(a => a.getAttribute('href').startsWith(prefix));
+      if (treeLink) {
+        const branch = treeLink.getAttribute('href').slice(prefix.length);
+        if (branch) return decodeURIComponent(branch);
+      }
+    }
+    // Legacy fallback for older GitHub UI layouts
     const baseRef = document.querySelector('.base-ref a, .base-ref span.css-truncate-target');
     if (baseRef) return baseRef.textContent.trim();
-    const branchLabel = document.querySelector('[data-testid="head-ref-selector"] + span, .commit-ref');
-    if (branchLabel) return branchLabel.textContent.trim();
     return null;
   }
 
