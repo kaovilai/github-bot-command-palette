@@ -167,6 +167,21 @@ const LEGACY_CHECK_ROW_SELECTOR =
     return names;
   }
 
+  /**
+   * Build a name → live status lookup from the checks currently rendered on
+   * the page, so callers with a separately-sourced job list (e.g. presubmits
+   * from Prow config YAML) can override their static/config-derived status
+   * with what GitHub is actually reporting right now.
+   * @returns {Map<string, 'failed'|'pending'|'passed'>}
+   */
+  function buildLiveCheckStatusMap() {
+    const map = new Map();
+    for (const c of scrapeCheckNames()) {
+      map.set(c.name, c.status);
+    }
+    return map;
+  }
+
   const PROW_CHECK_PATTERN = /^(pull-|ci\/prow\/|tide$|branch-protection$)/;
   const PROW_LABEL_PATTERN = /^(lgtm|approved|needs-ok-to-test|do-not-merge|size\/|needs-rebase|tide\/)/;
 
@@ -324,10 +339,17 @@ const LEGACY_CHECK_ROW_SELECTOR =
         return;
       }
     } else if (usePresubmits && lastPresubmitJobs && lastPresubmitJobs.length > 0) {
+      const liveStatus = buildLiveCheckStatusMap();
       jobs = lastPresubmitJobs.map(j => ({
         name: j.name,
-        status: j.optional ? 'pending' : 'passed',
-        context: j.context
+        // Prefer whatever GitHub is actually showing for this check right now
+        // (matched by Prow context or raw job name) over the config-derived
+        // guess — a required job defaults to 'passed' only because Prow
+        // config doesn't say otherwise, but the page might show it failing.
+        status: liveStatus.get(j.context) || liveStatus.get(j.jobName) || liveStatus.get(j.name) ||
+                (j.optional ? 'pending' : 'passed'),
+        context: j.context,
+        jobName: j.jobName
       }));
     }
 
@@ -582,12 +604,52 @@ const LEGACY_CHECK_ROW_SELECTOR =
     picker.appendChild(footer);
     renderJobs('');
 
+    // Keep dropdown status dots in sync with GitHub's own checks section as
+    // it updates in place (Prow polling re-renders check rows without a full
+    // page reload) — otherwise a job's color can go stale until the picker
+    // is closed and reopened. Rehearsal/branch job sources aren't backed by
+    // a check row, so there's nothing live to watch for those.
+    let liveStatusObserver = null;
+    if (command.jobSource !== 'rehearsals' && command.jobSource !== 'branches') {
+      let refreshTimer = null;
+      const refreshLiveStatuses = () => {
+        const liveStatus = buildLiveCheckStatusMap();
+        let changed = false;
+        for (const job of jobs) {
+          const live = liveStatus.get(job.context) || liveStatus.get(job.jobName) || liveStatus.get(job.name);
+          if (live && live !== job.status) {
+            job.status = live;
+            changed = true;
+          }
+        }
+        if (changed) renderJobs(searchInput.value);
+      };
+      const watchTarget = document.querySelector(CHECKS_SECTION_SELECTOR) ||
+                           document.querySelector('.merge-status-list');
+      if (watchTarget) {
+        liveStatusObserver = new MutationObserver(() => {
+          clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(refreshLiveStatuses, 150);
+        });
+        liveStatusObserver.observe(watchTarget, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['class', 'data-conclusion']
+        });
+      }
+    }
+
     function onClickOutside(e) {
       if (!picker.contains(e.target) && e.target !== anchorBtn) {
         closePicker();
       }
     }
-    const closePicker = createDialogCloser(picker, onClickOutside, anchorBtn);
+    const rawClosePicker = createDialogCloser(picker, onClickOutside, anchorBtn);
+    function closePicker() {
+      if (liveStatusObserver) liveStatusObserver.disconnect();
+      rawClosePicker();
+    }
 
     attachOverlay(picker, anchorBtn);
     requestAnimationFrame(() => searchInput.focus());
