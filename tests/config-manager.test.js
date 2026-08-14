@@ -632,6 +632,73 @@ test('saveConfig: is a no-op when extension context is invalid', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// getGithubToken / saveGithubToken / clearGithubToken
+// ---------------------------------------------------------------------------
+// These use chrome.storage.local (device-scoped), deliberately separate from
+// the chrome.storage.sync config blob the tests above exercise.
+function makeContextWithLocalStorage(storedToken, lastError = null) {
+  let saved = null;
+  let removedKey = null;
+  const ctx = vm.createContext({
+    window: { GHBCP: { CommandToPlugin: {} } },
+    crypto: { randomUUID: () => 'test-uuid-1234' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { id: 'fake-id', get lastError() { return lastError; } },
+      storage: {
+        local: {
+          get: (key, cb) => cb(storedToken == null ? {} : { [key]: storedToken }),
+          set: (obj, cb) => { saved = obj; cb && cb(); },
+          remove: (key, cb) => { removedKey = key; cb && cb(); }
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  return {
+    CM: ctx.window.GHBCP.ConfigManager,
+    getSaved: () => saved,
+    getRemovedKey: () => removedKey
+  };
+}
+
+test('getGithubToken: returns null when nothing is stored', async () => {
+  const { CM } = makeContextWithLocalStorage(null);
+  assert.equal(await CM.getGithubToken(), null);
+});
+
+test('getGithubToken: returns the stored token', async () => {
+  const { CM } = makeContextWithLocalStorage('ghp_test123');
+  assert.equal(await CM.getGithubToken(), 'ghp_test123');
+});
+
+test('getGithubToken: returns null when chrome.runtime.lastError is set', async () => {
+  const { CM } = makeContextWithLocalStorage('ghp_test123', { message: 'quota exceeded' });
+  assert.equal(await CM.getGithubToken(), null);
+});
+
+test('saveGithubToken: persists to chrome.storage.local under its own key, not the synced config blob', async () => {
+  const { CM, getSaved } = makeContextWithLocalStorage(null);
+  await CM.saveGithubToken('ghp_newtoken');
+  const saved = getSaved();
+  assert.ok(saved, 'storage.local.set should have been called');
+  assert.equal(Object.keys(saved).includes(CM.STORAGE_KEY), false,
+    'the token must not be saved under the synced config storage key');
+  assert.equal(Object.values(saved)[0], 'ghp_newtoken');
+});
+
+test('saveGithubToken: rejects when chrome.runtime.lastError is set after set', async () => {
+  const { CM } = makeContextWithLocalStorage(null, { message: 'quota exceeded' });
+  await assert.rejects(() => CM.saveGithubToken('ghp_x'));
+});
+
+test('clearGithubToken: removes the stored token key', async () => {
+  const { CM, getRemovedKey } = makeContextWithLocalStorage('ghp_test123');
+  await CM.clearGithubToken();
+  assert.ok(getRemovedKey(), 'storage.local.remove should have been called with a key');
+});
+
+// ---------------------------------------------------------------------------
 // resetToDefaults
 // ---------------------------------------------------------------------------
 test('resetToDefaults: returns DEFAULT_CONFIG and saves it to storage', async () => {

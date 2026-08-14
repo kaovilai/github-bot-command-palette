@@ -5,6 +5,7 @@ const STORAGE_KEY = 'ghbcp_config';
 const CACHE_KEY = 'ghbcp_plugin_cache';
 
 const PRESUBMITS_CACHE_KEY = 'ghbcp_presubmits_cache';
+const GITHUB_TOKEN_STORAGE_KEY = 'ghbcp_github_token';
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getEnabledPlugins') {
@@ -29,6 +30,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'getRepoBranches') {
     handleGetRepoBranches(msg.repo).then(sendResponse);
+    return true;
+  }
+  if (msg.action === 'verifyGithubToken') {
+    handleVerifyGithubToken(msg.token).then(sendResponse);
+    return true;
+  }
+  if (msg.action === 'rerunActionsJob') {
+    handleRerunActionsJob(msg.repo, msg.runId, msg.jobId).then(sendResponse);
+    return true;
+  }
+  if (msg.action === 'rerunFailedActionsJobs') {
+    handleRerunFailedActionsJobs(msg.repo, msg.runId).then(sendResponse);
     return true;
   }
 });
@@ -425,6 +438,102 @@ async function handleGetRepoBranches(repo) {
   }
   if (branches.length === 0) return { branches: null };
   return { branches: sortBranchNames(branches) };
+}
+
+/**
+ * Verify a GitHub Personal Access Token by calling the authenticated `/user`
+ * endpoint. Used by the Settings page's "Verify Token" button so users get
+ * immediate feedback instead of discovering a bad token only when a rerun
+ * silently fails later.
+ * @param {string} token - GitHub PAT (classic or fine-grained).
+ * @returns {Promise<{success: boolean, login?: string, error?: string}>}
+ */
+async function handleVerifyGithubToken(token) {
+  if (!token) return { success: false, error: 'no-token' };
+  try {
+    const resp = await fetch('https://api.github.com/user', {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+    const data = await resp.json();
+    return { success: true, login: data.login };
+  } catch (e) {
+    return { success: false, error: 'network-error' };
+  }
+}
+
+/**
+ * Rerun a single GitHub Actions job via the documented REST API, for checks
+ * Prow doesn't own (posting `/test <name>` for those gets bounced by Prow as
+ * "target not found" — see content.js's `isKnownProwContext`). Requires a
+ * user-supplied token with `actions:write` on the target repo; there is no
+ * way to authenticate this call with the page's own github.com session,
+ * since api.github.com is a separate origin that doesn't accept session
+ * cookies.
+ * @param {string} repo  - Full `org/repo` string.
+ * @param {string|number} runId - The workflow run ID (from the check row's own link).
+ * @param {string|number} jobId - The specific job ID within that run.
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function handleRerunActionsJob(repo, runId, jobId) {
+  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return { success: false, error: 'bad-repo' };
+  if (!runId || !jobId) return { success: false, error: 'bad-ids' };
+  const token = await storageGet('local', GITHUB_TOKEN_STORAGE_KEY, null);
+  if (!token) return { success: false, error: 'no-token' };
+  try {
+    const resp = await fetch(
+      `https://api.github.com/repos/${repo}/actions/jobs/${jobId}/rerun`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Bearer ${token}`
+        }
+      }
+    );
+    if (resp.status === 403) return { success: false, error: 'forbidden' };
+    if (resp.status === 404) return { success: false, error: 'not-found' };
+    if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: 'network-error' };
+  }
+}
+
+/**
+ * Rerun every failed job in a workflow run via the documented REST API —
+ * used by the multi-select Test job picker when a whole run's failed set is
+ * selected, instead of firing one `rerunActionsJob` call per job.
+ * @param {string} repo - Full `org/repo` string.
+ * @param {string|number} runId - The workflow run ID.
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function handleRerunFailedActionsJobs(repo, runId) {
+  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return { success: false, error: 'bad-repo' };
+  if (!runId) return { success: false, error: 'bad-ids' };
+  const token = await storageGet('local', GITHUB_TOKEN_STORAGE_KEY, null);
+  if (!token) return { success: false, error: 'no-token' };
+  try {
+    const resp = await fetch(
+      `https://api.github.com/repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Bearer ${token}`
+        }
+      }
+    );
+    if (resp.status === 403) return { success: false, error: 'forbidden' };
+    if (resp.status === 404) return { success: false, error: 'not-found' };
+    if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: 'network-error' };
+  }
 }
 
 // pj-rehearse truncates the REHEARSALNOTIFIER comment table to 25 rows but

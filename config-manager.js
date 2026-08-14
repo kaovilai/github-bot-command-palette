@@ -511,6 +511,76 @@ GHBCP.ConfigManager = (() => {
     });
   }
 
+  const GITHUB_TOKEN_STORAGE_KEY = 'ghbcp_github_token';
+
+  /**
+   * Read the user's GitHub Personal Access Token, used to call the real
+   * GitHub Actions rerun API for checks Prow doesn't own. Deliberately kept
+   * in `chrome.storage.local` (device-scoped) instead of the synced
+   * `chrome.storage.sync` config blob — a PAT shouldn't silently propagate
+   * to every Chrome profile signed into the same Google account.
+   * @returns {Promise<string|null>} The stored token, or null if unset/unavailable.
+   */
+  async function getGithubToken() {
+    if (!isContextValid()) return null;
+    return new Promise(resolve => {
+      try {
+        chrome.storage.local.get(GITHUB_TOKEN_STORAGE_KEY, result => {
+          if (chrome.runtime.lastError) {
+            resolve(null);
+            return;
+          }
+          resolve(result[GITHUB_TOKEN_STORAGE_KEY] || null);
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  /**
+   * Persist the user's GitHub Personal Access Token to `chrome.storage.local`.
+   * @param {string} token - The token to store.
+   * @returns {Promise<void>} Rejects if storage write fails.
+   */
+  async function saveGithubToken(token) {
+    if (!isContextValid()) return;
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.storage.local.set({ [GITHUB_TOKEN_STORAGE_KEY]: token }, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  /**
+   * Remove the stored GitHub Personal Access Token.
+   * @returns {Promise<void>} Rejects if storage write fails.
+   */
+  async function clearGithubToken() {
+    if (!isContextValid()) return;
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.storage.local.remove(GITHUB_TOKEN_STORAGE_KEY, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
   /**
    * Reset storage to factory defaults and return the new config.
    * @returns {Promise<Object>} The freshly-saved default configuration.
@@ -641,6 +711,9 @@ GHBCP.ConfigManager = (() => {
     isContextValid,
     getConfig,
     saveConfig,
+    getGithubToken,
+    saveGithubToken,
+    clearGithubToken,
     resetToDefaults,
     getMatchingProfiles,
     getExtraCommands,

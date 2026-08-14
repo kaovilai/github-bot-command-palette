@@ -12,6 +12,26 @@ const LEGACY_CHECK_ROW_SELECTOR =
   '.js-merge-status-check-item, ' +
   '.merge-status-list li';
 
+// Matches a GitHub Actions run/job link, e.g.
+// "/openshift/velero/actions/runs/31753380458/job/94624504231?pr=562".
+const ACTIONS_RUN_JOB_HREF_RE = /\/actions\/runs\/(\d+)\/job\/(\d+)/;
+
+/**
+ * Extract the workflow run ID and job ID from a check row's own link. These
+ * are the IDs the GitHub Actions rerun REST API needs
+ * (`POST /repos/{repo}/actions/jobs/{jobId}/rerun`) — already present in the
+ * DOM, so no extra API call is needed to resolve them. Pure function, no
+ * chrome/DOM globals touched — kept top-level (outside the content-script
+ * IIFE) so it's trivial to test in isolation.
+ * @param {string|null|undefined} href - A check row's anchor href (relative or absolute).
+ * @returns {{runId: string, jobId: string}|null} The parsed IDs, or null if `href` isn't an Actions run/job link.
+ */
+function parseActionsRunJobIds(href) {
+  if (!href) return null;
+  const match = href.match(ACTIONS_RUN_JOB_HREF_RE);
+  return match ? { runId: match[1], jobId: match[2] } : null;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -19,6 +39,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
   let debounceTimer = null;
   let lastPluginData = null;
   let lastPresubmitJobs = null;
+  let lastGithubToken = null;
   let lastRehearsalJobsUrl = null;
   let lastRehearsalJobs = null;
   let lastRepoBranches = null;
@@ -107,6 +128,117 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
+   * Stand-in for the "Test" button on checks Prow doesn't own (e.g. a plain
+   * GitHub Actions matrix job). /test can't reach these — Prow only reruns
+   * jobs it defines — so link to the check's own run page instead, where
+   * GitHub's native "Re-run jobs" / "Re-run failed jobs" button can retrigger
+   * it. That button itself needs *write* access to the repo (the reason Prow's
+   * /test-comment convention exists in the first place — so contributors
+   * without write access can still trigger CI), so it's often greyed out or
+   * missing entirely for non-maintainers on org-gated repos like openshift/*;
+   * the tooltip calls that out explicitly rather than assuming the link
+   * always works. The tooltip is the tip; the link is a convenience.
+   *
+   * Used as a fallback by `createRerunActionButton()` when no GitHub token is
+   * configured (or the row's run/job IDs can't be parsed) — the safe,
+   * zero-setup default.
+   * @param {string} checkName
+   * @param {Element} row - The check row, used to find its run-page link.
+   * @returns {HTMLAnchorElement}
+   */
+  function createRerunHintButton(checkName, row) {
+    const runLink = row.querySelector('h4 a, .status-actions a, .merge-status-item a, a.Link--primary');
+    const el = document.createElement('a');
+    el.className = 'ghbcp-btn ghbcp-btn-neutral';
+    el.textContent = 'Rerun?';
+    const tip = 'Not a Prow job — /test can\'t reach it (Prow only reruns jobs it owns). ' +
+      'Try GitHub\'s own "Re-run jobs" / "Re-run failed jobs" on its run (opened by this link) — ' +
+      'that needs write access to the repo, so it may be greyed out or missing without it. ' +
+      'Configure a GitHub token in Settings to turn this into a one-click Rerun. ' +
+      'Or use /override (next to this) to unblock a Tide-blocked merge.';
+    el.title = tip;
+    el.setAttribute('aria-label', checkName + ': ' + tip);
+    if (runLink && runLink.href) {
+      el.href = runLink.href;
+      el.target = '_blank';
+      el.rel = 'noopener noreferrer';
+    } else {
+      el.href = '#';
+      el.addEventListener('click', (e) => e.preventDefault());
+    }
+    return el;
+  }
+
+  /**
+   * Map a `rerunActionsJob`/`rerunFailedActionsJobs` error code to a
+   * user-facing message.
+   * @param {string|undefined} error
+   * @returns {string}
+   */
+  function rerunErrorMessage(error) {
+    switch (error) {
+      case 'no-token': return 'No GitHub token configured — add one in Settings to enable rerun';
+      case 'forbidden': return 'Token lacks Actions write access to this repo';
+      case 'not-found': return 'Job not found (GitHub Actions runs are rerunnable for 30 days)';
+      default: return 'Rerun failed: ' + (error || 'unknown error');
+    }
+  }
+
+  /**
+   * "Rerun" button for checks Prow doesn't own. When a GitHub token is
+   * configured (Settings) and the row's run/job IDs parse from its own link,
+   * this is a real one-click action: `POST /repos/{repo}/actions/jobs/{jobId}/rerun`
+   * via background.js, gated behind a confirm() since it's a real
+   * side-effecting action (spends CI minutes) rather than posting a comment.
+   * Falls back to `createRerunHintButton()` (a link, no token needed) when
+   * either is missing — the safe, zero-setup default.
+   * @param {string} checkName
+   * @param {Element} row - The check row, used to find its run-page link.
+   * @param {Object} context - `{repoName, prNumber, ...}` for this check.
+   * @returns {HTMLAnchorElement|HTMLButtonElement}
+   */
+  function createRerunActionButton(checkName, row, context) {
+    const runLink = row.querySelector('h4 a, .status-actions a, .merge-status-item a, a.Link--primary');
+    const ids = runLink ? parseActionsRunJobIds(runLink.getAttribute('href')) : null;
+    if (!ids || !lastGithubToken) {
+      return createRerunHintButton(checkName, row);
+    }
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ghbcp-btn ghbcp-btn-neutral';
+    btn.textContent = 'Rerun';
+    const tip = 'Rerun "' + checkName + '" via the GitHub Actions API — not a Prow job, so /test can\'t reach it. ' +
+      'Uses your configured token and consumes CI minutes.';
+    btn.title = tip;
+    btn.setAttribute('aria-label', tip);
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!window.confirm(
+        'Rerun "' + checkName + '" via GitHub Actions?\n\n' +
+        'This uses your configured token and consumes CI minutes.'
+      )) return;
+      try {
+        const resp = await chrome.runtime.sendMessage({
+          action: 'rerunActionsJob',
+          repo: context.repoName,
+          runId: ids.runId,
+          jobId: ids.jobId
+        });
+        if (resp && resp.success) {
+          showToast('Rerun triggered for ' + checkName, 'success');
+        } else {
+          showToast(rerunErrorMessage(resp && resp.error), 'error');
+        }
+      } catch (err) {
+        showToast('Failed to reach the extension background — try reloading the page', 'error');
+      }
+    });
+    return btn;
+  }
+
+  /**
    * Determine the CI status of a check row element by inspecting its icon classes
    * and data-conclusion attributes. Used by both scrapeCheckNames() and injectCheckButtons()
    * to keep status detection consistent in one place.
@@ -129,9 +261,40 @@ const LEGACY_CHECK_ROW_SELECTOR =
   }
 
   /**
+   * Look up `checkName` against the scraped presubmit config (`lastPresubmitJobs`),
+   * matching on either Prow's status context ("ci/prow/images") or the full
+   * prowjob name ("pull-ci-...-images") — a check row may surface either.
+   * Shared by `scrapeCheckNames()` and `injectCheckButtons()` so "is this
+   * check Prow-managed" is decided the same way in both places.
+   * @param {string} checkName
+   * @returns {Object|null} The matching presubmit job entry, or null.
+   */
+  function matchPresubmitJob(checkName) {
+    if (!lastPresubmitJobs) return null;
+    return lastPresubmitJobs.find(
+      j => j.context === checkName || j.jobName === checkName
+    ) || null;
+  }
+
+  /**
+   * Whether Prow itself owns `checkName` (so `/test`/rerunning it as a
+   * ProwJob makes sense), vs. it being a plain GitHub Actions check Prow has
+   * no knowledge of. When the presubmit list hasn't loaded, assumes
+   * Prow-managed (matches `injectCheckButtons()`'s best-effort default before
+   * `lastPresubmitJobs` resolves).
+   * @param {string} checkName
+   * @returns {boolean}
+   */
+  function isProwManagedCheck(checkName) {
+    return !lastPresubmitJobs ||
+      checkName.startsWith('ci/prow/') ||
+      matchPresubmitJob(checkName) !== null;
+  }
+
+  /**
    * Scrape CI check names and statuses from the current PR page.
    * Supports both the modern Primer React UI and the legacy merge-status UI.
-   * @returns {{name: string, status: 'failed'|'pending'|'passed'}[]}
+   * @returns {{name: string, status: 'failed'|'pending'|'passed', isProwManaged: boolean, runId: string|null, jobId: string|null}[]}
    */
   function scrapeCheckNames() {
     const names = [];
@@ -147,7 +310,15 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        names.push({ name, status: getCheckStatus(item) });
+        const linkEl = item.querySelector('h4 a');
+        const ids = linkEl ? parseActionsRunJobIds(linkEl.getAttribute('href')) : null;
+        names.push({
+          name,
+          status: getCheckStatus(item),
+          isProwManaged: isProwManagedCheck(name),
+          runId: ids ? ids.runId : null,
+          jobId: ids ? ids.jobId : null
+        });
       }
     }
 
@@ -160,12 +331,20 @@ const LEGACY_CHECK_ROW_SELECTOR =
         const name = nameEl.textContent.trim();
         if (!name || seen.has(name)) continue;
         seen.add(name);
-        names.push({ name, status: getCheckStatus(row) });
+        const ids = parseActionsRunJobIds(nameEl.getAttribute('href'));
+        names.push({
+          name,
+          status: getCheckStatus(row),
+          isProwManaged: isProwManagedCheck(name),
+          runId: ids ? ids.runId : null,
+          jobId: ids ? ids.jobId : null
+        });
       }
     }
 
     return names;
   }
+
 
   /**
    * Build a name → live status lookup from the checks currently rendered on
@@ -539,32 +718,88 @@ const LEGACY_CHECK_ROW_SELECTOR =
       // Prow/tide actually see ("Lint (ubuntu-latest)"). Other commands (/test)
       // use the job name as-is.
       const isOverride = template.trimStart().startsWith('/override');
-      const names = Array.from(selected).map(n =>
+      const isTest = template.trimStart().startsWith('/test');
+
+      // /test only reaches jobs Prow owns (isProwManagedCheck()). When this
+      // picker's jobs came from scrapeCheckNames() (lastPresubmitJobs was
+      // unavailable, so entries carry isProwManaged/runId/jobId — see that
+      // function), route selected GitHub-Actions-native jobs through the real
+      // rerun API instead of folding them into a /test comment Prow would
+      // just bounce as "target not found". Without a token configured there's
+      // no way to fire that call, so fall back to the old behavior (still
+      // posted as /test — a harmless no-op for those, same as a single
+      // check row's rerun-hint-link fallback).
+      let commentNames = Array.from(selected);
+      let rerunJobs = [];
+      if (isTest && lastGithubToken) {
+        const jobsByName = new Map(jobs.map(j => [j.name, j]));
+        const prowNames = [];
+        for (const name of selected) {
+          const job = jobsByName.get(name);
+          if (job && job.isProwManaged === false && job.runId && job.jobId) {
+            rerunJobs.push(job);
+          } else {
+            prowNames.push(name);
+          }
+        }
+        commentNames = prowNames;
+      }
+
+      const names = commentNames.map(n =>
         CM.sanitizeCommand(isOverride ? CM.getOverrideContext(n) : n));
       // 'single-command' joins space-separated (/cherrypick a b); the comma
       // variant exists for /jira backport, whose plugin requires "a,b".
-      let cmdText;
-      if (command.joinMode === 'single-command') {
-        cmdText = template.replace('{input}', names.join(' '));
-      } else if (command.joinMode === 'single-command-comma') {
-        // A comma inside a name can't be expressed in a comma-joined argument
-        // (the /jira backport parser has no escaping) — surface the conflict
-        // and keep the picker open instead of emitting an ambiguous command.
-        const unsafe = names.filter(n => n.includes(','));
-        if (unsafe.length > 0) {
-          alert(`Comma-separated submission cannot include: ${unsafe.join(' ')}`);
-          return;
+      let cmdText = null;
+      if (names.length > 0) {
+        if (command.joinMode === 'single-command') {
+          cmdText = template.replace('{input}', names.join(' '));
+        } else if (command.joinMode === 'single-command-comma') {
+          // A comma inside a name can't be expressed in a comma-joined argument
+          // (the /jira backport parser has no escaping) — surface the conflict
+          // and keep the picker open instead of emitting an ambiguous command.
+          const unsafe = names.filter(n => n.includes(','));
+          if (unsafe.length > 0) {
+            alert(`Comma-separated submission cannot include: ${unsafe.join(' ')}`);
+            return;
+          }
+          cmdText = template.replace('{input}', names.join(','));
+        } else {
+          cmdText = names.map(n => template.replace('{input}', n)).join('\n');
         }
-        cmdText = template.replace('{input}', names.join(','));
-      } else {
-        cmdText = names.map(n => template.replace('{input}', n)).join('\n');
       }
 
-      if (shouldConfirm(command)) {
-        if (!confirm(`Post:\n${cmdText}`)) return;
+      const confirmMsg = [
+        cmdText ? `Post:\n${cmdText}` : null,
+        rerunJobs.length > 0
+          ? 'Rerun via GitHub Actions (uses your configured token, consumes CI minutes):\n' +
+            rerunJobs.map(j => j.name).join('\n')
+          : null
+      ].filter(Boolean).join('\n\n');
+      if (!confirmMsg) return;
+
+      // Always confirm when a real rerun is involved, regardless of
+      // confirmBeforePost — it spends CI compute/money, not just posts a comment.
+      if (shouldConfirm(command) || rerunJobs.length > 0) {
+        if (!confirm(confirmMsg)) return;
       }
 
-      fillComment(cmdText);
+      if (cmdText) fillComment(cmdText);
+      for (const job of rerunJobs) {
+        chrome.runtime.sendMessage({
+          action: 'rerunActionsJob',
+          repo: context.repoName,
+          runId: job.runId,
+          jobId: job.jobId
+        }).then(resp => {
+          if (resp && resp.success) {
+            showToast('Rerun triggered for ' + job.name, 'success');
+          } else {
+            showToast(rerunErrorMessage(resp && resp.error), 'error');
+          }
+        }).catch(() => {
+          showToast('Failed to reach the extension background for ' + job.name, 'error');
+        });
+      }
       closePicker();
     });
 
@@ -1510,22 +1745,26 @@ const LEGACY_CHECK_ROW_SELECTOR =
       const checkName = nameEl ? nameEl.textContent.trim() : '';
       if (!checkName) continue;
 
+      const presubmitMatch = matchPresubmitJob(checkName);
+      const rerunJobName = presubmitMatch ? presubmitMatch.name : null;
+
+      // /test only reruns jobs Prow itself owns (ci-operator presubmits,
+      // surfaced as "ci/prow/<job>" or matched above against the scraped
+      // presubmit config). A repo can also report plain GitHub Actions checks
+      // (e.g. a native workflow's matrix jobs) that Prow has no knowledge of
+      // at all — posting /test <name> for one of those gets "The specified
+      // target(s) for /test were not found" back, no matter how the name is
+      // spelled. /override is different: Prow's override plugin accepts any
+      // failed status context *or check run* (github.com/kubernetes-sigs/prow
+      // pkg/plugins/override, ListCheckRuns), so it still works on these and
+      // remains the correct way to unblock a Tide-blocked merge. So once the
+      // presubmit list has loaded, only the /test button is gated.
+      const canTest = isProwManagedCheck(checkName);
+
       row.dataset.ghbcpInjected = 'true';
 
       const btnContainer = document.createElement('span');
       btnContainer.className = 'ghbcp-check-btns';
-
-      let rerunJobName = null;
-      if (lastPresubmitJobs) {
-        // The check row may surface either Prow's status context
-        // ("ci/prow/images") or the full prowjob name
-        // ("pull-ci-...-images"); match on either so the bare /test target
-        // from the YAML's rerun_command is used instead of the raw context.
-        const match = lastPresubmitJobs.find(
-          j => j.context === checkName || j.jobName === checkName
-        );
-        if (match) rerunJobName = match.name;
-      }
 
       const context = {
         testName: checkName,
@@ -1536,13 +1775,17 @@ const LEGACY_CHECK_ROW_SELECTOR =
 
       for (const profile of profiles) {
         for (const cmd of profile.checkCommands) {
-          const jobName = rerunJobName || checkName;
-          const testCmd = Object.assign({}, cmd, {
-            command: '/test ' + jobName,
-            label: 'Test',
-            description: '/test ' + jobName
-          });
-          btnContainer.appendChild(createButton(testCmd, context));
+          if (canTest) {
+            const jobName = rerunJobName || checkName;
+            const testCmd = Object.assign({}, cmd, {
+              command: '/test ' + jobName,
+              label: 'Test',
+              description: '/test ' + jobName
+            });
+            btnContainer.appendChild(createButton(testCmd, context));
+          } else {
+            btnContainer.appendChild(createRerunActionButton(checkName, row, context));
+          }
 
           const overrideContext = CM.getOverrideContext(checkName);
           const overrideCmd = Object.assign({}, cmd, {
@@ -1760,6 +2003,7 @@ const LEGACY_CHECK_ROW_SELECTOR =
       }
 
       lastPresubmitJobs = await fetchPresubmitJobs();
+      lastGithubToken = await CM.getGithubToken();
 
       if (config.globalSettings.prowAutoDetect !== false) {
         const hasProwSignals = detectProwSignals() ||

@@ -80,6 +80,56 @@
   }
 
   /**
+   * Load the GitHub token into the Settings form. Kept out of `renderGlobalSettings()`
+   * on purpose — the token lives in `chrome.storage.local` via
+   * `CM.getGithubToken()`/`saveGithubToken()`, separate from the synced
+   * `config` blob (and so isn't included in Export/Import either).
+   */
+  async function renderGithubToken() {
+    const token = await CM.getGithubToken();
+    document.getElementById('opt-github-token').value = token || '';
+  }
+
+  /** Wire up the GitHub token field's autosave and the Verify Token button. */
+  function bindGithubToken() {
+    document.getElementById('opt-github-token').addEventListener('change', async (e) => {
+      try {
+        await CM.saveGithubToken(e.target.value.trim());
+        showStatus('Settings saved', 'success');
+      } catch (err) {
+        showStatus('Save failed: ' + err.message, 'error');
+      }
+    });
+
+    document.getElementById('btn-verify-token').addEventListener('click', async () => {
+      const resultEl = document.getElementById('github-token-status');
+      const token = document.getElementById('opt-github-token').value.trim();
+      if (!token) {
+        resultEl.textContent = 'Enter a token to verify';
+        resultEl.className = 'status status-error';
+        return;
+      }
+
+      resultEl.textContent = 'Verifying...';
+      resultEl.className = 'status status-success';
+
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'verifyGithubToken', token });
+        if (response && response.success) {
+          resultEl.textContent = `Token valid — authenticated as ${response.login}`;
+          resultEl.className = 'status status-success';
+        } else {
+          resultEl.textContent = 'Error: ' + (response ? response.error : 'No response');
+          resultEl.className = 'status status-error';
+        }
+      } catch (err) {
+        resultEl.textContent = 'Error: ' + err.message;
+        resultEl.className = 'status status-error';
+      }
+    });
+  }
+
+  /**
    * Return an HTML `<span>` badge for a command style value.
    * @param {string} style - Style key (e.g. `success`, `danger`, `neutral`).
    * @returns {string} HTML string.
@@ -661,6 +711,8 @@
   }
   renderGlobalSettings();
   bindGlobalSettings();
+  await renderGithubToken();
+  bindGithubToken();
   renderProfiles();
   renderPluginSources();
 })();

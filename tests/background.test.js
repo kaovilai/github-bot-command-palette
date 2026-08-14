@@ -427,3 +427,115 @@ test('extractOrgPlugins: excluded_repos does not suppress external_plugins', () 
   assert.ok(!result.includes('label'), 'excluded repo should not inherit the org plugins stanza');
   assert.ok(result.includes('cherrypick'), 'external plugins still apply to excluded repos');
 });
+
+// ── GitHub Actions rerun handlers ─────────────────────────────────────────────
+// These call chrome.storage.local (via storageGet) and fetch(), neither of
+// which the shared `ctx` provides by default (no existing test needed them) —
+// install lightweight per-test mocks. Other tests in this file never touch
+// ctx.chrome/ctx.fetch, so this is safe to add without affecting them.
+
+// assert.deepEqual/deepStrictEqual compares prototypes too — a plain object
+// returned from code run in a *different* vm context has a different
+// Object.prototype (cross-realm), so it fails "same structure but not
+// reference-equal" even when every field matches. Compare fields instead.
+function assertResultEqual(actual, expected) {
+  for (const key of Object.keys(expected)) {
+    assert.equal(actual[key], expected[key], `field "${key}"`);
+  }
+}
+
+function mockChromeStorage(tokenValue) {
+  return {
+    storage: {
+      local: {
+        get(key, cb) { cb(tokenValue === undefined ? {} : { [key]: tokenValue }); }
+      }
+    },
+    runtime: {}
+  };
+}
+
+test('handleVerifyGithubToken: missing token returns no-token without fetching', async () => {
+  ctx.fetch = () => { throw new Error('should not fetch without a token'); };
+  const result = await ctx.handleVerifyGithubToken('');
+  assertResultEqual(result, { success: false, error: 'no-token' });
+});
+
+test('handleVerifyGithubToken: valid token returns success + login', async () => {
+  ctx.fetch = async (url, opts) => {
+    assert.equal(url, 'https://api.github.com/user');
+    assert.equal(opts.headers.Authorization, 'Bearer abc123');
+    return { ok: true, json: async () => ({ login: 'octocat' }) };
+  };
+  const result = await ctx.handleVerifyGithubToken('abc123');
+  assertResultEqual(result, { success: true, login: 'octocat' });
+});
+
+test('handleVerifyGithubToken: non-ok response surfaces the HTTP status', async () => {
+  ctx.fetch = async () => ({ ok: false, status: 401 });
+  const result = await ctx.handleVerifyGithubToken('bad-token');
+  assertResultEqual(result, { success: false, error: 'HTTP 401' });
+});
+
+test('handleRerunActionsJob: rejects a malformed repo before touching storage or fetch', async () => {
+  ctx.chrome = mockChromeStorage('irrelevant');
+  ctx.fetch = () => { throw new Error('should not fetch for a bad repo'); };
+  const result = await ctx.handleRerunActionsJob('not-a-repo', '123', '456');
+  assertResultEqual(result, { success: false, error: 'bad-repo' });
+});
+
+test('handleRerunActionsJob: rejects missing run/job IDs', async () => {
+  ctx.chrome = mockChromeStorage('irrelevant');
+  const result = await ctx.handleRerunActionsJob('org/repo', null, null);
+  assertResultEqual(result, { success: false, error: 'bad-ids' });
+});
+
+test('handleRerunActionsJob: no stored token returns no-token without fetching', async () => {
+  ctx.chrome = mockChromeStorage(undefined);
+  ctx.fetch = () => { throw new Error('should not fetch without a token'); };
+  const result = await ctx.handleRerunActionsJob('org/repo', '123', '456');
+  assertResultEqual(result, { success: false, error: 'no-token' });
+});
+
+test('handleRerunActionsJob: posts to the documented rerun endpoint and reports success', async () => {
+  ctx.chrome = mockChromeStorage('tok');
+  ctx.fetch = async (url, opts) => {
+    assert.equal(url, 'https://api.github.com/repos/org/repo/actions/jobs/456/rerun');
+    assert.equal(opts.method, 'POST');
+    assert.equal(opts.headers.Authorization, 'Bearer tok');
+    return { ok: true, status: 201 };
+  };
+  const result = await ctx.handleRerunActionsJob('org/repo', '123', '456');
+  assertResultEqual(result, { success: true });
+});
+
+test('handleRerunActionsJob: maps 403 to forbidden (token lacks Actions write access)', async () => {
+  ctx.chrome = mockChromeStorage('tok');
+  ctx.fetch = async () => ({ ok: false, status: 403 });
+  const result = await ctx.handleRerunActionsJob('org/repo', '123', '456');
+  assertResultEqual(result, { success: false, error: 'forbidden' });
+});
+
+test('handleRerunActionsJob: maps 404 to not-found (job may have expired)', async () => {
+  ctx.chrome = mockChromeStorage('tok');
+  ctx.fetch = async () => ({ ok: false, status: 404 });
+  const result = await ctx.handleRerunActionsJob('org/repo', '123', '456');
+  assertResultEqual(result, { success: false, error: 'not-found' });
+});
+
+test('handleRerunFailedActionsJobs: no stored token returns no-token', async () => {
+  ctx.chrome = mockChromeStorage(undefined);
+  const result = await ctx.handleRerunFailedActionsJobs('org/repo', '123');
+  assertResultEqual(result, { success: false, error: 'no-token' });
+});
+
+test('handleRerunFailedActionsJobs: posts to the run-level rerun-failed-jobs endpoint', async () => {
+  ctx.chrome = mockChromeStorage('tok');
+  ctx.fetch = async (url, opts) => {
+    assert.equal(url, 'https://api.github.com/repos/org/repo/actions/runs/123/rerun-failed-jobs');
+    assert.equal(opts.method, 'POST');
+    return { ok: true, status: 201 };
+  };
+  const result = await ctx.handleRerunFailedActionsJobs('org/repo', '123');
+  assertResultEqual(result, { success: true });
+});
