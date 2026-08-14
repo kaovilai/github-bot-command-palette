@@ -163,6 +163,21 @@
         <option value="inline-checks">Inline with checks</option>
       </select>
     </div>
+    <div class="form-row" style="margin-top:12px">
+      <label class="block" for="opt-github-token">GitHub Personal Access Token (optional)</label>
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 6px">
+        Only needed to turn the "Rerun?" link on non-Prow GitHub Actions checks into a
+        real one-click Rerun button. Use a fine-grained token scoped to just the repos
+        you need, with <strong>Actions: read and write</strong> permission — not a
+        classic all-repo <code>repo</code>-scope token. Stored locally on this device only
+        (not synced, not included in Export/Import).
+      </p>
+      <div class="inline-fields">
+        <input type="password" id="opt-github-token" placeholder="github_pat_..." style="flex:1">
+        <button class="btn btn-sm" id="btn-verify-token">Verify Token</button>
+      </div>
+      <div id="github-token-status" class="status" style="margin-top:6px"></div>
+    </div>
   </div>
 
   <h2>Repo Exclusions</h2>
