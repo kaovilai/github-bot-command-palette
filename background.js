@@ -21,7 +21,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.action === 'getPresubmitJobs') {
-    handleGetPresubmitJobs(msg.repo, msg.branch, msg.forceRefresh, msg.prNumber).then(sendResponse);
+    handleGetPresubmitJobs(msg.repo, msg.branch, msg.forceRefresh, msg.prNumber, msg.configRef).then(sendResponse);
+    return true;
+  }
+  if (msg.action === 'getPRHeadSha') {
+    handleGetPRHeadSha(msg.repo, msg.prNumber).then(sendResponse);
     return true;
   }
   if (msg.action === 'getRehearsalJobs') {
@@ -376,6 +380,31 @@ function buildConfigFileUrl(source, org, repoName) {
 }
 
 /**
+ * Fetch a PR's base ref and head SHA from the GitHub REST API (unauthenticated).
+ * Shared by `resolveBaseBranch()` (base ref) and `resolvePRHeadSha()` (head SHA)
+ * so both read from a single request instead of duplicating the fetch.
+ * @param {string}      repo     - Full `org/repo` string.
+ * @param {string|null} prNumber - PR number string, or null.
+ * @returns {Promise<{baseRef: string|null, headSha: string|null}|null>}
+ */
+async function fetchPullRequestRefs(repo, prNumber) {
+  if (!prNumber) return null;
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${repo}/pulls/${prNumber}`, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return {
+      baseRef: data.base && data.base.ref ? data.base.ref : null,
+      headSha: data.head && data.head.sha ? data.head.sha : null
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * Resolve the base branch for a PR, using `hintBranch` if provided,
  * or fetching it from the GitHub REST API as a fallback.
  * @param {string}      repo        - Full `org/repo` string.
@@ -386,16 +415,33 @@ function buildConfigFileUrl(source, org, repoName) {
 async function resolveBaseBranch(repo, prNumber, hintBranch) {
   if (hintBranch) return hintBranch;
   if (!prNumber) return null;
-  try {
-    const resp = await fetch(`https://api.github.com/repos/${repo}/pulls/${prNumber}`, {
-      headers: { 'Accept': 'application/vnd.github.v3+json' }
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    return data.base && data.base.ref ? data.base.ref : null;
-  } catch (e) {
-    return null;
-  }
+  const refs = await fetchPullRequestRefs(repo, prNumber);
+  return refs ? refs.baseRef : null;
+}
+
+/**
+ * Resolve a PR's head commit SHA. Used to fetch a rehearsal's *own*
+ * openshift/release PR's in-progress job-config changes (a rehearsal tests
+ * changes an unmerged PR is making, which may not exist at `master` yet)
+ * instead of the merged config.
+ * @param {string}      repo     - Full `org/repo` string.
+ * @param {string|null} prNumber - PR number string, or null.
+ * @returns {Promise<string|null>}
+ */
+async function resolvePRHeadSha(repo, prNumber) {
+  if (!prNumber) return null;
+  const refs = await fetchPullRequestRefs(repo, prNumber);
+  return refs ? refs.headSha : null;
+}
+
+/**
+ * Message handler for `getPRHeadSha`. See `resolvePRHeadSha()`.
+ * @param {string}      repo     - Full `org/repo` string.
+ * @param {string|null} prNumber - PR number string, or null.
+ * @returns {Promise<{headSha: string|null}>}
+ */
+async function handleGetPRHeadSha(repo, prNumber) {
+  return { headSha: await resolvePRHeadSha(repo, prNumber) };
 }
 
 /**
@@ -614,9 +660,13 @@ function resolvePresubmitSource(config) {
  * @param {string|null} branch       - Target branch hint from the page DOM.
  * @param {boolean}     forceRefresh - Bypass TTL cache.
  * @param {string|null} prNumber     - PR number used to resolve branch via API.
+ * @param {string|null} configRef    - Optional git ref (e.g. a PR head SHA) to fetch
+ *   the job-config YAML from instead of `source.branch`. Used for rehearsal-job
+ *   resolution, where the config change under review may not exist at
+ *   `source.branch` ('master') yet.
  * @returns {Promise<{jobs: Object[]|null}>}
  */
-async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
+async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber, configRef) {
   const config = await getConfig();
   const source = resolvePresubmitSource(config);
 
@@ -624,7 +674,7 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
   if (!resolvedBranch) return { jobs: null };
 
   const [org, repoName] = repo.split('/');
-  const cacheKey = `${repo}/${resolvedBranch}`;
+  const cacheKey = configRef ? `${configRef}:${repo}/${resolvedBranch}` : `${repo}/${resolvedBranch}`;
   const cache = await getPresubmitsCache();
   const ttlMs = (source.cacheTTLMinutes || 60) * 60 * 1000;
 
@@ -636,7 +686,8 @@ async function handleGetPresubmitJobs(repo, branch, forceRefresh, prNumber) {
   try {
     const basePath = source.presubmitsBasePath.replace(/\/+$/, '');
     const fileName = `${org}-${repoName}-${resolvedBranch}-presubmits.yaml`;
-    const url = `https://raw.githubusercontent.com/${source.configRepo}/${source.branch}/${basePath}/${org}/${repoName}/${fileName}`;
+    const ref = configRef || source.branch;
+    const url = `https://raw.githubusercontent.com/${source.configRepo}/${ref}/${basePath}/${org}/${repoName}/${fileName}`;
 
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

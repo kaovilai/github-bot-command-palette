@@ -254,6 +254,134 @@ test('resolvePresubmitSource: prefers an enabled configured source', () => {
   assert.equal(src.presubmitsBasePath, 'jobs');
 });
 
+// ── fetchPullRequestRefs / resolveBaseBranch / resolvePRHeadSha ───────────────
+// Generic mutable chrome.storage mock (any key, either area) — separate from
+// mockChromeStorage() below, which is hardcoded to a single storage.local key
+// for the GitHub-token tests.
+function makeStorageArea(initial) {
+  const store = Object.assign({}, initial);
+  return {
+    get(key, cb) { cb({ [key]: store[key] }); },
+    set(obj, cb) { Object.assign(store, obj); if (cb) cb(); }
+  };
+}
+function mockChromeStorageFull({ syncData, localData } = {}) {
+  return {
+    storage: {
+      sync: makeStorageArea(syncData || {}),
+      local: makeStorageArea(localData || {})
+    },
+    runtime: {}
+  };
+}
+
+test('resolveBaseBranch: returns hintBranch immediately, without fetching', async () => {
+  ctx.fetch = () => { throw new Error('should not fetch when a hint branch is given'); };
+  const result = await ctx.resolveBaseBranch('org/repo', '123', 'oadp-1.6');
+  assert.equal(result, 'oadp-1.6');
+});
+
+test('resolveBaseBranch: returns null when no hint and no prNumber', async () => {
+  ctx.fetch = () => { throw new Error('should not fetch without a PR number'); };
+  const result = await ctx.resolveBaseBranch('org/repo', null, null);
+  assert.equal(result, null);
+});
+
+test('resolveBaseBranch: fetches the PR and reads base.ref when no hint is given', async () => {
+  ctx.fetch = async (url) => {
+    assert.equal(url, 'https://api.github.com/repos/org/repo/pulls/123');
+    return { ok: true, json: async () => ({ base: { ref: 'oadp-1.6' }, head: { sha: 'abc123' } }) };
+  };
+  const result = await ctx.resolveBaseBranch('org/repo', '123', null);
+  assert.equal(result, 'oadp-1.6');
+});
+
+test('resolveBaseBranch: non-ok PR API response returns null', async () => {
+  ctx.fetch = async () => ({ ok: false, status: 404 });
+  const result = await ctx.resolveBaseBranch('org/repo', '123', null);
+  assert.equal(result, null);
+});
+
+test('resolvePRHeadSha: fetches the PR and reads head.sha', async () => {
+  ctx.fetch = async (url) => {
+    assert.equal(url, 'https://api.github.com/repos/org/repo/pulls/123');
+    return { ok: true, json: async () => ({ base: { ref: 'oadp-1.6' }, head: { sha: 'abc123' } }) };
+  };
+  const result = await ctx.resolvePRHeadSha('org/repo', '123');
+  assert.equal(result, 'abc123');
+});
+
+test('resolvePRHeadSha: returns null without a PR number', async () => {
+  ctx.fetch = () => { throw new Error('should not fetch without a PR number'); };
+  const result = await ctx.resolvePRHeadSha('org/repo', null);
+  assert.equal(result, null);
+});
+
+test('resolvePRHeadSha: non-ok PR API response returns null', async () => {
+  ctx.fetch = async () => ({ ok: false, status: 404 });
+  const result = await ctx.resolvePRHeadSha('org/repo', '123');
+  assert.equal(result, null);
+});
+
+test('handleGetPRHeadSha: happy path returns the head SHA', async () => {
+  ctx.fetch = async () => ({ ok: true, json: async () => ({ base: { ref: 'main' }, head: { sha: 'deadbeef' } }) });
+  const result = await ctx.handleGetPRHeadSha('org/repo', '123');
+  assert.equal(result.headSha, 'deadbeef');
+});
+
+test('handleGetPRHeadSha: no PR number returns null headSha', async () => {
+  ctx.fetch = () => { throw new Error('should not fetch without a PR number'); };
+  const result = await ctx.handleGetPRHeadSha('org/repo', null);
+  assert.equal(result.headSha, null);
+});
+
+// ── handleGetPresubmitJobs: configRef override ────────────────────────────────
+
+test('handleGetPresubmitJobs: with no configRef, fetches from source.branch (master)', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  ctx.fetch = async (url) => {
+    assert.equal(url, 'https://raw.githubusercontent.com/openshift/release/master/ci-operator/jobs/migtools/kubevirt-datamover-controller/migtools-kubevirt-datamover-controller-oadp-1.6-presubmits.yaml');
+    return { ok: true, text: async () => 'presubmits:\n  migtools/kubevirt-datamover-controller:\n    - name: pull-ci-migtools-kubevirt-datamover-controller-oadp-1.6-e2e-test-aws\n      context: ci/prow/e2e-test-aws\n      rerun_command: /test e2e-test-aws\n' };
+  };
+  const result = await ctx.handleGetPresubmitJobs('migtools/kubevirt-datamover-controller', 'oadp-1.6', false, null, undefined);
+  assert.equal(result.jobs.length, 1);
+  assert.equal(result.jobs[0].jobName, 'pull-ci-migtools-kubevirt-datamover-controller-oadp-1.6-e2e-test-aws');
+});
+
+test('handleGetPresubmitJobs: with a configRef, fetches from that ref instead of master', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  ctx.fetch = async (url) => {
+    assert.equal(url, 'https://raw.githubusercontent.com/openshift/release/abc123/ci-operator/jobs/migtools/kubevirt-datamover-controller/migtools-kubevirt-datamover-controller-oadp-1.6-presubmits.yaml');
+    return { ok: true, text: async () => 'presubmits:\n  migtools/kubevirt-datamover-controller:\n    - name: pull-ci-migtools-kubevirt-datamover-controller-oadp-1.6-e2e-test-aws\n      context: ci/prow/e2e-test-aws\n      rerun_command: /test e2e-test-aws\n' };
+  };
+  const result = await ctx.handleGetPresubmitJobs('migtools/kubevirt-datamover-controller', 'oadp-1.6', false, null, 'abc123');
+  assert.equal(result.jobs.length, 1);
+});
+
+test('handleGetPresubmitJobs: configRef and non-configRef calls use separate cache entries (both fetch)', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  let fetchCount = 0;
+  ctx.fetch = async () => {
+    fetchCount++;
+    return { ok: true, text: async () => 'presubmits:\n  org/repo:\n    - name: pull-ci-org-repo-branch-unit\n      context: ci/prow/unit\n      rerun_command: /test unit\n' };
+  };
+  await ctx.handleGetPresubmitJobs('org/repo', 'branch', false, null, 'sha1');
+  await ctx.handleGetPresubmitJobs('org/repo', 'branch', false, null, undefined);
+  assert.equal(fetchCount, 2, 'a configRef-scoped call and an unscoped call must not share a cache entry');
+});
+
+test('handleGetPresubmitJobs: a second call with the same configRef hits the cache (one fetch)', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  let fetchCount = 0;
+  ctx.fetch = async () => {
+    fetchCount++;
+    return { ok: true, text: async () => 'presubmits:\n  org/repo:\n    - name: pull-ci-org-repo-branch-unit\n      context: ci/prow/unit\n      rerun_command: /test unit\n' };
+  };
+  await ctx.handleGetPresubmitJobs('org/repo', 'branch', false, null, 'sha1');
+  await ctx.handleGetPresubmitJobs('org/repo', 'branch', false, null, 'sha1');
+  assert.equal(fetchCount, 1);
+});
+
 // ── parseRehearsalJobList / isAllowedRehearsalListUrl ─────────────────────────
 
 test('parseRehearsalJobList: parses pipe-table rows and skips the header', () => {

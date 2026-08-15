@@ -32,6 +32,65 @@ function parseActionsRunJobIds(href) {
   return match ? { runId: match[1], jobId: match[2] } : null;
 }
 
+// Matches a pj-rehearse rehearsal check's GitHub status context:
+// "ci/rehearse/<org>/<repo>/<branch>/<shortname>". Branch is captured
+// greedily so a branch name containing "/" still leaves the last group as
+// the true shortname (the tail after the LAST "/", per openshift/ci-tools
+// pkg/rehearse/jobs.go's makeRehearsalPresubmit(), which builds this exact
+// context as `ci/rehearse/${org}/${repo}/${branch}/${shortName}`).
+const REHEARSAL_CONTEXT_RE = /^ci\/rehearse\/([^/]+)\/([^/]+)\/(.+)\/([^/]+)$/;
+
+/**
+ * Parse a rehearsal check's GitHub status context into its components.
+ * Pure function, no chrome/DOM globals touched.
+ * @param {string} checkName
+ * @returns {{org: string, repo: string, branch: string, shortName: string}|null}
+ */
+function parseRehearsalCheckContext(checkName) {
+  if (typeof checkName !== 'string') return null;
+  const m = checkName.match(REHEARSAL_CONTEXT_RE);
+  return m ? { org: m[1], repo: m[2], branch: m[3], shortName: m[4] } : null;
+}
+
+/**
+ * Mirrors openshift/ci-tools pkg/rehearse/jobs.go's contextFor(): a
+ * presubmit's rehearsal shortname is the last "/"-segment of its real
+ * Context field, or its Name if Context is empty:
+ *   func contextFor(source *prowconfig.Presubmit) string {
+ *     if source.Context != "" {
+ *       return source.Context[strings.LastIndex(source.Context, "/")+1:]
+ *     }
+ *     return source.Name
+ *   }
+ * `entry` is one of handleGetPresubmitJobs()'s returned job objects
+ * ({name, jobName, context, always_run, optional}) — `jobName` is the raw
+ * YAML `name:` field (source.Name in Go); `context` is the raw YAML
+ * `context:` field (source.Context in Go).
+ * @param {Object} entry
+ * @returns {string|undefined}
+ */
+function computePresubmitContextShortName(entry) {
+  if (!entry) return undefined;
+  return entry.context ? entry.context.split('/').pop() : entry.jobName;
+}
+
+/**
+ * Find the one presubmit entry whose computed shortname matches `shortName`.
+ * Declines (returns null) on zero matches; flags (rather than guesses) on
+ * more than one match, since guessing wrong would post a `/pj-rehearse` for
+ * the wrong job.
+ * @param {Object[]|null} entries
+ * @param {string} shortName
+ * @returns {{jobName: string}|{ambiguous: true, count: number}|null}
+ */
+function findRehearsalJobMatch(entries, shortName) {
+  if (!Array.isArray(entries) || !shortName) return null;
+  const matches = entries.filter(e => e.jobName && computePresubmitContextShortName(e) === shortName);
+  if (matches.length === 1) return { jobName: matches[0].jobName };
+  if (matches.length > 1) return { ambiguous: true, count: matches.length };
+  return null;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -44,6 +103,9 @@ function parseActionsRunJobIds(href) {
   let lastRehearsalJobs = null;
   let lastRepoBranches = null;
   let lastRepoBranchesRepo = null;
+  let lastHeadShaKey = null;
+  let lastHeadSha = null;
+  const rehearsalPresubmitCache = new Map(); // `${configRef}:${org}/${repo}#${branch}` -> jobs[]|null
   let shortcutMap = {};
 
   /** @returns {string|null} Full `org/repo` path extracted from the current URL, or null. */
@@ -166,6 +228,32 @@ function parseActionsRunJobIds(href) {
       el.href = '#';
       el.addEventListener('click', (e) => e.preventDefault());
     }
+    return el;
+  }
+
+  /**
+   * Neutral, non-actionable stand-in for a failed rehearsal check
+   * ("ci/rehearse/...") whose exact job name couldn't be resolved (fetch
+   * error, no matching presubmit, or an ambiguous >1 match — see
+   * findRehearsalJobMatch()). Distinct from createRerunHintButton(): this
+   * check IS Prow/rehearsal-owned, we just can't safely name the job, so we
+   * don't guess.
+   * @param {string} checkName
+   * @param {{ambiguous:true,count:number}|null} resolution
+   * @returns {HTMLAnchorElement}
+   */
+  function createRehearsalHintButton(checkName, resolution) {
+    const el = document.createElement('a');
+    el.className = 'ghbcp-btn ghbcp-btn-neutral';
+    el.textContent = 'Rehearse?';
+    const reason = resolution && resolution.ambiguous
+      ? `${resolution.count} presubmits in this repo/branch share the same rerun shortname — declining to guess which.`
+      : 'Could not resolve the exact rehearsal job name for this check.';
+    const tip = `${reason} Use "Rehearse..." above to pick the job manually, or check Prow's own failure comment for the exact /pj-rehearse command.`;
+    el.title = tip;
+    el.setAttribute('aria-label', checkName + ': ' + tip);
+    el.href = '#';
+    el.addEventListener('click', (e) => e.preventDefault());
     return el;
   }
 
@@ -361,7 +449,7 @@ function parseActionsRunJobIds(href) {
     return map;
   }
 
-  const PROW_CHECK_PATTERN = /^(pull-|ci\/prow\/|tide$|branch-protection$)/;
+  const PROW_CHECK_PATTERN = /^(pull-|ci\/prow\/|ci\/rehearse\/|tide$|branch-protection$)/;
   const PROW_LABEL_PATTERN = /^(lgtm|approved|needs-ok-to-test|do-not-merge|size\/|needs-rebase|tide\/)/;
 
   function detectProwSignals() {
@@ -488,6 +576,97 @@ function parseActionsRunJobIds(href) {
     } catch (e) {
       return null;
     }
+  }
+
+  /**
+   * Fetch (and cache, per repo+PR) the current PR's own head commit SHA.
+   * See fetchRehearsalPresubmitEntries()'s doc comment for why this is needed.
+   * @returns {Promise<string|null>}
+   */
+  async function fetchConfigRepoHeadSha() {
+    if (!CM.isContextValid() || !currentRepo) return null;
+    const prNumber = getPRNumber();
+    const key = `${currentRepo}#${prNumber}`;
+    if (key === lastHeadShaKey) return lastHeadSha;
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: 'getPRHeadSha', repo: currentRepo, prNumber });
+      lastHeadShaKey = key;
+      lastHeadSha = (resp && resp.headSha) || null;
+      return lastHeadSha;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Fetch (and cache) presubmit entries for an arbitrary org/repo/branch —
+   * unlike fetchPresubmitJobs() (always the current page's own repo, at its
+   * base branch), a rehearsal check's context names some OTHER repo/branch
+   * entirely (e.g. a kubevirt-datamover-controller job rehearsed from an
+   * openshift/release PR). `configRef` is normally the openshift/release PR's
+   * own head SHA (not its base branch / 'master'): a rehearsal specifically
+   * tests job-config changes an *unmerged* PR itself is making, which may not
+   * exist at the merged branch yet.
+   * @param {string} org
+   * @param {string} repoName
+   * @param {string} branch
+   * @param {string|null} configRef
+   * @returns {Promise<Object[]|null>}
+   */
+  async function fetchRehearsalPresubmitEntries(org, repoName, branch, configRef) {
+    if (!CM.isContextValid()) return null;
+    const cacheKey = `${configRef || ''}:${org}/${repoName}#${branch}`;
+    if (rehearsalPresubmitCache.has(cacheKey)) return rehearsalPresubmitCache.get(cacheKey);
+    let jobs = null;
+    try {
+      const resp = await chrome.runtime.sendMessage({
+        action: 'getPresubmitJobs',
+        repo: `${org}/${repoName}`,
+        branch,
+        prNumber: null,
+        configRef: configRef || undefined
+      });
+      jobs = (resp && resp.jobs) || null;
+    } catch (e) {
+      jobs = null;
+    }
+    rehearsalPresubmitCache.set(cacheKey, jobs);
+    return jobs;
+  }
+
+  /**
+   * Resolve exact `/pj-rehearse <job>` job names for a batch of failed
+   * "ci/rehearse/..." check names in one pass, deduping the presubmit-YAML
+   * fetch per distinct org/repo/branch (multiple failed checks on one PR
+   * commonly share the same target repo/branch).
+   * @param {string[]} checkNames - Distinct check names to resolve.
+   * @returns {Promise<Map<string, {jobName:string}|{ambiguous:true,count:number}|null>>}
+   */
+  async function resolveRehearsalJobNames(checkNames) {
+    const result = new Map();
+    const parsedByCheckName = new Map();
+    const groups = new Map(); // "org/repo#branch" -> {org, repo, branch, checkNames: []}
+
+    for (const checkName of checkNames) {
+      const parsed = parseRehearsalCheckContext(checkName);
+      if (!parsed) { result.set(checkName, null); continue; }
+      parsedByCheckName.set(checkName, parsed);
+      const groupKey = `${parsed.org}/${parsed.repo}#${parsed.branch}`;
+      if (!groups.has(groupKey)) groups.set(groupKey, { ...parsed, checkNames: [] });
+      groups.get(groupKey).checkNames.push(checkName);
+    }
+    if (groups.size === 0) return result;
+
+    const configRef = await fetchConfigRepoHeadSha();
+
+    await Promise.all(Array.from(groups.values()).map(async (group) => {
+      const entries = await fetchRehearsalPresubmitEntries(group.org, group.repo, group.branch, configRef);
+      for (const checkName of group.checkNames) {
+        const parsed = parsedByCheckName.get(checkName);
+        result.set(checkName, entries ? findRehearsalJobMatch(entries, parsed.shortName) : null);
+      }
+    }));
+    return result;
   }
 
   /**
@@ -1714,7 +1893,7 @@ function parseActionsRunJobIds(href) {
    * picks up the latest command set without duplicating buttons.
    * @param {Object[]} profiles - Matched, enabled profile objects.
    */
-  function injectCheckButtons(profiles) {
+  async function injectCheckButtons(profiles) {
     // Clear any previously injected check buttons so that a plugin refresh or
     // re-inject picks up the latest command set instead of skipping processed rows.
     document.querySelectorAll('.ghbcp-check-btns').forEach(el => el.remove());
@@ -1722,22 +1901,26 @@ function parseActionsRunJobIds(href) {
       delete el.dataset.ghbcpInjected;
     });
 
-    let checkRows = [];
+    let checkRowEls = [];
 
     // Modern GitHub UI
     const checksSection = document.querySelector(CHECKS_SECTION_SELECTOR);
     if (checksSection) {
-      checkRows = checksSection.querySelectorAll('li[aria-label]');
+      checkRowEls = checksSection.querySelectorAll('li[aria-label]');
     }
 
     // Legacy fallback
-    if (checkRows.length === 0) {
-      checkRows = document.querySelectorAll(LEGACY_CHECK_ROW_SELECTOR);
+    if (checkRowEls.length === 0) {
+      checkRowEls = document.querySelectorAll(LEGACY_CHECK_ROW_SELECTOR);
     }
 
-    for (const row of checkRows) {
+    // Single pass: derive checkName once per row, and collect distinct failed
+    // "ci/rehearse/..." check names needing async job-name resolution (see
+    // resolveRehearsalJobNames()) before building any buttons.
+    const rows = [];
+    const rehearsalCheckNames = new Set();
+    for (const row of checkRowEls) {
       if (row.dataset.ghbcpInjected === 'true') continue;
-
       if (config.globalSettings.showOnlyFailedTests && getCheckStatus(row) !== 'failed') continue;
 
       const nameEl = row.querySelector('h4 a span') ||
@@ -1745,6 +1928,17 @@ function parseActionsRunJobIds(href) {
       const checkName = nameEl ? nameEl.textContent.trim() : '';
       if (!checkName) continue;
 
+      rows.push({ row, checkName });
+      if (checkName.startsWith('ci/rehearse/') && getCheckStatus(row) === 'failed') {
+        rehearsalCheckNames.add(checkName);
+      }
+    }
+
+    const rehearsalResolutions = rehearsalCheckNames.size > 0
+      ? await resolveRehearsalJobNames(Array.from(rehearsalCheckNames))
+      : new Map();
+
+    for (const { row, checkName } of rows) {
       const presubmitMatch = matchPresubmitJob(checkName);
       const rerunJobName = presubmitMatch ? presubmitMatch.name : null;
 
@@ -1760,6 +1954,7 @@ function parseActionsRunJobIds(href) {
       // remains the correct way to unblock a Tide-blocked merge. So once the
       // presubmit list has loaded, only the /test button is gated.
       const canTest = isProwManagedCheck(checkName);
+      const rehearsalResolution = rehearsalResolutions.get(checkName) || null;
 
       row.dataset.ghbcpInjected = 'true';
 
@@ -1783,6 +1978,21 @@ function parseActionsRunJobIds(href) {
               description: '/test ' + jobName
             });
             btnContainer.appendChild(createButton(testCmd, context));
+          } else if (checkName.startsWith('ci/rehearse/')) {
+            // Rehearsal checks (ci/rehearse/...) ARE Prow jobs, just not
+            // /test-able ones — the real rerun name is resolved from the
+            // target repo's own presubmit config (see
+            // resolveRehearsalJobNames()), not guessed from the check name.
+            if (rehearsalResolution && rehearsalResolution.jobName) {
+              const rerunCmd = Object.assign({}, cmd, {
+                command: '/pj-rehearse ' + rehearsalResolution.jobName,
+                label: 'Rehearse',
+                description: '/pj-rehearse ' + rehearsalResolution.jobName
+              });
+              btnContainer.appendChild(createButton(rerunCmd, context));
+            } else {
+              btnContainer.appendChild(createRehearsalHintButton(checkName, rehearsalResolution));
+            }
           } else {
             btnContainer.appendChild(createRerunActionButton(checkName, row, context));
           }
@@ -2018,7 +2228,7 @@ function parseActionsRunJobIds(href) {
       const extraCommands = CM.getExtraCommands(config, currentRepo);
 
       injectGlobalCommandBar(profiles, extraCommands);
-      injectCheckButtons(profiles);
+      await injectCheckButtons(profiles);
       injectReviewToolbar(profiles, extraCommands);
       injectReviewDialogBar(profiles, extraCommands);
       registerShortcuts(profiles);

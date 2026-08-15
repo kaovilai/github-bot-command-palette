@@ -26,8 +26,11 @@ const snippet = contentJs.slice(startIdx, endIdx);
 
 const ctx = {};
 vm.runInNewContext(snippet, ctx);
-const { parseActionsRunJobIds } = ctx;
+const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch } = ctx;
 assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds should have been extracted');
+assert.equal(typeof parseRehearsalCheckContext, 'function', 'parseRehearsalCheckContext should have been extracted');
+assert.equal(typeof computePresubmitContextShortName, 'function', 'computePresubmitContextShortName should have been extracted');
+assert.equal(typeof findRehearsalJobMatch, 'function', 'findRehearsalJobMatch should have been extracted');
 
 // assert.deepEqual/deepStrictEqual also compares prototypes — an object
 // returned from code run in a *different* vm context has a different
@@ -36,6 +39,21 @@ assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds sh
 function assertIdsEqual(actual, expected) {
   assert.equal(actual.runId, expected.runId);
   assert.equal(actual.jobId, expected.jobId);
+}
+
+// Same cross-realm caveat as assertIdsEqual() above, for the other functions'
+// return shapes.
+function assertRehearsalContextEqual(actual, expected) {
+  assert.equal(actual.org, expected.org);
+  assert.equal(actual.repo, expected.repo);
+  assert.equal(actual.branch, expected.branch);
+  assert.equal(actual.shortName, expected.shortName);
+}
+
+function assertJobMatchEqual(actual, expected) {
+  assert.equal(actual.jobName, expected.jobName);
+  assert.equal(actual.ambiguous, expected.ambiguous);
+  assert.equal(actual.count, expected.count);
 }
 
 test('parseActionsRunJobIds: extracts run and job IDs from a full check-row href', () => {
@@ -63,3 +81,89 @@ test('parseActionsRunJobIds: returns null for missing/empty input', () => {
   assert.equal(parseActionsRunJobIds(undefined), null);
   assert.equal(parseActionsRunJobIds(''), null);
 });
+
+// ── parseRehearsalCheckContext ──────────────────────────────────────────────
+
+test('parseRehearsalCheckContext: parses a normal rehearsal check context', () => {
+  const checkName = 'ci/rehearse/migtools/kubevirt-datamover-controller/oadp-1.6/e2e-test-aws';
+  assertRehearsalContextEqual(parseRehearsalCheckContext(checkName), {
+    org: 'migtools',
+    repo: 'kubevirt-datamover-controller',
+    branch: 'oadp-1.6',
+    shortName: 'e2e-test-aws'
+  });
+});
+
+test('parseRehearsalCheckContext: returns null for a non-rehearsal check name', () => {
+  assert.equal(parseRehearsalCheckContext('ci/prow/images'), null);
+  assert.equal(parseRehearsalCheckContext('tide'), null);
+});
+
+test('parseRehearsalCheckContext: a branch containing "/" still yields the true trailing shortname', () => {
+  const checkName = 'ci/rehearse/org/repo/release/4.16/e2e-test-aws';
+  assertRehearsalContextEqual(parseRehearsalCheckContext(checkName), {
+    org: 'org',
+    repo: 'repo',
+    branch: 'release/4.16',
+    shortName: 'e2e-test-aws'
+  });
+});
+
+test('parseRehearsalCheckContext: returns null for missing/empty/non-string input', () => {
+  assert.equal(parseRehearsalCheckContext(null), null);
+  assert.equal(parseRehearsalCheckContext(undefined), null);
+  assert.equal(parseRehearsalCheckContext(''), null);
+  assert.equal(parseRehearsalCheckContext(42), null);
+});
+
+// ── computePresubmitContextShortName ────────────────────────────────────────
+// Mirrors openshift/ci-tools pkg/rehearse/jobs.go's contextFor():
+//   func contextFor(source *prowconfig.Presubmit) string {
+//     if source.Context != "" {
+//       return source.Context[strings.LastIndex(source.Context, "/")+1:]
+//     }
+//     return source.Name
+//   }
+
+test('computePresubmitContextShortName: uses the last "/"-segment of context when set', () => {
+  assert.equal(computePresubmitContextShortName({ jobName: 'pull-ci-org-repo-branch-e2e-test-aws', context: 'ci/prow/e2e-test-aws' }), 'e2e-test-aws');
+});
+
+test('computePresubmitContextShortName: falls back to jobName when context is empty', () => {
+  assert.equal(computePresubmitContextShortName({ jobName: 'pull-ci-org-repo-branch-unit', context: '' }), 'pull-ci-org-repo-branch-unit');
+});
+
+test('computePresubmitContextShortName: returns undefined for a missing entry', () => {
+  assert.equal(computePresubmitContextShortName(null), undefined);
+  assert.equal(computePresubmitContextShortName(undefined), undefined);
+});
+
+// ── findRehearsalJobMatch ────────────────────────────────────────────────────
+
+test('findRehearsalJobMatch: returns the single matching entry\'s jobName', () => {
+  const entries = [
+    { jobName: 'pull-ci-org-repo-branch-e2e-test-aws', context: 'ci/prow/e2e-test-aws' },
+    { jobName: 'pull-ci-org-repo-branch-unit', context: 'ci/prow/unit' }
+  ];
+  assertJobMatchEqual(findRehearsalJobMatch(entries, 'e2e-test-aws'), { jobName: 'pull-ci-org-repo-branch-e2e-test-aws' });
+});
+
+test('findRehearsalJobMatch: returns null when nothing matches', () => {
+  const entries = [{ jobName: 'pull-ci-org-repo-branch-unit', context: 'ci/prow/unit' }];
+  assert.equal(findRehearsalJobMatch(entries, 'e2e-test-aws'), null);
+});
+
+test('findRehearsalJobMatch: flags (rather than guesses) when more than one entry matches', () => {
+  const entries = [
+    { jobName: 'pull-ci-org-repo-branch-e2e-test-aws', context: 'ci/prow/e2e-test-aws' },
+    { jobName: 'pull-ci-org-repo-branch-other-e2e-test-aws', context: 'some-other-prefix/e2e-test-aws' }
+  ];
+  assertJobMatchEqual(findRehearsalJobMatch(entries, 'e2e-test-aws'), { ambiguous: true, count: 2 });
+});
+
+test('findRehearsalJobMatch: returns null for empty/null entries or shortName', () => {
+  assert.equal(findRehearsalJobMatch(null, 'e2e-test-aws'), null);
+  assert.equal(findRehearsalJobMatch([], 'e2e-test-aws'), null);
+  assert.equal(findRehearsalJobMatch([{ jobName: 'x', context: 'a/x' }], ''), null);
+});
+
