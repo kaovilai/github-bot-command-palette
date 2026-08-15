@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 11;
+  const SCHEMA_VERSION = 12;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -121,15 +121,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Rehearse All', '/pj-rehearse', 'primary', { expandRehearsalJobs: true, requireConfirm: true, description: 'Rehearse all affected jobs, listing each one explicitly' })
         ],
         checkCommands: [],
-        dynamicCommands: [
-          {
-            id: generateId(),
-            label: 'Rehearse',
-            commandExpression: '"/pj-rehearse " + testName',
-            injectAt: 'failed-checks',
-            style: 'primary'
-          }
-        ]
+        dynamicCommands: []
       },
       {
         id: 'profile-payload-openshift',

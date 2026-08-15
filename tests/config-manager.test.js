@@ -1244,6 +1244,19 @@ test('DEFAULT_CONFIG: Rehearse All expands to explicit job list with confirmatio
   assert.equal(rehearseAll.command, '/pj-rehearse');
 });
 
+test('DEFAULT_CONFIG: profile-prow-openshift-release has no per-check dynamicCommands', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-prow-openshift-release');
+  assert.ok(profile, 'openshift/release profile should exist');
+  // Rehearsal rerun commands are read verbatim from Prow's own failure-notifier
+  // comment (content.js's scrapeFailedCheckRerunCommands()) rather than guessed
+  // from the check name's shape, so no dynamicCommand is needed here.
+  // (length check, not deepEqual([]) — CM.DEFAULT_CONFIG is built in a
+  // separate vm context, so its empty array isn't reference-equal to one
+  // constructed in this file, even with identical contents.)
+  assert.equal(profile.dynamicCommands.length, 0);
+});
+
 test('createCommand: expandRehearsalJobs defaults to false and is settable', () => {
   const CM = makeContextWithStorage(null);
   assert.equal(CM.createCommand('X', '/x', 'primary').expandRehearsalJobs, false);
