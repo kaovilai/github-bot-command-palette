@@ -18,19 +18,28 @@ All buttons with keyboard shortcuts, color-coded by action type:
 
 Click **Override...** or **Test...** to open a searchable picker showing all CI jobs from the PR — select multiple, then fire them at once:
 
-**Override picker** (9 failing rehearsal jobs, multi-select):
+**Override picker** (failing checks, multi-select):
 
 ![Override job picker](screenshots/14-override-dropdown-jobs.png)
 
-**Test picker** (45 available jobs to retest):
+**Test picker** (available presubmit jobs to retest):
 
 ![Test job picker](screenshots/15-test-dropdown-jobs.png)
 
 ### Failing CI Checks
 
-Extension scrapes the Checks section to populate the job pickers:
+Extension scrapes the Checks section to populate the job pickers, and injects
+`Test`/`Override`/`Rehearse` buttons directly on each check row:
 
 ![Failing checks section](screenshots/12-checks-section.png)
+
+A pj-rehearse rehearsal check (`ci/rehearse/<org>/<repo>/<branch>/<job>`) isn't
+`/test`-able, and its context can't be reliably reverse-engineered into the
+real job name Prow needs (Prow builds the two independently). The extension
+resolves the real name instead by fetching the target repo's own presubmit
+config and matching Prow's own shortname algorithm — never guessing:
+
+![Rehearse button](screenshots/16-rehearse-button.png)
 
 Not every check belongs to Prow — a repo can run plain GitHub Actions checks
 (e.g. a workflow matrix job) that Prow has no knowledge of at all. Posting
