@@ -4,7 +4,7 @@ window.GHBCP = GHBCP;
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 12;
+  const SCHEMA_VERSION = 13;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -12,6 +12,7 @@ GHBCP.ConfigManager = (() => {
     'profile-openshift-labels',
     'profile-openshift-priv',
     'profile-openshift-specialized',
+    'profile-velero-backport',
     'profile-mergify',
     'profile-changesets',
     'profile-dependabot',
@@ -185,6 +186,18 @@ GHBCP.ConfigManager = (() => {
           cmd('Abort Testwith', '/testwith abort', 'danger', { requireConfirm: true, description: 'Abort in-flight /testwith jobs' }),
           cmd('Validate Backports', '/validate-backports', 'primary', { description: 'Re-evaluate backports/unvalidated-commits check' }),
           cmd('Pipeline Required', '/pipeline required', 'primary', { description: 'Trigger all required second-stage gated jobs' })
+        ],
+        checkCommands: [],
+        dynamicCommands: []
+      },
+      {
+        id: 'profile-velero-backport',
+        name: 'Velero — Backport',
+        description: 'Backport merged PRs to release branches (korthout/backport-action)',
+        enabled: true,
+        repoPatterns: ['velero-io/velero'],
+        globalCommands: [
+          cmd('Backport...', '/backport', 'neutral', { hasJobPicker: true, jobSource: 'branches', joinMode: 'single-command', commandTemplate: '/backport {input}', inputPlaceholder: 'release-1.17 release-1.18', description: 'Backport this merged PR to target branch(es); bare X.Y shorthand expands to release-X.Y' })
         ],
         checkCommands: [],
         dynamicCommands: []

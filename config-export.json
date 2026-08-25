@@ -48,6 +48,18 @@
       ]
     },
     {
+      "id": "profile-velero-backport",
+      "name": "Velero — Backport",
+      "description": "Backport merged PRs to release branches (korthout/backport-action)",
+      "enabled": true,
+      "repoPatterns": ["velero-io/velero"],
+      "globalCommands": [
+        { "id": "cmd-velero-backport", "label": "Backport...", "command": "/backport", "description": "Backport this merged PR to target branch(es); bare X.Y shorthand expands to release-X.Y", "style": "neutral", "requireConfirm": false, "hasInput": false, "hasJobPicker": true, "jobSource": "branches", "joinMode": "single-command", "inputPlaceholder": "release-1.17 release-1.18", "commandTemplate": "/backport {input}", "shortcut": "" }
+      ],
+      "checkCommands": [],
+      "dynamicCommands": []
+    },
+    {
       "id": "profile-mergify",
       "name": "Mergify",
       "description": "Mergify bot commands",
