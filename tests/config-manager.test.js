@@ -1273,6 +1273,22 @@ test('DEFAULT_CONFIG: Cherry-pick command uses the branch picker', () => {
   assert.equal(cherryPick.commandTemplate, '/cherry-pick {input}');
 });
 
+test('DEFAULT_CONFIG: Velero backport profile targets velero-io/velero with the branch picker', () => {
+  const CM = makeContextWithStorage(null);
+  const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-velero-backport');
+  assert.ok(profile, 'profile-velero-backport should exist');
+  assert.equal(profile.repoPatterns.length, 1);
+  assert.equal(profile.repoPatterns[0], 'velero-io/velero');
+  assert.equal(CM.isProwProfile('profile-velero-backport'), false, 'backport-action is a GitHub Action, not a Prow plugin');
+  const backport = profile.globalCommands.find(c => c.label === 'Backport...');
+  assert.ok(backport, 'Backport... command should exist');
+  assert.equal(backport.command, '/backport');
+  assert.equal(backport.hasJobPicker, true);
+  assert.equal(backport.jobSource, 'branches');
+  assert.equal(backport.joinMode, 'single-command');
+  assert.equal(backport.commandTemplate, '/backport {input}');
+});
+
 test('DEFAULT_CONFIG: verified and jira commands exist in universal profile', () => {
   const CM = makeContextWithStorage(null);
   const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');
