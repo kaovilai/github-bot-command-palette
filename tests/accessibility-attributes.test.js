@@ -129,7 +129,7 @@ test('getCheckStatus helper is defined and used by both scrapeCheckNames and inj
   assert.match(contentJs, /status: getCheckStatus\(item\)/);
   assert.match(contentJs, /status: getCheckStatus\(row\)/);
   // injectCheckButtons uses it
-  assert.match(contentJs, /getCheckStatus\(row\) !== 'failed'/);
+  assert.match(contentJs, /const status = getCheckStatus\(row\)/);
 });
 
 test('addFocusTrap includes all standard focusable elements', () => {
@@ -157,10 +157,11 @@ test('injectReviewDialogBar guards against null textarea parentElement before DO
 });
 
 test('injectCheckButtons respects showOnlyFailedTests setting', () => {
-  // When showOnlyFailedTests is true, only failed checks should get buttons.
-  // When false, all checks should get buttons.
+  // When showOnlyFailedTests is true, failed AND pending checks get buttons
+  // (a re-triggered/still-running check stays overridable) but passed ones
+  // don't. When false, all checks get buttons.
   // The gate must read config.globalSettings.showOnlyFailedTests, not be hardcoded.
-  assert.match(contentJs, /config\.globalSettings\.showOnlyFailedTests && getCheckStatus\(row\) !== 'failed'/);
+  assert.match(contentJs, /config\.globalSettings\.showOnlyFailedTests && status === 'passed'/);
 });
 
 test('job picker dialog has aria-modal="true"', () => {
