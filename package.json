@@ -4,7 +4,7 @@
   "description": "Chrome extension that injects contextual action buttons for CI/bot slash commands on GitHub PR pages.",
   "main": "config-manager.js",
   "scripts": {
-    "test": "node --test tests/accessibility-attributes.test.js tests/config-manager.test.js tests/background.test.js tests/prow-plugin-map.test.js tests/content-helpers.test.js"
+    "test": "node --test tests/accessibility-attributes.test.js tests/config-manager.test.js tests/background.test.js tests/prow-plugin-map.test.js tests/content-helpers.test.js tests/combo-autosubmit.test.js tests/approve-review-sync.test.js"
   },
   "repository": {
     "type": "git",

@@ -106,6 +106,11 @@ function findRehearsalJobMatch(entries, shortName) {
   let lastHeadShaKey = null;
   let lastHeadSha = null;
   const rehearsalPresubmitCache = new Map(); // `${configRef}:${org}/${repo}#${branch}` -> jobs[]|null
+  // Auto-submit combo window: queued command lines waiting to be posted as one
+  // comment (see queueAutoSubmit()), and the pending send timer.
+  const COMBO_SEND_DELAY_MS = 2000;
+  let pendingComboLines = [];
+  let pendingComboTimer = null;
   let shortcutMap = {};
 
   /** @returns {string|null} Full `org/repo` path extracted from the current URL, or null. */
@@ -1079,6 +1084,30 @@ function findRehearsalJobMatch(entries, shortName) {
   }
 
   /**
+   * When GitHub's own "Finish your review" dialog is open, select its native
+   * "Approve" review-event radio alongside posting `/approve`'s comment text.
+   * `/approve` on its own only satisfies Prow's OWNERS-based approval — it
+   * doesn't set GitHub's native review state, which is what branch protection's
+   * "required reviews" count actually reads. Selecting both together satisfies
+   * both systems from one submit.
+   *
+   * The radio's `id` is a React-generated (`useId()`) value that changes every
+   * render, so it can't be selected reliably — `name="reviewEvent"` and
+   * `value="approve"` are the stable parts of GitHub's own markup:
+   *   <input type="radio" name="reviewEvent" value="approve" ...>
+   * `.click()` (not a direct `.checked` assignment) so React's onChange for
+   * this controlled radio actually fires, same as a real user click.
+   * No-op when the dialog isn't open (e.g. the main command bar's /approve,
+   * which just posts a plain issue comment with no review dialog involved).
+   */
+  function selectNativeApproveReview() {
+    const radio = document.querySelector('input[name="reviewEvent"][value="approve"]');
+    if (radio && !radio.checked) {
+      radio.click();
+    }
+  }
+
+  /**
    * Route a command button click to the appropriate handler (job picker, input
    * popover, or direct fill), applying confirmation if required.
    * @param {Object}          command   - Command descriptor.
@@ -1110,6 +1139,10 @@ function findRehearsalJobMatch(entries, shortName) {
 
     if (shouldConfirm(command)) {
       if (!confirm(`Post "${cmdText}"?`)) return;
+    }
+
+    if (command.command === '/approve') {
+      selectNativeApproveReview();
     }
 
     fillComment(cmdText);
@@ -1550,48 +1583,104 @@ function findRehearsalJobMatch(entries, shortName) {
   }
 
   /**
-   * Fill the PR comment textarea with `cmdText`, using the React native setter so
+   * Write `text` into the comment textarea using the React native setter so
    * React-controlled inputs detect the change and re-enable the submit button.
-   * Optionally auto-submits the comment if `globalSettings.autoSubmit` is enabled.
+   * Plain assignment is ignored by React's internal value tracking.
+   * @param {HTMLTextAreaElement} textarea
+   * @param {string} text
+   */
+  function setCommentTextareaValue(textarea, text) {
+    textarea.focus();
+    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+    const nativeSetter = descriptor && descriptor.set;
+    if (nativeSetter) {
+      nativeSetter.call(textarea, text);
+    } else {
+      textarea.value = text;
+    }
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  /**
+   * Fill the PR comment textarea with `cmdText`. When `globalSettings.autoSubmit`
+   * is off, this just fills and shows a toast — the user submits manually.
+   * When autoSubmit is on, routes through queueAutoSubmit() instead of posting
+   * immediately, so a second command clicked within the combo window gets
+   * folded into the same comment (see queueAutoSubmit()).
    * @param {string} cmdText - The slash command text to post.
    */
   function fillComment(cmdText) {
+    if (config.globalSettings.autoSubmit) {
+      queueAutoSubmit(cmdText);
+      return;
+    }
+
+    const textarea = findCommentTextarea();
+    if (!textarea) {
+      showToast('No comment box found', 'error');
+      return;
+    }
+    setCommentTextareaValue(textarea, cmdText);
+    showToast(`Filled: ${cmdText}`, 'success');
+  }
+
+  /**
+   * Auto-submit path for fillComment(): rather than posting `cmdText` right
+   * away, appends it as its own line to a short-lived pending buffer and
+   * (re)starts a COMBO_SEND_DELAY_MS countdown. Prow's own command plugins
+   * each match commands with a per-line anchored regex (e.g. lgtm.go's
+   * `(?mi)^/lgtm(?: no-issue)?\s*$`, override.go's `(?mi)^/override(...)?$`),
+   * so multiple commands DO combine into one comment as long as each is on
+   * its own line — confirmed against kubernetes-sigs/prow's plugin source.
+   * Clicking a second command button before the timer fires cancels the
+   * pending send and folds its line into the same buffer instead, so two
+   * quick clicks (e.g. /lgtm then /approve) post as a single two-line comment
+   * rather than two separate ones.
+   * @param {string} cmdText - The slash command text to queue.
+   */
+  function queueAutoSubmit(cmdText) {
     const textarea = findCommentTextarea();
     if (!textarea) {
       showToast('No comment box found', 'error');
       return;
     }
 
-    textarea.focus();
-    // Use the native setter so React-controlled textareas recognise the change
-    // and re-enable the submit button. Plain assignment is ignored by React's
-    // internal value tracking.
-    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
-    const nativeSetter = descriptor && descriptor.set;
-    if (nativeSetter) {
-      nativeSetter.call(textarea, cmdText);
+    if (pendingComboTimer) {
+      clearTimeout(pendingComboTimer);
     } else {
-      textarea.value = cmdText;
+      pendingComboLines = [];
     }
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    pendingComboTimer = null;
+    if (!pendingComboLines.includes(cmdText)) {
+      pendingComboLines.push(cmdText);
+    }
 
-    if (config.globalSettings.autoSubmit) {
+    const joined = pendingComboLines.join('\n');
+    setCommentTextareaValue(textarea, joined);
+
+    const seconds = COMBO_SEND_DELAY_MS / 1000;
+    const preview = pendingComboLines.join(' + ');
+    showToast(`Sending "${preview}" in ${seconds}s… click another to combo it in`, 'pending');
+
+    pendingComboTimer = setTimeout(() => {
+      pendingComboTimer = null;
+      const finalLines = pendingComboLines;
+      pendingComboLines = [];
+      const finalText = finalLines.join('\n');
       const trySubmit = (attempts) => {
         const submitBtn = findSubmitButton(textarea);
         if (submitBtn) {
           submitBtn.click();
-          showToast(`Posted ${cmdText}`, 'success');
+          showToast(`Posted ${finalLines.join(' + ')}`, 'success');
         } else if (attempts > 0) {
           setTimeout(() => trySubmit(attempts - 1), 100);
         } else {
-          showToast(`Filled: ${cmdText} (submit manually)`, 'warning');
+          showToast(`Filled: ${finalText} (submit manually)`, 'warning');
         }
       };
-      setTimeout(() => trySubmit(5), 100);
-    } else {
-      showToast(`Filled: ${cmdText}`, 'success');
-    }
+      trySubmit(5);
+    }, COMBO_SEND_DELAY_MS);
   }
 
   /**
@@ -1887,7 +1976,9 @@ function findRehearsalJobMatch(entries, shortName) {
   /**
    * Inject "Test" and "Override" buttons next to CI check rows.
    * When `config.globalSettings.showOnlyFailedTests` is true (the default),
-   * buttons are injected only on failed checks; when false, all checks get buttons.
+   * buttons are injected on failed AND pending checks (a re-triggered test is
+   * still overridable while it reruns) but not on passed ones; when false,
+   * all checks get buttons.
    * Supports both the modern Primer React checks UI and the legacy merge-status UI.
    * Clears previously injected buttons before re-injecting so that a refresh
    * picks up the latest command set without duplicating buttons.
@@ -1914,14 +2005,15 @@ function findRehearsalJobMatch(entries, shortName) {
       checkRowEls = document.querySelectorAll(LEGACY_CHECK_ROW_SELECTOR);
     }
 
-    // Single pass: derive checkName once per row, and collect distinct failed
-    // "ci/rehearse/..." check names needing async job-name resolution (see
-    // resolveRehearsalJobNames()) before building any buttons.
+    // Single pass: derive checkName once per row, and collect distinct
+    // non-passed "ci/rehearse/..." check names needing async job-name
+    // resolution (see resolveRehearsalJobNames()) before building any buttons.
     const rows = [];
     const rehearsalCheckNames = new Set();
     for (const row of checkRowEls) {
       if (row.dataset.ghbcpInjected === 'true') continue;
-      if (config.globalSettings.showOnlyFailedTests && getCheckStatus(row) !== 'failed') continue;
+      const status = getCheckStatus(row);
+      if (config.globalSettings.showOnlyFailedTests && status === 'passed') continue;
 
       const nameEl = row.querySelector('h4 a span') ||
                      row.querySelector('.status-actions a, .merge-status-item a, a.Link--primary, .text-bold');
@@ -1929,7 +2021,7 @@ function findRehearsalJobMatch(entries, shortName) {
       if (!checkName) continue;
 
       rows.push({ row, checkName });
-      if (checkName.startsWith('ci/rehearse/') && getCheckStatus(row) === 'failed') {
+      if (checkName.startsWith('ci/rehearse/') && status !== 'passed') {
         rehearsalCheckNames.add(checkName);
       }
     }

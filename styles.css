@@ -581,6 +581,24 @@ html[data-color-mode="dark"] {
   color: #fff;
 }
 
+.ghbcp-toast-pending {
+  background: var(--ghbcp-primary);
+  color: #fff;
+}
+
+.ghbcp-toast-pending::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  animation: ghbcp-spin 0.6s linear infinite;
+  vertical-align: -1px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .ghbcp-command-bar {
