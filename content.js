@@ -2058,7 +2058,8 @@ function findRehearsalJobMatch(entries, shortName) {
    * When `config.globalSettings.showOnlyFailedTests` is true (the default),
    * buttons are injected on failed AND pending checks (a re-triggered test is
    * still overridable while it reruns) but not on passed ones; when false,
-   * all checks get buttons.
+   * all checks get buttons. Tide's own "tide" status row is always skipped —
+   * see the in-loop comment for why.
    * Supports both the modern Primer React checks UI and the legacy merge-status UI.
    * Clears previously injected buttons before re-injecting so that a refresh
    * picks up the latest command set without duplicating buttons.
@@ -2111,6 +2112,20 @@ function findRehearsalJobMatch(entries, shortName) {
       : new Map();
 
     for (const { row, checkName } of rows) {
+      // Tide's own "tide" status context is a live-recomputed summary of
+      // overall mergeability (labels, hold, required contexts, etc.), not a
+      // job of its own — kubernetes-sigs/prow's tide/status.go recomputes it
+      // every StatusUpdatePeriod tick from the PR's real state and overwrites
+      // whatever is there, regardless of any manual /override. So overriding
+      // "tide" is a no-op that self-reverts within about a tick (commonly
+      // under a minute); /test doesn't apply either, since tide isn't a
+      // ProwJob. (Overriding an *actual* failed required job Tide is waiting
+      // on is still the correct way to unblock a merge — this only excludes
+      // tide's own meta-status row.) Skip button injection here entirely;
+      // tide's status description and target_url already explain what's
+      // actually blocking merge.
+      if (checkName.toLowerCase() === 'tide') continue;
+
       const presubmitMatch = matchPresubmitJob(checkName);
       const rerunJobName = presubmitMatch ? presubmitMatch.name : null;
 
