@@ -190,6 +190,7 @@ html[data-color-mode="dark"] {
   opacity: 0.75;
   cursor: progress;
   padding-left: 22px;
+  padding-right: 18px;
   position: relative;
 }
 
@@ -205,6 +206,30 @@ html[data-color-mode="dark"] {
   border: 2px solid var(--ghbcp-border);
   border-top-color: currentColor;
   animation: ghbcp-spin 0.6s linear infinite;
+}
+
+/* Small × on a pending combo button — un-queues just that one command
+   (see cancelQueuedCommand() in content.js) without touching any other
+   command still counting down in the same combo. */
+.ghbcp-btn-pending-cancel {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  line-height: 11px;
+  font-size: 12px;
+  text-align: center;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.7;
+  pointer-events: auto;
+}
+
+.ghbcp-btn-pending-cancel:hover {
+  opacity: 1;
+  background: rgba(255, 0, 0, 0.18);
 }
 
 .ghbcp-cmd-group {
