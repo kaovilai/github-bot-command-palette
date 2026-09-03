@@ -164,6 +164,15 @@ test('injectCheckButtons respects showOnlyFailedTests setting', () => {
   assert.match(contentJs, /config\.globalSettings\.showOnlyFailedTests && status === 'passed'/);
 });
 
+test('injectCheckButtons never offers Test/Override on tide\'s own status context', () => {
+  // kubernetes-sigs/prow's tide/status.go recomputes and overwrites the
+  // "tide" context on every StatusUpdatePeriod tick from the PR's real
+  // state, regardless of any manual /override — so overriding it is a
+  // self-reverting no-op, and /test doesn't apply since tide isn't a
+  // ProwJob. Must skip before any button gets built for the row.
+  assert.match(contentJs, /if \(checkName\.toLowerCase\(\) === 'tide'\) continue;/);
+});
+
 test('job picker dialog has aria-modal="true"', () => {
   assert.match(contentJs, /picker\.setAttribute\('aria-modal', 'true'\)/);
 });
