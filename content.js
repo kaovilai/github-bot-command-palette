@@ -1681,6 +1681,17 @@ function findRehearsalJobMatch(entries, shortName) {
       pendingComboButtons.push(btn);
       btn.classList.add('ghbcp-btn-pending');
       btn.setAttribute('aria-busy', 'true');
+      const cancelX = document.createElement('span');
+      cancelX.className = 'ghbcp-btn-pending-cancel';
+      cancelX.textContent = '×';
+      cancelX.title = `Cancel just "${cmdText}" (leaves the rest of the combo queued)`;
+      cancelX.setAttribute('aria-label', cancelX.title);
+      cancelX.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelQueuedCommand(cmdText, btn);
+      });
+      btn.appendChild(cancelX);
     }
 
     const joined = pendingComboLines.join('\n');
@@ -1760,7 +1771,43 @@ function findRehearsalJobMatch(entries, shortName) {
     for (const b of buttons) {
       b.classList.remove('ghbcp-btn-pending');
       b.removeAttribute('aria-busy');
+      const cancelX = b.querySelector('.ghbcp-btn-pending-cancel');
+      if (cancelX) cancelX.remove();
     }
+  }
+
+  /**
+   * Un-queues one specific command from the combo buffer without touching the
+   * rest — the "cancel the cancel" case: clicked /lgtm, clicked /approve, then
+   * fat-fingered /lgtm cancel, and wants to pull just that line back out
+   * before the combo window fires. Wired to the small × queueAutoSubmit()
+   * appends to each pending button. Only unpends `btn` itself; any other
+   * buttons still queued keep counting down on the same pendingComboTimer.
+   * @param {string} cmdText - The exact queued line to remove.
+   * @param {HTMLButtonElement} btn - The button that queued it.
+   */
+  function cancelQueuedCommand(cmdText, btn) {
+    const lineIdx = pendingComboLines.indexOf(cmdText);
+    if (lineIdx === -1) return;
+    pendingComboLines.splice(lineIdx, 1);
+    const btnIdx = pendingComboButtons.indexOf(btn);
+    if (btnIdx !== -1) pendingComboButtons.splice(btnIdx, 1);
+    clearPendingButtons([btn]);
+
+    const textarea = findCommentTextarea();
+    if (pendingComboLines.length === 0) {
+      if (pendingComboTimer) {
+        clearTimeout(pendingComboTimer);
+        pendingComboTimer = null;
+      }
+      if (textarea) setCommentTextareaValue(textarea, '');
+      showToast(`Cancelled "${cmdText}"`, 'warning');
+      return;
+    }
+
+    if (textarea) setCommentTextareaValue(textarea, pendingComboLines.join('\n'));
+    const preview = pendingComboLines.join(' + ');
+    showToast(`Cancelled "${cmdText}" — still sending "${preview}"`, 'pending');
   }
 
   /**
