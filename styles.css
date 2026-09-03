@@ -183,6 +183,30 @@ html[data-color-mode="dark"] {
   pointer-events: none;
 }
 
+/* Queued in the auto-submit combo window, waiting to be posted. Left
+   clickable (not [disabled]) so clicking it again still works as the
+   "send now" shortcut — see queueAutoSubmit() in content.js. */
+.ghbcp-btn-pending {
+  opacity: 0.75;
+  cursor: progress;
+  padding-left: 22px;
+  position: relative;
+}
+
+.ghbcp-btn-pending::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  top: 50%;
+  border-radius: 50%;
+  border: 2px solid var(--ghbcp-border);
+  border-top-color: currentColor;
+  animation: ghbcp-spin 0.6s linear infinite;
+}
+
 .ghbcp-cmd-group {
   margin-bottom: 6px;
 }

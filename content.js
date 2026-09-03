@@ -106,10 +106,12 @@ function findRehearsalJobMatch(entries, shortName) {
   let lastHeadShaKey = null;
   let lastHeadSha = null;
   const rehearsalPresubmitCache = new Map(); // `${configRef}:${org}/${repo}#${branch}` -> jobs[]|null
-  // Auto-submit combo window: queued command lines waiting to be posted as one
+  // Auto-submit combo window: queued command lines (and the buttons that
+  // queued them, for the pending/spinner state) waiting to be posted as one
   // comment (see queueAutoSubmit()), and the pending send timer.
   const COMBO_SEND_DELAY_MS = 2000;
   let pendingComboLines = [];
+  let pendingComboButtons = [];
   let pendingComboTimer = null;
   let shortcutMap = {};
 
@@ -967,7 +969,7 @@ function findRehearsalJobMatch(entries, shortName) {
         if (!confirm(confirmMsg)) return;
       }
 
-      if (cmdText) fillComment(cmdText);
+      if (cmdText) fillComment(cmdText, anchorBtn);
       for (const job of rerunJobs) {
         chrome.runtime.sendMessage({
           action: 'rerunActionsJob',
@@ -1116,7 +1118,7 @@ function findRehearsalJobMatch(entries, shortName) {
    */
   function handleCommandClick(command, context, btn) {
     if (command.expandRehearsalJobs) {
-      expandAndPostRehearseAll(command);
+      expandAndPostRehearseAll(command, btn);
       return;
     }
     if (command.hasPayloadPicker) {
@@ -1145,7 +1147,7 @@ function findRehearsalJobMatch(entries, shortName) {
       selectNativeApproveReview();
     }
 
-    fillComment(cmdText);
+    fillComment(cmdText, btn);
   }
 
   /**
@@ -1154,8 +1156,10 @@ function findRehearsalJobMatch(entries, shortName) {
    * full GCS listing (or the scraped 25-row comment table as fallback).
    * Posts the bare command when no job list can be found at all.
    * @param {Object} command - Command descriptor (command, requireConfirm).
+   * @param {HTMLButtonElement|null} [btn] - The button that triggered this, for
+   *   the auto-submit combo pending/spinner state (see fillComment()).
    */
-  async function expandAndPostRehearseAll(command) {
+  async function expandAndPostRehearseAll(command, btn) {
     let jobs = await fetchFullRehearsalJobs();
     if (!jobs || jobs.length === 0) jobs = scrapeRehearsalNames();
     const base = CM.sanitizeCommand(command.command);
@@ -1169,7 +1173,7 @@ function findRehearsalJobMatch(entries, shortName) {
       if (!confirm(`Post "${preview}"?`)) return;
     }
 
-    fillComment(cmdText);
+    fillComment(cmdText, btn);
   }
 
   /**
@@ -1443,7 +1447,7 @@ function findRehearsalJobMatch(entries, shortName) {
       if (shouldConfirm(command)) {
         if (!confirm(`Post "${cmdText}"?`)) return;
       }
-      fillComment(cmdText);
+      fillComment(cmdText, anchorBtn);
       closePayloadPicker();
     });
 
@@ -1536,7 +1540,7 @@ function findRehearsalJobMatch(entries, shortName) {
         if (!confirm(`Post "${cmdText}"?`)) return;
       }
 
-      fillComment(cmdText);
+      fillComment(cmdText, anchorBtn);
       closePopover();
     }
 
@@ -1609,10 +1613,13 @@ function findRehearsalJobMatch(entries, shortName) {
    * immediately, so a second command clicked within the combo window gets
    * folded into the same comment (see queueAutoSubmit()).
    * @param {string} cmdText - The slash command text to post.
+   * @param {HTMLButtonElement|null} [btn] - The button that triggered this post,
+   *   if any. Gets a pending/spinner state while auto-submit's combo window is
+   *   open (see queueAutoSubmit()); ignored on the manual (autoSubmit off) path.
    */
-  function fillComment(cmdText) {
+  function fillComment(cmdText, btn) {
     if (config.globalSettings.autoSubmit) {
-      queueAutoSubmit(cmdText);
+      queueAutoSubmit(cmdText, btn);
       return;
     }
 
@@ -1635,11 +1642,27 @@ function findRehearsalJobMatch(entries, shortName) {
    * its own line — confirmed against kubernetes-sigs/prow's plugin source.
    * Clicking a second command button before the timer fires cancels the
    * pending send and folds its line into the same buffer instead, so two
-   * quick clicks (e.g. /lgtm then /approve) post as a single two-line comment
-   * rather than two separate ones.
+   * quick clicks (e.g. /lgtm then /approve, or Override on two different
+   * failed checks) post as a single multi-line comment rather than several.
+   *
+   * `btn` (when given) gets a `ghbcp-btn-pending` spinner for as long as its
+   * command sits in the buffer — see submitPendingCombo()/waitForPostToClear().
+   * Clicking a button whose command is ALREADY queued (still pending, not yet
+   * sent) is treated as "send now": rather than queueing a no-op duplicate
+   * line, it cancels the countdown and submits immediately with whatever has
+   * been combo'd in so far.
    * @param {string} cmdText - The slash command text to queue.
+   * @param {HTMLButtonElement|null} [btn] - The button whose click queued this
+   *   line, for the pending/spinner state and duplicate-click detection.
    */
-  function queueAutoSubmit(cmdText) {
+  function queueAutoSubmit(cmdText, btn) {
+    if (pendingComboTimer && pendingComboLines.includes(cmdText)) {
+      clearTimeout(pendingComboTimer);
+      pendingComboTimer = null;
+      submitPendingCombo();
+      return;
+    }
+
     const textarea = findCommentTextarea();
     if (!textarea) {
       showToast('No comment box found', 'error');
@@ -1650,10 +1673,14 @@ function findRehearsalJobMatch(entries, shortName) {
       clearTimeout(pendingComboTimer);
     } else {
       pendingComboLines = [];
+      pendingComboButtons = [];
     }
     pendingComboTimer = null;
-    if (!pendingComboLines.includes(cmdText)) {
-      pendingComboLines.push(cmdText);
+    pendingComboLines.push(cmdText);
+    if (btn) {
+      pendingComboButtons.push(btn);
+      btn.classList.add('ghbcp-btn-pending');
+      btn.setAttribute('aria-busy', 'true');
     }
 
     const joined = pendingComboLines.join('\n');
@@ -1661,26 +1688,79 @@ function findRehearsalJobMatch(entries, shortName) {
 
     const seconds = COMBO_SEND_DELAY_MS / 1000;
     const preview = pendingComboLines.join(' + ');
-    showToast(`Sending "${preview}" in ${seconds}s… click another to combo it in`, 'pending');
+    showToast(`Sending "${preview}" in ${seconds}s… click another to combo it in, click it again to send now`, 'pending');
 
-    pendingComboTimer = setTimeout(() => {
-      pendingComboTimer = null;
-      const finalLines = pendingComboLines;
-      pendingComboLines = [];
-      const finalText = finalLines.join('\n');
-      const trySubmit = (attempts) => {
-        const submitBtn = findSubmitButton(textarea);
-        if (submitBtn) {
-          submitBtn.click();
-          showToast(`Posted ${finalLines.join(' + ')}`, 'success');
-        } else if (attempts > 0) {
-          setTimeout(() => trySubmit(attempts - 1), 100);
-        } else {
-          showToast(`Filled: ${finalText} (submit manually)`, 'warning');
-        }
-      };
-      trySubmit(5);
-    }, COMBO_SEND_DELAY_MS);
+    pendingComboTimer = setTimeout(submitPendingCombo, COMBO_SEND_DELAY_MS);
+  }
+
+  /**
+   * Fires when the combo countdown elapses (or is skipped via the "click an
+   * already-queued button again to send now" path in queueAutoSubmit()).
+   * Submits every line queued so far as one comment, then clears the pending
+   * spinner off every button that contributed a line — immediately on
+   * failure, or once waitForPostToClear() thinks the post actually went
+   * through on success.
+   */
+  function submitPendingCombo() {
+    pendingComboTimer = null;
+    const finalLines = pendingComboLines;
+    const finalButtons = pendingComboButtons;
+    pendingComboLines = [];
+    pendingComboButtons = [];
+
+    const textarea = findCommentTextarea();
+    if (!textarea) {
+      showToast('No comment box found', 'error');
+      clearPendingButtons(finalButtons);
+      return;
+    }
+
+    const finalText = finalLines.join('\n');
+    const trySubmit = (attempts) => {
+      const submitBtn = findSubmitButton(textarea);
+      if (submitBtn) {
+        submitBtn.click();
+        showToast(`Posted ${finalLines.join(' + ')}`, 'success');
+        waitForPostToClear(textarea, finalButtons, 20);
+      } else if (attempts > 0) {
+        setTimeout(() => trySubmit(attempts - 1), 100);
+      } else {
+        showToast(`Filled: ${finalText} (submit manually)`, 'warning');
+        clearPendingButtons(finalButtons);
+      }
+    };
+    trySubmit(5);
+  }
+
+  /**
+   * Approximates "got a 200 back from GitHub" for a comment/review submit we
+   * triggered by clicking GitHub's own submit button (not a fetch() we made
+   * ourselves, so there's no real response to await): GitHub clears the
+   * textarea once the post actually completes, so poll for that (or the
+   * textarea/dialog disappearing entirely, e.g. the review dialog closing)
+   * every 250ms. Gives up and clears the spinner anyway after `attemptsLeft`
+   * polls, so a button can't get stuck spinning forever if detection fails.
+   * @param {HTMLTextAreaElement} textarea
+   * @param {HTMLButtonElement[]} buttons
+   * @param {number} attemptsLeft
+   */
+  function waitForPostToClear(textarea, buttons, attemptsLeft) {
+    if (!textarea.isConnected || textarea.value === '' || attemptsLeft <= 0) {
+      clearPendingButtons(buttons);
+      return;
+    }
+    setTimeout(() => waitForPostToClear(textarea, buttons, attemptsLeft - 1), 250);
+  }
+
+  /**
+   * Remove the pending/spinner state queueAutoSubmit() put on each of `buttons`.
+   * @param {HTMLButtonElement[]} buttons
+   */
+  function clearPendingButtons(buttons) {
+    for (const b of buttons) {
+      b.classList.remove('ghbcp-btn-pending');
+      b.removeAttribute('aria-busy');
+    }
   }
 
   /**
