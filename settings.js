@@ -76,7 +76,12 @@
 
     const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-prow-autodetect', 'opt-theme', 'opt-position', 'opt-pluginfilter', 'opt-excluded-repos'];
     for (const id of fields) {
-      document.getElementById(id).addEventListener('change', readAndSave);
+      const field = document.getElementById(id);
+      // Touch browsers can defer `change` on custom-looking checkboxes until
+      // focus moves away. `input` fires as soon as the checked state changes,
+      // so closing the options page immediately after a tap cannot lose it.
+      field.addEventListener('input', readAndSave);
+      field.addEventListener('change', readAndSave);
     }
   }
 

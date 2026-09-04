@@ -278,6 +278,12 @@ test('popup and settings actions use the shared touch-friendly activation helper
   assert.doesNotMatch(popupJs, /addEventListener\('click'/);
 });
 
+test('global settings save immediately on input as well as change', () => {
+  const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
+  assert.match(settingsJs, /field\.addEventListener\('input', readAndSave\)/);
+  assert.match(settingsJs, /field\.addEventListener\('change', readAndSave\)/);
+});
+
 test('extension pages declare mobile viewport and touch-sized actions', () => {
   const popupHtml = fs.readFileSync(path.resolve(__dirname, '..', 'popup.html'), 'utf8');
   const settingsHtml = fs.readFileSync(path.resolve(__dirname, '..', 'settings.html'), 'utf8');
