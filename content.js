@@ -91,6 +91,78 @@ function findRehearsalJobMatch(entries, shortName) {
   return null;
 }
 
+// Window within which a `pointerup` and the `click` the browser synthesizes
+// from the same tap are treated as one activation — see addTapListener().
+const TAP_DEDUPE_MS = 700;
+
+/**
+ * Bind `handler` to "the user activated `el`" in a way that also works on
+ * touch-first mobile browsers. Some mobile engines (Titanium among them) fire
+ * pointer/touch events on injected elements reliably but delay, coalesce or
+ * swallow the synthesized `click`, which left the auto-submit combo path
+ * (command buttons, the pending-cancel ×) dead on those browsers. Listens for
+ * `pointerup` (or `touchend` where PointerEvent isn't implemented) *and*
+ * `click`, swallowing only the synthesized `click` that follows a touch/pointer
+ * activation so one tap never fires twice.
+ * Both paths always preventDefault/stopPropagation — including the swallowed
+ * one — so GitHub's own handlers never see the follow-up click either.
+ * Keyboard activation (Enter/Space on a <button>) only produces `click`, so it
+ * keeps working exactly as before.
+ * @param {HTMLElement} el - Element to make tappable/clickable.
+ * @param {(e: Event) => void} handler - Runs once per activation.
+ */
+function addTapListener(el, handler) {
+  let swallowClickUntil = 0;
+  const activatePointer = (e) => {
+    // Ignore secondary mouse/pointer buttons (right-click, middle-click).
+    if (typeof e.button === 'number' && e.button > 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    swallowClickUntil = Date.now() + TAP_DEDUPE_MS;
+    handler(e);
+  };
+  const activateClick = (e) => {
+    // Ignore secondary mouse/pointer buttons (right-click, middle-click).
+    if (typeof e.button === 'number' && e.button > 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (Date.now() < swallowClickUntil) return;
+    handler(e);
+  };
+  if (typeof PointerEvent === 'function') {
+    el.addEventListener('pointerup', activatePointer);
+  } else {
+    el.addEventListener('touchend', activatePointer);
+  }
+  el.addEventListener('click', activateClick);
+}
+
+/**
+ * Fallback submit path for submitPendingCombo(): post the pending comment by
+ * submitting its own <form> instead of clicking GitHub's submit button, which
+ * some mobile browsers ignore when the click is synthetic. Dispatches a
+ * cancelable `submit` event first — that's what GitHub's own JS listens for,
+ * and a handler calling preventDefault() means it took over the post — then
+ * falls back to the native `form.requestSubmit()` when nothing cancelled it.
+ * @param {HTMLTextAreaElement} textarea - Textarea whose form should be submitted.
+ * @returns {boolean} True when a form was found and a submit was attempted.
+ */
+function submitCommentForm(textarea) {
+  const form = typeof textarea.closest === 'function' ? textarea.closest('form') : null;
+  if (!form) return false;
+  const notCancelled = form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  if (!notCancelled) return true;
+  if (typeof form.requestSubmit === 'function') {
+    form.requestSubmit();
+    return true;
+  }
+  if (typeof form.submit === 'function') {
+    form.submit();
+    return true;
+  }
+  return false;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -110,6 +182,9 @@ function findRehearsalJobMatch(entries, shortName) {
   // queued them, for the pending/spinner state) waiting to be posted as one
   // comment (see queueAutoSubmit()), and the pending send timer.
   const COMBO_SEND_DELAY_MS = 2000;
+  // How long to give GitHub's own submit button to actually post before
+  // falling back to submitting the form ourselves — see submitPendingCombo().
+  const SUBMIT_FALLBACK_DELAY_MS = 600;
   let pendingComboLines = [];
   let pendingComboButtons = [];
   let pendingComboTimer = null;
@@ -187,9 +262,7 @@ function findRehearsalJobMatch(entries, shortName) {
     btn.setAttribute('aria-label', tooltip);
     btn.dataset.ghbcpId = command.id;
 
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(btn, () => {
       handleCommandClick(command, context, btn);
     });
 
@@ -1946,9 +2019,7 @@ function findRehearsalJobMatch(entries, shortName) {
       cancelX.textContent = '×';
       cancelX.title = `Cancel just "${cmdText}" (leaves the rest of the combo queued)`;
       cancelX.setAttribute('aria-label', cancelX.title);
-      cancelX.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      addTapListener(cancelX, () => {
         cancelQueuedCommand(cmdText, btn);
       });
       btn.appendChild(cancelX);
@@ -1992,9 +2063,23 @@ function findRehearsalJobMatch(entries, shortName) {
       if (submitBtn) {
         submitBtn.click();
         showToast(`Posted ${finalLines.join(' + ')}`, 'success');
+        // Mobile browsers sometimes ignore that synthetic click, leaving the
+        // comment sitting unposted in the box. GitHub clears the textarea once
+        // a post goes through, so if our text is still there a moment later,
+        // treat the click as ineffective and submit the form directly. Gating
+        // on the unchanged text is also what keeps this from double-posting
+        // when the click DID work.
+        setTimeout(() => {
+          if (textarea.isConnected && textarea.value === finalText) {
+            submitCommentForm(textarea);
+          }
+        }, SUBMIT_FALLBACK_DELAY_MS);
         waitForPostToClear(textarea, finalButtons, 20);
       } else if (attempts > 0) {
         setTimeout(() => trySubmit(attempts - 1), 100);
+      } else if (submitCommentForm(textarea)) {
+        showToast(`Posted ${finalLines.join(' + ')}`, 'success');
+        waitForPostToClear(textarea, finalButtons, 20);
       } else {
         showToast(`Filled: ${finalText} (submit manually)`, 'warning');
         clearPendingButtons(finalButtons);
