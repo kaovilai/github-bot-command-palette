@@ -68,7 +68,12 @@ const vm = require('node:vm');
 
 const startMarker = 'const ACTIONS_RUN_JOB_HREF_RE';
 const endMarker = '\n(async () => {';
-const snippet = contentJs.slice(contentJs.indexOf(startMarker), contentJs.indexOf(endMarker));
+const startIndex = contentJs.indexOf(startMarker);
+const endIndex = contentJs.indexOf(endMarker);
+assert.notEqual(startIndex, -1, `missing helper snippet start marker: ${startMarker}`);
+assert.notEqual(endIndex, -1, `missing helper snippet end marker: ${endMarker}`);
+assert.ok(startIndex < endIndex, 'helper snippet markers must be ordered');
+const snippet = contentJs.slice(startIndex, endIndex);
 
 /** Minimal EventTarget stub: records listeners and lets tests fire events. */
 function makeEl() {
@@ -132,6 +137,16 @@ test('addTapListener: a plain click (mouse or keyboard activation) still runs th
   assert.equal(calls, 1);
 });
 
+test('addTapListener: successive pointer/touch activations are not de-duplicated', () => {
+  const { addTapListener } = loadHelpers();
+  const el = makeEl();
+  let calls = 0;
+  addTapListener(el, () => { calls++; });
+  el.fire('pointerup', { button: 0 });
+  el.fire('pointerup', { button: 0 });
+  assert.equal(calls, 2, 'deliberate repeat taps must run the handler immediately');
+});
+
 test('addTapListener: secondary pointer buttons (right/middle click) are ignored and left alone', () => {
   const { addTapListener } = loadHelpers();
   const el = makeEl();
@@ -189,6 +204,23 @@ test('submitCommentForm: a cancelled submit event means GitHub took over — no 
 test('submitCommentForm: reports failure when the textarea has no owning form', () => {
   const { submitCommentForm } = loadHelpers();
   assert.equal(submitCommentForm(makeTextarea(null)), false);
+});
+
+test('submitCommentForm: uses native form.submit() when requestSubmit() is unavailable', () => {
+  const { submitCommentForm } = loadHelpers();
+  let submits = 0;
+  const form = {
+    dispatchEvent() { return true; },
+    submit() { submits++; }
+  };
+  assert.equal(submitCommentForm(makeTextarea(form)), true);
+  assert.equal(submits, 1);
+});
+
+test('submitCommentForm: reports failure when no native submit method exists', () => {
+  const { submitCommentForm } = loadHelpers();
+  const form = { dispatchEvent() { return true; } };
+  assert.equal(submitCommentForm(makeTextarea(form)), false);
 });
 
 test('command buttons and the pending-cancel × are bound through the touch-friendly addTapListener', () => {

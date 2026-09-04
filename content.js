@@ -102,8 +102,8 @@ const TAP_DEDUPE_MS = 700;
  * swallow the synthesized `click`, which left the auto-submit combo path
  * (command buttons, the pending-cancel ×) dead on those browsers. Listens for
  * `pointerup` (or `touchend` where PointerEvent isn't implemented) *and*
- * `click`, de-duplicating the pair: whichever arrives first runs `handler`,
- * the other is swallowed for TAP_DEDUPE_MS so one tap never fires twice.
+ * `click`, swallowing only the synthesized `click` that follows a touch/pointer
+ * activation so one tap never fires twice.
  * Both paths always preventDefault/stopPropagation — including the swallowed
  * one — so GitHub's own handlers never see the follow-up click either.
  * Keyboard activation (Enter/Space on a <button>) only produces `click`, so it
@@ -112,23 +112,29 @@ const TAP_DEDUPE_MS = 700;
  * @param {(e: Event) => void} handler - Runs once per activation.
  */
 function addTapListener(el, handler) {
-  let lastActivation = 0;
-  const activate = (e) => {
+  let swallowClickUntil = 0;
+  const activatePointer = (e) => {
     // Ignore secondary mouse/pointer buttons (right-click, middle-click).
     if (typeof e.button === 'number' && e.button > 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const now = Date.now();
-    if (now - lastActivation < TAP_DEDUPE_MS) return;
-    lastActivation = now;
+    swallowClickUntil = Date.now() + TAP_DEDUPE_MS;
+    handler(e);
+  };
+  const activateClick = (e) => {
+    // Ignore secondary mouse/pointer buttons (right-click, middle-click).
+    if (typeof e.button === 'number' && e.button > 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (Date.now() < swallowClickUntil) return;
     handler(e);
   };
   if (typeof PointerEvent === 'function') {
-    el.addEventListener('pointerup', activate);
+    el.addEventListener('pointerup', activatePointer);
   } else {
-    el.addEventListener('touchend', activate);
+    el.addEventListener('touchend', activatePointer);
   }
-  el.addEventListener('click', activate);
+  el.addEventListener('click', activateClick);
 }
 
 /**
@@ -145,10 +151,16 @@ function submitCommentForm(textarea) {
   const form = typeof textarea.closest === 'function' ? textarea.closest('form') : null;
   if (!form) return false;
   const notCancelled = form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-  if (notCancelled && typeof form.requestSubmit === 'function') {
+  if (!notCancelled) return true;
+  if (typeof form.requestSubmit === 'function') {
     form.requestSubmit();
+    return true;
   }
-  return true;
+  if (typeof form.submit === 'function') {
+    form.submit();
+    return true;
+  }
+  return false;
 }
 
 (async () => {
