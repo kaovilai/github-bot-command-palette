@@ -701,13 +701,25 @@ test('clearGithubToken: removes the stored token key', async () => {
 // ---------------------------------------------------------------------------
 // resetToDefaults
 // ---------------------------------------------------------------------------
+// Configs larger than a single chrome.storage.sync item are written as chunks,
+// so tests read whichever layout saveConfig picked.
+function savedConfigFrom(CM, saved) {
+  if (!saved) return null;
+  if (saved[CM.STORAGE_KEY] !== undefined) return saved[CM.STORAGE_KEY];
+  const meta = saved[CM.CHUNK_META_KEY];
+  if (!meta) return null;
+  let json = '';
+  for (let i = 0; i < meta.chunks; i++) json += saved[CM.CHUNK_KEY_PREFIX + i];
+  return JSON.parse(json);
+}
+
 test('resetToDefaults: returns DEFAULT_CONFIG and saves it to storage', async () => {
   const { CM, getSaved } = makeContextWithCapturingSave();
   const config = await CM.resetToDefaults();
   assert.equal(config.version, CM.DEFAULT_CONFIG.version, 'returned config has correct version');
   assert.ok(Array.isArray(config.profiles), 'returned config has profiles array');
   assert.ok(getSaved() !== null, 'storage.set should have been called');
-  assert.equal(getSaved()[CM.STORAGE_KEY].version, CM.DEFAULT_CONFIG.version,
+  assert.equal(savedConfigFrom(CM, getSaved()).version, CM.DEFAULT_CONFIG.version,
     'saved config version should match DEFAULT_CONFIG version');
 });
 
@@ -715,7 +727,7 @@ test('resetToDefaults: saved config has the same version as the returned config'
   const { CM, getSaved } = makeContextWithCapturingSave();
   const config = await CM.resetToDefaults();
   assert.equal(
-    getSaved()[CM.STORAGE_KEY].version,
+    savedConfigFrom(CM, getSaved()).version,
     config.version,
     'saved config version should match returned config version'
   );
@@ -1385,4 +1397,113 @@ test('DEFAULT_CONFIG: specialized profile exposes its OpenShift commands', () =>
   ]);
   assert.equal(profile.globalCommands.find(c => c.command === '/testwith abort').requireConfirm, true,
     'aborting in-flight jobs should require confirmation');
+});
+
+// ---------------------------------------------------------------------------
+// chrome.storage.sync per-item quota (kQuotaBytesPerItem) handling
+// ---------------------------------------------------------------------------
+// A fake sync area that enforces Chrome's real 8192-byte per-item limit, so a
+// regression that writes the whole config as one item fails these tests the
+// same way it fails in the browser.
+const QUOTA_BYTES_PER_ITEM = 8192;
+
+function makeQuotaEnforcingContext(initialStore = {}) {
+  const store = Object.assign({}, initialStore);
+  const runtime = { id: 'fake-id', lastError: null };
+  const sync = {
+    get: (keys, cb) => {
+      runtime.lastError = null;
+      if (keys === null || keys === undefined) {
+        cb(Object.assign({}, store));
+        return;
+      }
+      const list = Array.isArray(keys) ? keys : [keys];
+      const out = {};
+      for (const key of list) {
+        if (key in store) out[key] = store[key];
+      }
+      cb(out);
+    },
+    set: (obj, cb) => {
+      for (const [key, value] of Object.entries(obj)) {
+        if (key.length + JSON.stringify(value).length > QUOTA_BYTES_PER_ITEM) {
+          runtime.lastError = { message: 'Resource::kQuotaBytesPerItem quota exceeded' };
+          cb && cb();
+          return;
+        }
+      }
+      Object.assign(store, obj);
+      runtime.lastError = null;
+      cb && cb();
+    },
+    remove: (keys, cb) => {
+      runtime.lastError = null;
+      for (const key of (Array.isArray(keys) ? keys : [keys])) delete store[key];
+      cb && cb();
+    }
+  };
+  const ctx = vm.createContext({
+    window: { GHBCP: { CommandToPlugin: {} } },
+    crypto: { randomUUID: () => 'test-uuid-1234' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: { runtime, storage: { sync } }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  return { CM: ctx.window.GHBCP.ConfigManager, store };
+}
+
+test('saveConfig: saves the full default config without exceeding the per-item sync quota', async () => {
+  const { CM, store } = makeQuotaEnforcingContext();
+  await assert.doesNotReject(() => CM.saveConfig(CM.DEFAULT_CONFIG));
+  for (const [key, value] of Object.entries(store)) {
+    assert.ok(
+      key.length + JSON.stringify(value).length <= QUOTA_BYTES_PER_ITEM,
+      `item ${key} must fit in the per-item sync quota`
+    );
+  }
+});
+
+test('saveConfig/getConfig: round-trips a config too large for one sync item', async () => {
+  const { CM, store } = makeQuotaEnforcingContext();
+  await CM.saveConfig(CM.DEFAULT_CONFIG);
+  assert.ok(store[CM.CHUNK_META_KEY], 'a chunk manifest should be written');
+  assert.equal(store[CM.STORAGE_KEY], undefined, 'the oversized single item must not be written');
+  const loaded = await CM.getConfig();
+  assert.deepEqual(loaded, CM.DEFAULT_CONFIG);
+});
+
+test('saveConfig: small configs still use the single-item layout', async () => {
+  const { CM, store } = makeQuotaEnforcingContext();
+  const small = { version: CM.DEFAULT_CONFIG.version, profiles: [], repoOverrides: [], pluginConfigSources: [], globalSettings: CM.DEFAULT_CONFIG.globalSettings };
+  await CM.saveConfig(small);
+  assert.deepEqual(store[CM.STORAGE_KEY], small);
+  assert.equal(store[CM.CHUNK_META_KEY], undefined, 'no chunk manifest for a small config');
+});
+
+test('saveConfig: switching from chunked to single-item layout clears stale chunks', async () => {
+  const { CM, store } = makeQuotaEnforcingContext();
+  await CM.saveConfig(CM.DEFAULT_CONFIG);
+  const small = { version: CM.DEFAULT_CONFIG.version, profiles: [], repoOverrides: [], pluginConfigSources: [], globalSettings: CM.DEFAULT_CONFIG.globalSettings };
+  await CM.saveConfig(small);
+  const leftovers = Object.keys(store).filter(k => k.startsWith(CM.CHUNK_KEY_PREFIX) || k === CM.CHUNK_META_KEY);
+  assert.deepEqual(leftovers, [], 'chunk keys should be removed once a single item suffices');
+  const loaded = await CM.getConfig();
+  assert.equal(loaded.profiles.length, 0);
+});
+
+test('getConfig: still reads a legacy single-item config', async () => {
+  const legacy = { version: 99, profiles: [], repoOverrides: [], pluginConfigSources: [], globalSettings: { enabled: true } };
+  const { CM } = makeQuotaEnforcingContext({ ghbcp_config: legacy });
+  const loaded = await CM.getConfig();
+  assert.equal(loaded.version, 99);
+});
+
+test('getConfig: falls back to defaults when the chunk set is incomplete', async () => {
+  const { CM } = makeQuotaEnforcingContext({
+    ghbcp_config_meta: { chunks: 2 },
+    ghbcp_config_chunk_0: '{"version":'
+  });
+  const loaded = await CM.getConfig();
+  assert.equal(loaded.version, CM.DEFAULT_CONFIG.version);
+  assert.ok(loaded.profiles.length > 0);
 });

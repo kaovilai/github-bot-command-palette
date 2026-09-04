@@ -3,6 +3,10 @@ importScripts('vendor/js-yaml.min.js');
 
 const STORAGE_KEY = 'ghbcp_config';
 const CACHE_KEY = 'ghbcp_plugin_cache';
+// Config too large for one chrome.storage.sync item is split into chunks by
+// config-manager.js's saveConfig(); these keys mirror that layout.
+const CHUNK_META_KEY = 'ghbcp_config_meta';
+const CHUNK_KEY_PREFIX = 'ghbcp_config_chunk_';
 
 const PRESUBMITS_CACHE_KEY = 'ghbcp_presubmits_cache';
 const GITHUB_TOKEN_STORAGE_KEY = 'ghbcp_github_token';
@@ -83,6 +87,24 @@ function storageSet(area, key, value) {
 }
 
 async function getConfig() {
+  const meta = await storageGet('sync', CHUNK_META_KEY, null);
+  const chunkCount = meta && typeof meta.chunks === 'number' ? meta.chunks : 0;
+  if (chunkCount > 0) {
+    let json = '';
+    for (let i = 0; i < chunkCount; i++) {
+      const part = await storageGet('sync', CHUNK_KEY_PREFIX + i, null);
+      if (typeof part !== 'string') {
+        json = null;
+        break;
+      }
+      json += part;
+    }
+    if (json !== null) {
+      try {
+        return JSON.parse(json);
+      } catch (e) { /* fall through to the legacy single-item config */ }
+    }
+  }
   return storageGet('sync', STORAGE_KEY, null);
 }
 

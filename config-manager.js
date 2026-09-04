@@ -28,6 +28,19 @@ GHBCP.addTapListener = function addTapListener(el, handler) {
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
+  // chrome.storage.sync enforces QUOTA_BYTES_PER_ITEM (8192 bytes, counted as
+  // key length + JSON-serialized value length). The full default config already
+  // serializes to ~12KB, so writing it as a single item fails with
+  // "Resource::kQuotaBytesPerItem quota exceeded". Larger configs are therefore
+  // split across several items: CHUNK_META_KEY records how many chunks exist and
+  // CHUNK_KEY_PREFIX + i holds each slice of the serialized JSON.
+  const CHUNK_META_KEY = 'ghbcp_config_meta';
+  const CHUNK_KEY_PREFIX = 'ghbcp_config_chunk_';
+  // Conservative slice size: JSON-escaping can nearly double a chunk containing
+  // mostly quotes, so 3000 chars stays well under the 8192-byte item limit.
+  const MAX_CHUNK_CHARS = 3000;
+  // Leaves headroom under the 8192-byte per-item limit for the single-item path.
+  const MAX_SINGLE_ITEM_CHARS = 7000;
   const SCHEMA_VERSION = 13;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
@@ -475,16 +488,57 @@ GHBCP.ConfigManager = (() => {
    * Falls back to a deep copy of DEFAULT_CONFIG when storage is unavailable.
    * @returns {Promise<Object>} Resolved configuration object.
    */
+  /**
+   * Read the raw stored config, transparently reassembling a chunked config
+   * written by `saveConfig` when it was too large for a single sync item.
+   * @returns {Promise<Object|null>} Stored config object, or null if absent/unreadable.
+   */
+  function readStoredConfig() {
+    return new Promise(resolve => {
+      chrome.storage.sync.get([STORAGE_KEY, CHUNK_META_KEY], metaResult => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        const meta = metaResult && metaResult[CHUNK_META_KEY];
+        const chunkCount = meta && typeof meta.chunks === 'number' ? meta.chunks : 0;
+        if (chunkCount <= 0) {
+          resolve((metaResult && metaResult[STORAGE_KEY]) || null);
+          return;
+        }
+        const keys = [];
+        for (let i = 0; i < chunkCount; i++) keys.push(CHUNK_KEY_PREFIX + i);
+        chrome.storage.sync.get(keys, chunkResult => {
+          if (chrome.runtime.lastError) {
+            resolve(null);
+            return;
+          }
+          let json = '';
+          for (const key of keys) {
+            const part = chunkResult && chunkResult[key];
+            if (typeof part !== 'string') {
+              // Incomplete chunk set — fall back to any legacy single-item copy.
+              resolve((metaResult && metaResult[STORAGE_KEY]) || null);
+              return;
+            }
+            json += part;
+          }
+          try {
+            resolve(JSON.parse(json));
+          } catch (e) {
+            resolve((metaResult && metaResult[STORAGE_KEY]) || null);
+          }
+        });
+      });
+    });
+  }
+
   async function getConfig() {
     if (!isContextValid()) return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     return new Promise(resolve => {
       try {
-        chrome.storage.sync.get(STORAGE_KEY, async result => {
-          if (chrome.runtime.lastError) {
-            resolve(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
-            return;
-          }
-          let config = result[STORAGE_KEY] || JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        readStoredConfig().then(async stored => {
+          let config = stored || JSON.parse(JSON.stringify(DEFAULT_CONFIG));
           // Defensive: fill in missing top-level keys so callers never crash on
           // partial or manually-edited stored configs.
           if (!config.globalSettings) config.globalSettings = JSON.parse(JSON.stringify(DEFAULT_CONFIG.globalSettings));
@@ -511,7 +565,7 @@ GHBCP.ConfigManager = (() => {
             try { await saveConfig(toSave); } catch (e) { /* best effort */ }
           }
           resolve(config);
-        });
+        }).catch(() => resolve(JSON.parse(JSON.stringify(DEFAULT_CONFIG))));
       } catch (e) {
         resolve(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
       }
@@ -520,6 +574,11 @@ GHBCP.ConfigManager = (() => {
 
   /**
    * Persist `config` to `chrome.storage.sync`.
+   *
+   * Configs that serialize to more than a single sync item can hold are split
+   * into `ghbcp_config_chunk_*` items (see CHUNK_META_KEY), avoiding the
+   * "Resource::kQuotaBytesPerItem quota exceeded" failure. Stale keys from the
+   * other layout are removed after a successful write so reads stay unambiguous.
    * @param {Object} config - The configuration object to save.
    * @returns {Promise<void>} Rejects if storage write fails.
    */
@@ -527,15 +586,76 @@ GHBCP.ConfigManager = (() => {
     if (!isContextValid()) return;
     return new Promise((resolve, reject) => {
       try {
-        chrome.storage.sync.set({ [STORAGE_KEY]: config }, () => {
+        const json = JSON.stringify(config);
+        const fitsInOneItem = STORAGE_KEY.length + json.length <= MAX_SINGLE_ITEM_CHARS;
+        const items = {};
+        const staleKeys = [];
+        if (fitsInOneItem) {
+          items[STORAGE_KEY] = config;
+        } else {
+          const chunks = [];
+          for (let i = 0; i < json.length; i += MAX_CHUNK_CHARS) {
+            chunks.push(json.slice(i, i + MAX_CHUNK_CHARS));
+          }
+          chunks.forEach((chunk, i) => { items[CHUNK_KEY_PREFIX + i] = chunk; });
+          items[CHUNK_META_KEY] = { chunks: chunks.length };
+          staleKeys.push(STORAGE_KEY);
+        }
+        chrome.storage.sync.set(items, () => {
           if (chrome.runtime.lastError) {
             reject(chrome.runtime.lastError);
-          } else {
-            resolve();
+            return;
           }
+          cleanupStaleKeys(fitsInOneItem, staleKeys).then(resolve, resolve);
         });
       } catch (e) {
         reject(e);
+      }
+    });
+  }
+
+  /**
+   * Best-effort removal of storage keys left over from the layout not used by
+   * the write that just succeeded (single item vs. chunked).
+   * @param {boolean} fitsInOneItem - Whether the config was written as one item.
+   * @param {string[]} staleKeys    - Keys known to be stale before enumeration.
+   * @returns {Promise<void>} Always resolves; removal failures are ignored.
+   */
+  function cleanupStaleKeys(fitsInOneItem, staleKeys) {
+    return new Promise(resolve => {
+      try {
+        if (!chrome.storage.sync.get || !chrome.storage.sync.remove) {
+          resolve();
+          return;
+        }
+        chrome.storage.sync.get(null, all => {
+          if (chrome.runtime.lastError || !all) {
+            resolve();
+            return;
+          }
+          const keys = staleKeys.slice();
+          const chunkCount = fitsInOneItem
+            ? 0
+            : (all[CHUNK_META_KEY] && all[CHUNK_META_KEY].chunks) || 0;
+          for (const key of Object.keys(all)) {
+            if (key === CHUNK_META_KEY) {
+              if (fitsInOneItem) keys.push(key);
+            } else if (key.startsWith(CHUNK_KEY_PREFIX)) {
+              const index = Number(key.slice(CHUNK_KEY_PREFIX.length));
+              if (fitsInOneItem || !(index >= 0 && index < chunkCount)) keys.push(key);
+            }
+          }
+          if (!keys.length) {
+            resolve();
+            return;
+          }
+          chrome.storage.sync.remove(keys, () => {
+            void chrome.runtime.lastError;
+            resolve();
+          });
+        });
+      } catch (e) {
+        resolve();
       }
     });
   }
@@ -755,6 +875,8 @@ GHBCP.ConfigManager = (() => {
     sanitizeCommand,
     DEFAULT_CONFIG,
     PRESET_SOURCES,
-    STORAGE_KEY
+    STORAGE_KEY,
+    CHUNK_META_KEY,
+    CHUNK_KEY_PREFIX
   };
 })();
