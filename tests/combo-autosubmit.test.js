@@ -223,9 +223,15 @@ test('submitCommentForm: reports failure when no native submit method exists', (
   assert.equal(submitCommentForm(makeTextarea(form)), false);
 });
 
-test('command buttons and the pending-cancel × are bound through the touch-friendly addTapListener', () => {
+test('content-script action controls are bound through the touch-friendly addTapListener', () => {
   assert.match(contentJs, /addTapListener\(btn, \(\) => \{\s*\n\s*handleCommandClick\(command, context, btn\);/);
   assert.match(contentJs, /addTapListener\(cancelX, \(\) => \{\s*\n\s*cancelQueuedCommand\(cmdText, btn\);/);
+  assert.match(contentJs, /addTapListener\(closeBtn, close\);/);
+  assert.match(contentJs, /addTapListener\(icon, async \(\) => \{/);
+  assert.match(contentJs, /addTapListener\(item, \(e\) => \{/);
+  assert.match(contentJs, /addTapListener\(submitBtn, \(\) => \{/);
+  assert.match(contentJs, /addTapListener\(postBtn, \(\) => \{/);
+  assert.match(contentJs, /addTapListener\(refreshBtn, async \(\) => \{/);
 });
 
 test('submitPendingCombo falls back to form submission, gated on the comment still being unposted so it cannot double-post', () => {

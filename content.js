@@ -110,12 +110,14 @@ const TAP_DEDUPE_MS = 700;
  * keeps working exactly as before.
  * @param {HTMLElement} el - Element to make tappable/clickable.
  * @param {(e: Event) => void} handler - Runs once per activation.
+ * @param {(e: Event) => boolean} [shouldActivate] - Returns false to leave a nested native control alone.
  */
-function addTapListener(el, handler) {
+function addTapListener(el, handler, shouldActivate = () => true) {
   let swallowClickUntil = 0;
   const activatePointer = (e) => {
     // Ignore secondary mouse/pointer buttons (right-click, middle-click).
     if (typeof e.button === 'number' && e.button > 0) return;
+    if (!shouldActivate(e)) return;
     e.preventDefault();
     e.stopPropagation();
     swallowClickUntil = Date.now() + TAP_DEDUPE_MS;
@@ -124,6 +126,7 @@ function addTapListener(el, handler) {
   const activateClick = (e) => {
     // Ignore secondary mouse/pointer buttons (right-click, middle-click).
     if (typeof e.button === 'number' && e.button > 0) return;
+    if (!shouldActivate(e)) return;
     e.preventDefault();
     e.stopPropagation();
     if (Date.now() < swallowClickUntil) return;
@@ -306,7 +309,7 @@ function submitCommentForm(textarea) {
       el.rel = 'noopener noreferrer';
     } else {
       el.href = '#';
-      el.addEventListener('click', (e) => e.preventDefault());
+      addTapListener(el, (e) => e.preventDefault());
     }
     return el;
   }
@@ -333,7 +336,7 @@ function submitCommentForm(textarea) {
     el.title = tip;
     el.setAttribute('aria-label', checkName + ': ' + tip);
     el.href = '#';
-    el.addEventListener('click', (e) => e.preventDefault());
+    addTapListener(el, (e) => e.preventDefault());
     return el;
   }
 
@@ -380,9 +383,7 @@ function submitCommentForm(textarea) {
       'Uses your configured token and consumes CI minutes.';
     btn.title = tip;
     btn.setAttribute('aria-label', tip);
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(btn, async () => {
       if (!window.confirm(
         'Rerun "' + checkName + '" via GitHub Actions?\n\n' +
         'This uses your configured token and consumes CI minutes.'
@@ -698,7 +699,7 @@ function submitCommentForm(textarea) {
     function onKeydown(e) {
       if (e.key === 'Escape') close();
     }
-    closeBtn.addEventListener('click', close);
+    addTapListener(closeBtn, close);
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
@@ -742,9 +743,7 @@ function submitCommentForm(textarea) {
         if (tooltip) { tooltip.remove(); tooltip = null; }
       }, 150);
     });
-    icon.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(icon, async () => {
       if (tooltip) { tooltip.remove(); tooltip = null; }
       const modalBody = openTextModal('Claude Failure Analysis');
       const text = await fetchClaudeAnalysis(url);
@@ -840,9 +839,7 @@ function submitCommentForm(textarea) {
         if (tooltip) { tooltip.remove(); tooltip = null; }
       }, 150);
     });
-    icon.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(icon, async () => {
       if (tooltip) { tooltip.remove(); tooltip = null; }
       const modalBody = openTextModal('Failed Step Log');
       const result = await fetchFailedStepLog(prowUrl);
@@ -1084,9 +1081,7 @@ function submitCommentForm(textarea) {
     closeBtn.className = 'ghbcp-job-picker-close';
     closeBtn.textContent = '✕';
     closeBtn.setAttribute('aria-label', 'Close job picker');
-    closeBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(closeBtn, () => {
       closePicker();
     });
     header.appendChild(closeBtn);
@@ -1194,15 +1189,13 @@ function submitCommentForm(textarea) {
           updateFooter();
         });
 
-        item.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
+        addTapListener(item, (e) => {
           // When the checkbox itself is clicked the browser already toggles it
           // and fires the 'change' event above — avoid double-toggling.
           if (e.target === cb) return;
           cb.checked = !cb.checked;
           cb.dispatchEvent(new Event('change'));
-        });
+        }, (e) => e.target !== cb);
 
         list.appendChild(item);
       }
@@ -1228,9 +1221,7 @@ function submitCommentForm(textarea) {
       updateFooter();
     });
 
-    submitBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(submitBtn, () => {
       if (selected.size === 0) return;
       // /override targets Prow status contexts, so normalize each scraped check
       // name (e.g. "Lint / Lint (ubuntu-latest) (pull_request)") to the context
@@ -1748,9 +1739,7 @@ function submitCommentForm(textarea) {
     }
     const closePayloadPicker = createDialogCloser(picker, onClickOutside, anchorBtn);
 
-    submitBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(submitBtn, () => {
       const parts = [];
       for (const field of rendered) {
         const input = inputs[field];
@@ -1784,9 +1773,7 @@ function submitCommentForm(textarea) {
       closePayloadPicker();
     });
 
-    cancelBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(cancelBtn, () => {
       closePayloadPicker();
     });
 
@@ -1877,9 +1864,7 @@ function submitCommentForm(textarea) {
       closePopover();
     }
 
-    postBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    addTapListener(postBtn, () => {
       doPost();
     });
 
@@ -1893,8 +1878,7 @@ function submitCommentForm(textarea) {
       }
     });
 
-    cancelBtn.addEventListener('click', (e) => {
-      e.preventDefault();
+    addTapListener(cancelBtn, () => {
       closePopover();
     });
 
@@ -2352,9 +2336,7 @@ function submitCommentForm(textarea) {
         refreshBtn.innerHTML = '&#8635;';
         refreshBtn.title = `Refresh plugin config (cached ${ago} min ago)`;
         refreshBtn.setAttribute('aria-label', `Refresh plugin config (cached ${ago} min ago)`);
-        refreshBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
+        addTapListener(refreshBtn, async () => {
           if (!CM.isContextValid()) return;
           refreshBtn.classList.add('ghbcp-spinning');
           try {
