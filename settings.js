@@ -1,6 +1,7 @@
 // GitHub Bot Command Palette — Settings Page
 (async () => {
   const CM = GHBCP.ConfigManager;
+  const addTapListener = GHBCP.addTapListener;
   const { generateId, escapeHtml: esc, PRESET_SOURCES } = CM;
 
   /** @returns {Object} A fresh deep copy of the factory-default configuration. */
@@ -101,7 +102,7 @@
       }
     });
 
-    document.getElementById('btn-verify-token').addEventListener('click', async () => {
+    addTapListener(document.getElementById('btn-verify-token'), async () => {
       const resultEl = document.getElementById('github-token-status');
       const token = document.getElementById('opt-github-token').value.trim();
       if (!token) {
@@ -184,11 +185,11 @@
     });
 
     container.querySelectorAll('[data-edit-profile]').forEach(el => {
-      el.addEventListener('click', () => openProfileEditor(parseInt(el.dataset.editProfile)));
+      addTapListener(el, () => openProfileEditor(parseInt(el.dataset.editProfile)));
     });
 
     container.querySelectorAll('[data-delete-profile]').forEach(el => {
-      el.addEventListener('click', async () => {
+      addTapListener(el, async () => {
         const idx = parseInt(el.dataset.deleteProfile);
         if (confirm(`Delete profile "${config.profiles[idx].name}"?`)) {
           config.profiles.splice(idx, 1);
@@ -259,14 +260,14 @@
     }
 
     container.querySelectorAll('[data-edit-cmd]').forEach(el => {
-      el.addEventListener('click', () => {
+      addTapListener(el, () => {
         const [t, idx] = el.dataset.editCmd.split(':');
         openCmdEditor(t, parseInt(idx));
       });
     });
 
     container.querySelectorAll('[data-del-cmd]').forEach(el => {
-      el.addEventListener('click', () => {
+      addTapListener(el, () => {
         const [t, idx] = el.dataset.delCmd.split(':');
         const arr = t === 'global' ? editingProfile.globalCommands : editingProfile.checkCommands;
         arr.splice(parseInt(idx), 1);
@@ -294,7 +295,7 @@
     }
 
     container.querySelectorAll('[data-del-dyn]').forEach(el => {
-      el.addEventListener('click', () => {
+      addTapListener(el, () => {
         editingProfile.dynamicCommands.splice(parseInt(el.dataset.delDyn), 1);
         renderDynamicCmds();
       });
@@ -344,13 +345,13 @@
   document.getElementById('cmd-hasinput').addEventListener('change', toggleInputFields);
   document.getElementById('cmd-hasjobpicker').addEventListener('change', toggleInputFields);
 
-  document.getElementById('btn-add-profile').addEventListener('click', () => openProfileEditor(-1));
+  addTapListener(document.getElementById('btn-add-profile'), () => openProfileEditor(-1));
 
-  document.getElementById('btn-cancel-profile').addEventListener('click', () => {
+  addTapListener(document.getElementById('btn-cancel-profile'), () => {
     document.getElementById('profile-modal').classList.remove('active');
   });
 
-  document.getElementById('btn-save-profile').addEventListener('click', async () => {
+  addTapListener(document.getElementById('btn-save-profile'), async () => {
     editingProfile.name = document.getElementById('pf-name').value.trim();
     editingProfile.description = document.getElementById('pf-desc').value.trim();
     editingProfile.repoPatterns = document.getElementById('pf-patterns').value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -375,10 +376,10 @@
     }
   });
 
-  document.getElementById('btn-add-global-cmd').addEventListener('click', () => openCmdEditor('global', -1));
-  document.getElementById('btn-add-check-cmd').addEventListener('click', () => openCmdEditor('check', -1));
+  addTapListener(document.getElementById('btn-add-global-cmd'), () => openCmdEditor('global', -1));
+  addTapListener(document.getElementById('btn-add-check-cmd'), () => openCmdEditor('check', -1));
 
-  document.getElementById('btn-add-dynamic-cmd').addEventListener('click', () => {
+  addTapListener(document.getElementById('btn-add-dynamic-cmd'), () => {
     const label = prompt('Dynamic command label:');
     if (!label) return;
     const expr = prompt('Command expression (JS, vars: testName, checkName, repoName, prNumber):', '"/retest " + testName');
@@ -390,11 +391,11 @@
     renderDynamicCmds();
   });
 
-  document.getElementById('btn-cancel-cmd').addEventListener('click', () => {
+  addTapListener(document.getElementById('btn-cancel-cmd'), () => {
     document.getElementById('cmd-modal').classList.remove('active');
   });
 
-  document.getElementById('btn-save-cmd').addEventListener('click', () => {
+  addTapListener(document.getElementById('btn-save-cmd'), () => {
     const cmd = {
       id: editingCmdIndex >= 0
         ? (editingCmdTarget === 'global' ? editingProfile.globalCommands : editingProfile.checkCommands)[editingCmdIndex].id
@@ -433,7 +434,7 @@
     document.getElementById('cmd-modal').classList.remove('active');
   });
 
-  document.getElementById('btn-export').addEventListener('click', () => {
+  addTapListener(document.getElementById('btn-export'), () => {
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -444,7 +445,7 @@
     showStatus('Config exported', 'success');
   });
 
-  document.getElementById('btn-import').addEventListener('click', () => {
+  addTapListener(document.getElementById('btn-import'), () => {
     document.getElementById('import-file').click();
   });
 
@@ -471,7 +472,7 @@
     e.target.value = '';
   });
 
-  document.getElementById('btn-reset').addEventListener('click', async () => {
+  addTapListener(document.getElementById('btn-reset'), async () => {
     if (!confirm('Reset all settings to defaults? This cannot be undone.')) return;
     config = defaultConfig();
     try {
@@ -531,11 +532,11 @@
     });
 
     container.querySelectorAll('[data-edit-source]').forEach(el => {
-      el.addEventListener('click', () => openSourceEditor(parseInt(el.dataset.editSource)));
+      addTapListener(el, () => openSourceEditor(parseInt(el.dataset.editSource)));
     });
 
     container.querySelectorAll('[data-delete-source]').forEach(el => {
-      el.addEventListener('click', async () => {
+      addTapListener(el, async () => {
         const idx = parseInt(el.dataset.deleteSource);
         if (confirm(`Delete source "${config.pluginConfigSources[idx].name}"?`)) {
           config.pluginConfigSources.splice(idx, 1);
@@ -592,7 +593,7 @@
 
   document.getElementById('src-format').addEventListener('change', toggleSourceFields);
 
-  document.getElementById('btn-add-source').addEventListener('click', () => openSourceEditor(-1));
+  addTapListener(document.getElementById('btn-add-source'), () => openSourceEditor(-1));
 
   document.getElementById('preset-select').addEventListener('change', () => {
     const val = document.getElementById('preset-select').value;
@@ -620,11 +621,11 @@
     document.getElementById('preset-select').value = '';
   });
 
-  document.getElementById('btn-cancel-source').addEventListener('click', () => {
+  addTapListener(document.getElementById('btn-cancel-source'), () => {
     document.getElementById('source-modal').classList.remove('active');
   });
 
-  document.getElementById('btn-save-source').addEventListener('click', async () => {
+  addTapListener(document.getElementById('btn-save-source'), async () => {
     const source = {
       id: editingSourceIndex >= 0 ? config.pluginConfigSources[editingSourceIndex].id : generateId(),
       name: document.getElementById('src-name').value.trim(),
@@ -661,7 +662,7 @@
     }
   });
 
-  document.getElementById('btn-test-source').addEventListener('click', async () => {
+  addTapListener(document.getElementById('btn-test-source'), async () => {
     const resultEl = document.getElementById('src-test-inline');
     const testRepo = document.getElementById('src-test-repo').value.trim();
     if (!testRepo || !testRepo.includes('/')) {

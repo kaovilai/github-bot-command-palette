@@ -2,6 +2,30 @@
 const GHBCP = window.GHBCP || {};
 window.GHBCP = GHBCP;
 
+GHBCP.addTapListener = function addTapListener(el, handler) {
+  let swallowClickUntil = 0;
+  const activatePointer = (e) => {
+    if (typeof e.button === 'number' && e.button > 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    swallowClickUntil = Date.now() + 700;
+    handler(e);
+  };
+  const activateClick = (e) => {
+    if (typeof e.button === 'number' && e.button > 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (Date.now() < swallowClickUntil) return;
+    handler(e);
+  };
+  if (typeof PointerEvent === 'function') {
+    el.addEventListener('pointerup', activatePointer);
+  } else {
+    el.addEventListener('touchend', activatePointer);
+  }
+  el.addEventListener('click', activateClick);
+};
+
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
   const SCHEMA_VERSION = 13;

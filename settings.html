@@ -59,9 +59,12 @@
     .btn {
       display: inline-flex; align-items: center; padding: 5px 14px; font-size: 13px;
       font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius);
-      background: var(--bg2); color: var(--text); cursor: pointer; gap: 4px;
+      background: var(--bg2); color: var(--text); cursor: pointer; gap: 4px; min-height: 44px;
+      touch-action: manipulation;
     }
     .btn:hover { background: var(--border); }
+    .btn:active { background: var(--border); transform: scale(0.98); }
+    .btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
     .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
     .btn-primary:hover { opacity: 0.9; }
     .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
@@ -80,6 +83,12 @@
     }
     .toggle input:checked + .slider { background: var(--primary); }
     .toggle input:checked + .slider::before { transform: translateX(18px); }
+    @media (max-width: 768px) {
+      body { padding: 16px; }
+      input[type="text"], textarea, select { min-height: 44px; font-size: 16px; }
+      .profile-header { align-items: flex-start; }
+      .cmd-table { display: block; overflow-x: auto; }
+    }
     .profile-card {
       border: 1px solid var(--border); border-radius: var(--radius); padding: 12px;
       margin-bottom: 8px; background: var(--bg);
