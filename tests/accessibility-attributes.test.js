@@ -267,6 +267,25 @@ test('popup.js profile toggle checkboxes have aria-label', () => {
   assert.match(popupJs, /aria-label="Enable \$\{esc\(p\.name\)\}"/);
 });
 
+test('popup and settings actions use the shared touch-friendly activation helper', () => {
+  const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
+  const configJs = fs.readFileSync(path.resolve(__dirname, '..', 'config-manager.js'), 'utf8');
+  assert.match(configJs, /GHBCP\.addTapListener = function addTapListener/);
+  assert.match(configJs, /el\.addEventListener\('pointerup', activatePointer\)/);
+  assert.match(settingsJs, /const addTapListener = GHBCP\.addTapListener/);
+  assert.doesNotMatch(settingsJs, /addEventListener\('click'/);
+  assert.match(popupJs, /const addTapListener = GHBCP\.addTapListener/);
+  assert.doesNotMatch(popupJs, /addEventListener\('click'/);
+});
+
+test('extension pages declare mobile viewport and touch-sized actions', () => {
+  const popupHtml = fs.readFileSync(path.resolve(__dirname, '..', 'popup.html'), 'utf8');
+  const settingsHtml = fs.readFileSync(path.resolve(__dirname, '..', 'settings.html'), 'utf8');
+  assert.match(popupHtml, /name="viewport"/);
+  assert.match(popupHtml, /min-height: 44px/);
+  assert.match(settingsHtml, /\.btn[\s\S]*min-height: 44px/);
+});
+
 test('popup.js plugin config link has aria-label', () => {
   // The "Edit" link in the plugin status line must have an accessible name so
   // screen reader users are not presented with a bare "Edit" link without context.
@@ -316,4 +335,3 @@ test('settings command editor defaults description to command text when left emp
   assert.match(settingsJs,
     /getElementById\('cmd-description'\)\.value\.trim\(\) \|\| document\.getElementById\('cmd-command'\)\.value\.trim\(\)/);
 });
-
