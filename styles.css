@@ -225,6 +225,7 @@ html[data-color-mode="dark"] {
   cursor: pointer;
   opacity: 0.7;
   pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .ghbcp-btn-pending-cancel:hover {
@@ -269,6 +270,9 @@ html[data-color-mode="dark"] {
   background: var(--ghbcp-btn-bg);
   color: var(--ghbcp-text);
   cursor: pointer;
+  /* Opt out of the mobile double-tap-to-zoom delay so a tap activates the
+     button as promptly as a desktop click (see addTapListener() in content.js). */
+  touch-action: manipulation;
   transition: background 0.1s ease, border-color 0.1s ease;
   min-height: 28px;
   min-width: 44px;

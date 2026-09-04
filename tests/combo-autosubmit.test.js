@@ -57,3 +57,147 @@ test('submitPendingCombo clears pending buttons immediately on failure, and via 
 test('waitForPostToClear polls for the textarea clearing (or disappearing) rather than assuming success', () => {
   assert.match(contentJs, /function waitForPostToClear\(textarea, buttons, attemptsLeft\) \{\s*\n\s*if \(!textarea\.isConnected \|\| textarea\.value === '' \|\| attemptsLeft <= 0\) \{\s*\n\s*clearPendingButtons\(buttons\);/);
 });
+
+// ---------------------------------------------------------------------------
+// Mobile/touch compatibility for the combo path. addTapListener() and
+// submitCommentForm() are declared outside content.js's IIFE (same reason as
+// the helpers in content-helpers.test.js), so they can be extracted and
+// exercised for real against a hand-rolled element/form stub.
+
+const vm = require('node:vm');
+
+const startMarker = 'const ACTIONS_RUN_JOB_HREF_RE';
+const endMarker = '\n(async () => {';
+const snippet = contentJs.slice(contentJs.indexOf(startMarker), contentJs.indexOf(endMarker));
+
+/** Minimal EventTarget stub: records listeners and lets tests fire events. */
+function makeEl() {
+  const listeners = {};
+  return {
+    listeners,
+    addEventListener(type, fn) {
+      (listeners[type] = listeners[type] || []).push(fn);
+    },
+    fire(type, props) {
+      const e = Object.assign({
+        type,
+        defaultPrevented: false,
+        propagationStopped: false,
+        preventDefault() { e.defaultPrevented = true; },
+        stopPropagation() { e.propagationStopped = true; }
+      }, props || {});
+      for (const fn of listeners[type] || []) fn(e);
+      return e;
+    }
+  };
+}
+
+/** Load the extracted helpers in a fresh realm, optionally without PointerEvent. */
+function loadHelpers({ pointerEvents = true } = {}) {
+  const ctx = {
+    Event: class { constructor(type, opts) { Object.assign(this, { type }, opts || {}); } }
+  };
+  if (pointerEvents) ctx.PointerEvent = function PointerEvent() {};
+  vm.runInNewContext(snippet, ctx);
+  assert.equal(typeof ctx.addTapListener, 'function', 'addTapListener should have been extracted');
+  assert.equal(typeof ctx.submitCommentForm, 'function', 'submitCommentForm should have been extracted');
+  return ctx;
+}
+
+test('addTapListener: a touch/pointer tap runs the handler once, and the click the browser synthesizes from it is swallowed', () => {
+  const { addTapListener } = loadHelpers();
+  const el = makeEl();
+  let calls = 0;
+  addTapListener(el, () => { calls++; });
+
+  const up = el.fire('pointerup', { button: 0 });
+  assert.equal(calls, 1);
+  assert.equal(up.defaultPrevented, true);
+  assert.equal(up.propagationStopped, true);
+
+  // Same tap, second event: no duplicate handler run, but still swallowed so
+  // GitHub's own handlers never see it either.
+  const click = el.fire('click', { button: 0 });
+  assert.equal(calls, 1, 'one tap must not run the handler twice');
+  assert.equal(click.defaultPrevented, true);
+  assert.equal(click.propagationStopped, true);
+});
+
+test('addTapListener: a plain click (mouse or keyboard activation) still runs the handler', () => {
+  const { addTapListener } = loadHelpers();
+  const el = makeEl();
+  let calls = 0;
+  addTapListener(el, () => { calls++; });
+  el.fire('click', {});
+  assert.equal(calls, 1);
+});
+
+test('addTapListener: secondary pointer buttons (right/middle click) are ignored and left alone', () => {
+  const { addTapListener } = loadHelpers();
+  const el = makeEl();
+  let calls = 0;
+  addTapListener(el, () => { calls++; });
+  const e = el.fire('pointerup', { button: 2 });
+  assert.equal(calls, 0);
+  assert.equal(e.defaultPrevented, false);
+});
+
+test('addTapListener: falls back to touchend where PointerEvent is unimplemented', () => {
+  const { addTapListener } = loadHelpers({ pointerEvents: false });
+  const el = makeEl();
+  let calls = 0;
+  addTapListener(el, () => { calls++; });
+  assert.equal(el.listeners.pointerup, undefined);
+  el.fire('touchend', {});
+  assert.equal(calls, 1);
+  el.fire('click', {});
+  assert.equal(calls, 1, 'the click synthesized from the same tap must not double-fire');
+});
+
+/** Textarea stub whose closest('form') resolves to `form` (or null). */
+function makeTextarea(form) {
+  return { value: '/lgtm', isConnected: true, closest: (sel) => (sel === 'form' ? form : null) };
+}
+
+test('submitCommentForm: dispatches a cancelable submit event, then requestSubmit() when nothing cancelled it', () => {
+  const { submitCommentForm } = loadHelpers();
+  const dispatched = [];
+  let requestSubmits = 0;
+  const form = {
+    dispatchEvent(e) { dispatched.push(e); return true; },
+    requestSubmit() { requestSubmits++; }
+  };
+  assert.equal(submitCommentForm(makeTextarea(form)), true);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].type, 'submit');
+  assert.equal(dispatched[0].cancelable, true);
+  assert.equal(dispatched[0].bubbles, true);
+  assert.equal(requestSubmits, 1);
+});
+
+test('submitCommentForm: a cancelled submit event means GitHub took over — no second, native submit', () => {
+  const { submitCommentForm } = loadHelpers();
+  let requestSubmits = 0;
+  const form = {
+    dispatchEvent() { return false; }, // a listener called preventDefault()
+    requestSubmit() { requestSubmits++; }
+  };
+  assert.equal(submitCommentForm(makeTextarea(form)), true);
+  assert.equal(requestSubmits, 0, 'must not double-submit');
+});
+
+test('submitCommentForm: reports failure when the textarea has no owning form', () => {
+  const { submitCommentForm } = loadHelpers();
+  assert.equal(submitCommentForm(makeTextarea(null)), false);
+});
+
+test('command buttons and the pending-cancel × are bound through the touch-friendly addTapListener', () => {
+  assert.match(contentJs, /addTapListener\(btn, \(\) => \{\s*\n\s*handleCommandClick\(command, context, btn\);/);
+  assert.match(contentJs, /addTapListener\(cancelX, \(\) => \{\s*\n\s*cancelQueuedCommand\(cmdText, btn\);/);
+});
+
+test('submitPendingCombo falls back to form submission, gated on the comment still being unposted so it cannot double-post', () => {
+  assert.match(contentJs, /if \(textarea\.isConnected && textarea\.value === finalText\) \{\s*\n\s*submitCommentForm\(textarea\);\s*\n\s*\}\s*\n\s*\}, SUBMIT_FALLBACK_DELAY_MS\);/);
+  // …and when the submit button never showed up at all, submit the form directly.
+  assert.match(contentJs, /\} else if \(submitCommentForm\(textarea\)\) \{\s*\n\s*showToast\(`Posted \$\{finalLines\.join\(' \+ '\)\}`, 'success'\);\s*\n\s*waitForPostToClear\(textarea, finalButtons, 20\);/);
+});
