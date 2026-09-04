@@ -32,6 +32,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleGetRehearsalJobs(msg.url).then(sendResponse);
     return true;
   }
+  if (msg.action === 'getClaudeFailureAnalysis') {
+    handleGetClaudeFailureAnalysis(msg.url).then(sendResponse);
+    return true;
+  }
+  if (msg.action === 'getFailedStepLog') {
+    handleGetFailedStepLog(msg.url).then(sendResponse);
+    return true;
+  }
   if (msg.action === 'getRepoBranches') {
     handleGetRepoBranches(msg.repo).then(sendResponse);
     return true;
@@ -579,6 +587,163 @@ async function handleRerunFailedActionsJobs(repo, runId) {
     return { success: true };
   } catch (e) {
     return { success: false, error: 'network-error' };
+  }
+}
+
+// Only URLs under this prefix, ending in this exact filename, are fetched —
+// the URL comes from page DOM, so it must be allowlisted here, not trusted.
+// Must match the CLAUDE_ANALYSIS_URL_* constants in content.js.
+const CLAUDE_ANALYSIS_URL_PREFIX = 'https://gcs.ci.openshift.org/gcs/test-platform-results/';
+const CLAUDE_ANALYSIS_URL_SUFFIX = '/claude-failure-analysis-text.txt';
+
+function isAllowedClaudeAnalysisUrl(url) {
+  return typeof url === 'string' && url.startsWith(CLAUDE_ANALYSIS_URL_PREFIX) && url.endsWith(CLAUDE_ANALYSIS_URL_SUFFIX);
+}
+
+/**
+ * Fetch the plain-text Claude CI-failure-analysis artifact linked from a PR
+ * comment/review (produced by the oadp-analyze-e2e-failure step).
+ * @param {string} url - GCS artifact URL scraped from the comment.
+ * @returns {Promise<{text: string|null}>}
+ */
+async function handleGetClaudeFailureAnalysis(url) {
+  if (!isAllowedClaudeAnalysisUrl(url)) return { text: null };
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    return { text: text || null };
+  } catch (e) {
+    return { text: null };
+  }
+}
+
+// A check row's Details link, for a Prow-owned job, points at Prow's own log
+// viewer over the public GCS results bucket: https://prow.ci.openshift.org/view/gs/<bucket>/<path>.
+// Only that bucket is ever fetched — the URL comes from page DOM, not trusted input.
+const PROW_VIEW_URL_PREFIX = 'https://prow.ci.openshift.org/view/gs/';
+const GCS_RESULTS_BUCKET = 'test-platform-results';
+
+/**
+ * Parse a Prow "Details" link into the GCS bucket + object-prefix it views,
+ * rejecting anything outside the known results bucket or containing
+ * unexpected characters.
+ * @param {string} url
+ * @returns {{bucket: string, prefix: string}|null}
+ */
+function parseProwViewUrl(url) {
+  if (typeof url !== 'string' || !url.startsWith(PROW_VIEW_URL_PREFIX)) return null;
+  const rest = url.slice(PROW_VIEW_URL_PREFIX.length);
+  const slash = rest.indexOf('/');
+  if (slash === -1) return null;
+  const bucket = rest.slice(0, slash);
+  const prefix = rest.slice(slash + 1).replace(/\/+$/, '');
+  if (bucket !== GCS_RESULTS_BUCKET) return null;
+  if (!prefix || !/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(prefix)) return null;
+  return { bucket, prefix };
+}
+
+/**
+ * List the immediate sub-"directories" (prefixes) and files (items) of a GCS
+ * object prefix via the public, unauthenticated JSON List API.
+ * @param {string} bucket
+ * @param {string} dirPath - Prefix with no trailing slash.
+ * @returns {Promise<{prefixes: string[], items: string[]}>}
+ */
+async function gcsListDir(bucket, dirPath) {
+  const url = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o?prefix=${encodeURIComponent(dirPath + '/')}&delimiter=/`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  return {
+    prefixes: (data.prefixes || []).map(p => p.replace(/\/$/, '')),
+    items: (data.items || []).map(i => i.name)
+  };
+}
+
+/**
+ * Fetch one GCS object's content as text via its public download URL.
+ * @param {string} bucket
+ * @param {string} objectPath - Full object name (as returned by gcsListDir).
+ * @returns {Promise<string>}
+ */
+async function gcsFetchText(bucket, objectPath) {
+  const url = `https://storage.googleapis.com/${encodeURIComponent(bucket)}/${objectPath.split('/').map(encodeURIComponent).join('/')}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.text();
+}
+
+/**
+ * Walk a Prow job's GCS artifact tree to find whichever step actually failed:
+ * a multi-stage test step's build-log.txt (its finished.json says
+ * {"passed":false}), or — when the job never reached a test step at all —
+ * the image build-logs/*.log files instead.
+ * @param {string} bucket
+ * @param {string} prefix - Job root prefix (no trailing slash), e.g.
+ *   "pr-logs/pull/<org>_<repo>/<pr>/<job>/<build-id>".
+ * @returns {Promise<{label: string, text: string}|null>}
+ */
+async function findFailedStepLog(bucket, prefix) {
+  const top = await gcsListDir(bucket, `${prefix}/artifacts`);
+  const testDirs = top.prefixes
+    .filter(p => !['build-logs', 'build-resources'].includes(p.split('/').pop()))
+    .slice(0, 10);
+
+  for (const testDir of testDirs) {
+    let stepList;
+    try {
+      stepList = await gcsListDir(bucket, testDir);
+    } catch (e) {
+      continue;
+    }
+    for (const stepDir of stepList.prefixes.slice(0, 10)) {
+      try {
+        const finishedText = await gcsFetchText(bucket, `${stepDir}/finished.json`);
+        const finished = JSON.parse(finishedText);
+        if (finished && finished.passed === false) {
+          const testName = testDir.split('/').pop();
+          const stepName = stepDir.split('/').pop();
+          const text = await gcsFetchText(bucket, `${stepDir}/build-log.txt`);
+          return { label: `${testName}/${stepName}/build-log.txt`, text };
+        }
+      } catch (e) {
+        // no finished.json yet (still running) or unparseable — not the failure
+      }
+    }
+  }
+
+  // No test step reported a failure — the job likely died during image
+  // builds, before any test step ran. Surface those logs instead.
+  const buildLogsDir = top.prefixes.find(p => p.split('/').pop() === 'build-logs');
+  if (buildLogsDir) {
+    const buildLogs = await gcsListDir(bucket, buildLogsDir);
+    const files = buildLogs.items.filter(f => f.endsWith('.log'));
+    if (files.length > 0) {
+      const texts = await Promise.all(files.map(f => gcsFetchText(bucket, f).catch(() => '(failed to load)')));
+      const combined = files.map((f, i) => `=== ${f.split('/').pop()} ===\n${texts[i]}`).join('\n\n');
+      return { label: 'build-logs/*.log', text: combined };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Resolve the log for a failed check's actual failing step, from its Prow
+ * "Details" link (a prow.ci.openshift.org/view/gs/... URL scraped from the
+ * check row).
+ * @param {string} url
+ * @returns {Promise<{label: string, text: string}|{text: null}>}
+ */
+async function handleGetFailedStepLog(url) {
+  const parsed = parseProwViewUrl(url);
+  if (!parsed) return { text: null };
+  try {
+    const result = await findFailedStepLog(parsed.bucket, parsed.prefix);
+    return result || { text: null };
+  } catch (e) {
+    return { text: null };
   }
 }
 

@@ -519,6 +519,266 @@ function findRehearsalJobMatch(entries, shortName) {
     return url;
   }
 
+  // Only GCS artifact links under this prefix, ending in this exact filename,
+  // get an icon + are fetched — must match the background allowlist.
+  const CLAUDE_ANALYSIS_URL_PREFIX = 'https://gcs.ci.openshift.org/gcs/test-platform-results/';
+  const CLAUDE_ANALYSIS_URL_SUFFIX = '/claude-failure-analysis-text.txt';
+  const claudeAnalysisCache = new Map(); // url -> text
+
+  function isClaudeAnalysisUrl(href) {
+    return typeof href === 'string' && href.startsWith(CLAUDE_ANALYSIS_URL_PREFIX) && href.endsWith(CLAUDE_ANALYSIS_URL_SUFFIX);
+  }
+
+  /**
+   * Fetch (and cache) the Claude CI-failure-analysis text for a GCS artifact
+   * link found in a PR comment/review.
+   * @param {string} url
+   * @returns {Promise<string|null>}
+   */
+  async function fetchClaudeAnalysis(url) {
+    if (claudeAnalysisCache.has(url)) return claudeAnalysisCache.get(url);
+    if (!CM.isContextValid()) return null;
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: 'getClaudeFailureAnalysis', url });
+      const text = resp && resp.text ? resp.text : null;
+      if (text) claudeAnalysisCache.set(url, text);
+      return text;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Position a floating panel next to an anchor element, clamped to the
+   * viewport. Used for both the hover-preview tooltip and (indirectly) sized
+   * for the click modal, which centers itself instead.
+   * @param {HTMLElement} panel
+   * @param {HTMLElement} anchor
+   */
+  function positionNearAnchor(panel, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const top = rect.bottom + window.scrollY + 6;
+    let left = rect.left + window.scrollX;
+    const maxLeft = window.scrollX + document.documentElement.clientWidth - 340;
+    if (left > maxLeft) left = Math.max(window.scrollX + 8, maxLeft);
+    panel.style.top = `${top}px`;
+    panel.style.left = `${left}px`;
+  }
+
+  /**
+   * Show (and return) a hover-preview tooltip anchored below `anchor`.
+   * @param {HTMLElement} anchor
+   * @param {string} text - Initial content (e.g. "Loading…").
+   * @returns {HTMLElement} The tooltip element — caller updates .textContent as data arrives.
+   */
+  function showHoverTooltip(anchor, text) {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'ghbcp-hover-tooltip';
+    tooltip.setAttribute('role', 'status');
+    tooltip.textContent = text;
+    document.body.appendChild(tooltip);
+    positionNearAnchor(tooltip, anchor);
+    return tooltip;
+  }
+
+  /**
+   * Open a full-text modal (scrollable body, X to close) titled `title`.
+   * Dismisses on Escape, backdrop click, or the close button.
+   * @param {string} title
+   * @returns {HTMLElement} The modal's body element — caller sets .textContent as data arrives.
+   */
+  function openTextModal(title) {
+    const overlay = document.createElement('div');
+    overlay.className = 'ghbcp-text-modal-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'ghbcp-text-modal';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-label', title);
+
+    const header = document.createElement('div');
+    header.className = 'ghbcp-text-modal-header';
+    const titleEl = document.createElement('span');
+    titleEl.textContent = title;
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'ghbcp-text-modal-close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    header.appendChild(titleEl);
+    header.appendChild(closeBtn);
+
+    const body = document.createElement('pre');
+    body.className = 'ghbcp-text-modal-body';
+    body.textContent = 'Loading…';
+
+    dialog.appendChild(header);
+    dialog.appendChild(body);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    function close() {
+      overlay.remove();
+      document.removeEventListener('keydown', onKeydown);
+    }
+    function onKeydown(e) {
+      if (e.key === 'Escape') close();
+    }
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    document.addEventListener('keydown', onKeydown);
+    addFocusTrap(dialog, closeBtn);
+    requestAnimationFrame(() => closeBtn.focus());
+
+    return body;
+  }
+
+  /**
+   * Build the small Claude icon inserted after a matching analysis link:
+   * hover shows a truncated preview tooltip, click opens the full text in a
+   * scrollable modal with an X close button.
+   * @param {string} url
+   * @returns {HTMLButtonElement}
+   */
+  function buildClaudeAnalysisIcon(url) {
+    const icon = document.createElement('button');
+    icon.type = 'button';
+    icon.className = 'ghbcp-claude-icon';
+    icon.setAttribute('aria-label', 'View Claude failure analysis');
+    icon.title = 'Claude failure analysis — hover for preview, click for full text';
+    icon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M12 1.5l2.2 6.8 6.8 2.2-6.8 2.2L12 19.5l-2.2-6.8L3 10.5l6.8-2.2z"/></svg>';
+
+    let tooltip = null;
+    let hideTimer = null;
+
+    icon.addEventListener('mouseenter', async () => {
+      clearTimeout(hideTimer);
+      if (tooltip) return;
+      tooltip = showHoverTooltip(icon, 'Loading…');
+      const text = await fetchClaudeAnalysis(url);
+      if (!tooltip) return;
+      tooltip.textContent = text
+        ? text.slice(0, 600) + (text.length > 600 ? '…' : '')
+        : 'Failed to load analysis.';
+    });
+    icon.addEventListener('mouseleave', () => {
+      hideTimer = setTimeout(() => {
+        if (tooltip) { tooltip.remove(); tooltip = null; }
+      }, 150);
+    });
+    icon.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (tooltip) { tooltip.remove(); tooltip = null; }
+      const modalBody = openTextModal('Claude Failure Analysis');
+      const text = await fetchClaudeAnalysis(url);
+      modalBody.textContent = text || 'Failed to load analysis.';
+    });
+
+    return icon;
+  }
+
+  /**
+   * Scan timeline comments and PR-review bodies for Claude failure-analysis
+   * links and insert a hover/click icon after each one that doesn't already
+   * have one. Idempotent — safe to call on every debounced re-injection.
+   */
+  function injectClaudeAnalysisIcons() {
+    const comments = document.querySelectorAll(
+      '.timeline-comment, .js-comment-container, [id^="issuecomment-"], [id^="pullrequestreview-"]'
+    );
+    for (const comment of comments) {
+      const body = comment.querySelector('.comment-body, .js-comment-body, .markdown-body');
+      if (!body) continue;
+      const links = body.querySelectorAll('a[href]');
+      for (const link of links) {
+        if (!isClaudeAnalysisUrl(link.href)) continue;
+        if (link.nextElementSibling && link.nextElementSibling.classList.contains('ghbcp-claude-icon')) continue;
+        const icon = buildClaudeAnalysisIcon(link.href);
+        link.insertAdjacentElement('afterend', icon);
+      }
+    }
+  }
+
+  // A failed check row's Details link, for a Prow-owned job, points at Prow's
+  // log viewer over GCS: https://prow.ci.openshift.org/view/gs/<bucket>/<path>.
+  const PROW_VIEW_URL_PREFIX = 'https://prow.ci.openshift.org/view/gs/';
+  const failedStepLogCache = new Map(); // prow view URL -> {label, text}|null
+
+  function isProwViewUrl(href) {
+    return typeof href === 'string' && href.startsWith(PROW_VIEW_URL_PREFIX);
+  }
+
+  /**
+   * Fetch (and cache) the failed-step log for a Prow job, via the background
+   * worker (which walks the job's GCS artifact tree to find the actual
+   * failing step — a test step's build-log.txt, or the image build logs when
+   * the job never reached a test step).
+   * @param {string} prowUrl - The check row's Details link.
+   * @returns {Promise<{label: string, text: string}|null>}
+   */
+  async function fetchFailedStepLog(prowUrl) {
+    if (failedStepLogCache.has(prowUrl)) return failedStepLogCache.get(prowUrl);
+    if (!CM.isContextValid()) return null;
+    let result = null;
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: 'getFailedStepLog', url: prowUrl });
+      result = resp && resp.text ? { label: resp.label || 'build-log.txt', text: resp.text } : null;
+    } catch (e) {
+      result = null;
+    }
+    failedStepLogCache.set(prowUrl, result);
+    return result;
+  }
+
+  /**
+   * Build the small log icon inserted next to a failed check row: hover shows
+   * a truncated preview tooltip, click opens the full failing-step log in a
+   * scrollable modal with an X close button.
+   * @param {string} prowUrl
+   * @returns {HTMLButtonElement}
+   */
+  function buildFailedStepLogIcon(prowUrl) {
+    const icon = document.createElement('button');
+    icon.type = 'button';
+    icon.className = 'ghbcp-log-icon';
+    icon.setAttribute('aria-label', 'View failed step log');
+    icon.title = 'Failed step log — hover for preview, click for full text';
+    icon.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0114.25 16H1.75A1.75 1.75 0 010 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V1.75a.25.25 0 00-.25-.25H1.75zM3.75 4h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 010-1.5zm0 3h5.5a.75.75 0 010 1.5h-5.5a.75.75 0 010-1.5zm0 3h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 010-1.5z"/></svg>';
+
+    let tooltip = null;
+    let hideTimer = null;
+
+    icon.addEventListener('mouseenter', async () => {
+      clearTimeout(hideTimer);
+      if (tooltip) return;
+      tooltip = showHoverTooltip(icon, 'Loading…');
+      const result = await fetchFailedStepLog(prowUrl);
+      if (!tooltip) return;
+      tooltip.textContent = result
+        ? result.text.slice(0, 600) + (result.text.length > 600 ? '…' : '')
+        : 'Failed to load log.';
+    });
+    icon.addEventListener('mouseleave', () => {
+      hideTimer = setTimeout(() => {
+        if (tooltip) { tooltip.remove(); tooltip = null; }
+      }, 150);
+    });
+    icon.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (tooltip) { tooltip.remove(); tooltip = null; }
+      const modalBody = openTextModal('Failed Step Log');
+      const result = await fetchFailedStepLog(prowUrl);
+      modalBody.textContent = result ? `${result.label}\n\n${result.text}` : 'Failed to load log.';
+    });
+
+    return icon;
+  }
+
   /**
    * Fetch the full affected-jobs list for the current PR via the background
    * worker, caching per listing URL. Returns null when no REHEARSALNOTIFIER
@@ -2148,7 +2408,10 @@ function findRehearsalJobMatch(entries, shortName) {
       const checkName = nameEl ? nameEl.textContent.trim() : '';
       if (!checkName) continue;
 
-      rows.push({ row, checkName });
+      const detailsLink = nameEl && (nameEl.tagName === 'A' ? nameEl : nameEl.closest('a'));
+      const detailsHref = detailsLink ? detailsLink.href : null;
+
+      rows.push({ row, checkName, status, detailsHref });
       if (checkName.startsWith('ci/rehearse/') && status !== 'passed') {
         rehearsalCheckNames.add(checkName);
       }
@@ -2158,7 +2421,7 @@ function findRehearsalJobMatch(entries, shortName) {
       ? await resolveRehearsalJobNames(Array.from(rehearsalCheckNames))
       : new Map();
 
-    for (const { row, checkName } of rows) {
+    for (const { row, checkName, status, detailsHref } of rows) {
       // Tide's own "tide" status context is a live-recomputed summary of
       // overall mergeability (labels, hold, required contexts, etc.), not a
       // job of its own — kubernetes-sigs/prow's tide/status.go recomputes it
@@ -2194,6 +2457,10 @@ function findRehearsalJobMatch(entries, shortName) {
 
       const btnContainer = document.createElement('span');
       btnContainer.className = 'ghbcp-check-btns';
+
+      if (status === 'failed' && isProwViewUrl(detailsHref)) {
+        btnContainer.appendChild(buildFailedStepLogIcon(detailsHref));
+      }
 
       const context = {
         testName: checkName,
@@ -2416,6 +2683,8 @@ function findRehearsalJobMatch(entries, shortName) {
         delete config._migrated;
       }
       if (!config.globalSettings.enabled) return;
+
+      injectClaudeAnalysisIcons();
 
       currentRepo = detectRepo();
       if (!currentRepo) return;
