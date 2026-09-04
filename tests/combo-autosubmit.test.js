@@ -169,6 +169,18 @@ test('addTapListener: falls back to touchend where PointerEvent is unimplemented
   assert.equal(calls, 1, 'the click synthesized from the same tap must not double-fire');
 });
 
+test('addTapListener: leaves nested native controls untouched when filtered out', () => {
+  const { addTapListener } = loadHelpers();
+  const el = makeEl();
+  let calls = 0;
+  addTapListener(el, () => { calls++; }, (e) => e.target !== 'checkbox');
+  const pointer = el.fire('pointerup', { button: 0, target: 'checkbox' });
+  const click = el.fire('click', { button: 0, target: 'checkbox' });
+  assert.equal(calls, 0);
+  assert.equal(pointer.defaultPrevented, false);
+  assert.equal(click.defaultPrevented, false);
+});
+
 /** Textarea stub whose closest('form') resolves to `form` (or null). */
 function makeTextarea(form) {
   return { value: '/lgtm', isConnected: true, closest: (sel) => (sel === 'form' ? form : null) };
@@ -223,9 +235,15 @@ test('submitCommentForm: reports failure when no native submit method exists', (
   assert.equal(submitCommentForm(makeTextarea(form)), false);
 });
 
-test('command buttons and the pending-cancel × are bound through the touch-friendly addTapListener', () => {
+test('content-script action controls are bound through the touch-friendly addTapListener', () => {
   assert.match(contentJs, /addTapListener\(btn, \(\) => \{\s*\n\s*handleCommandClick\(command, context, btn\);/);
   assert.match(contentJs, /addTapListener\(cancelX, \(\) => \{\s*\n\s*cancelQueuedCommand\(cmdText, btn\);/);
+  assert.match(contentJs, /addTapListener\(closeBtn, close\);/);
+  assert.match(contentJs, /addTapListener\(icon, async \(\) => \{/);
+  assert.match(contentJs, /addTapListener\(item, \(e\) => \{/);
+  assert.match(contentJs, /addTapListener\(submitBtn, \(\) => \{/);
+  assert.match(contentJs, /addTapListener\(postBtn, \(\) => \{/);
+  assert.match(contentJs, /addTapListener\(refreshBtn, async \(\) => \{/);
 });
 
 test('submitPendingCombo falls back to form submission, gated on the comment still being unposted so it cannot double-post', () => {

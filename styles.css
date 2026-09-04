@@ -770,4 +770,40 @@ html[data-color-mode="dark"] {
   .ghbcp-btn-wrap {
     gap: 6px;
   }
+
+  .ghbcp-check-btns .ghbcp-btn,
+  .ghbcp-job-picker-submit {
+    min-height: 44px;
+  }
+
+  .ghbcp-refresh-btn,
+  .ghbcp-config-link,
+  .ghbcp-job-picker-close,
+  .ghbcp-text-modal-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .ghbcp-claude-icon,
+  .ghbcp-log-icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .ghbcp-job-picker-item {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  .ghbcp-job-picker-checkbox,
+  .ghbcp-job-picker-select-all input {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ghbcp-payload-row input,
+  .ghbcp-payload-row select,
+  .ghbcp-popover-input {
+    min-height: 44px;
+  }
 }

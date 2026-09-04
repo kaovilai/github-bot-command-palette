@@ -1,6 +1,7 @@
 // GitHub Bot Command Palette — Popup
 (async () => {
   const CM = GHBCP.ConfigManager;
+  const addTapListener = GHBCP.addTapListener;
   const esc = CM.escapeHtml;
   const contentDiv = document.getElementById('content');
   let currentTab = null;
@@ -14,8 +15,7 @@
   const config = await CM.getConfig();
   if (!config) {
     contentDiv.innerHTML = '<div class="repo-info"><span class="no-pr">No configuration found. Open settings to initialize.</span></div>';
-    document.getElementById('open-settings').addEventListener('click', (e) => {
-      e.preventDefault();
+    addTapListener(document.getElementById('open-settings'), () => {
       chrome.runtime.openOptionsPage();
     });
     return;
@@ -123,8 +123,7 @@
     });
   });
 
-  document.getElementById('open-settings').addEventListener('click', (e) => {
-    e.preventDefault();
+  addTapListener(document.getElementById('open-settings'), () => {
     chrome.runtime.openOptionsPage();
   });
 })();
