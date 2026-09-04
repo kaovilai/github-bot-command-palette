@@ -169,6 +169,18 @@ test('addTapListener: falls back to touchend where PointerEvent is unimplemented
   assert.equal(calls, 1, 'the click synthesized from the same tap must not double-fire');
 });
 
+test('addTapListener: leaves nested native controls untouched when filtered out', () => {
+  const { addTapListener } = loadHelpers();
+  const el = makeEl();
+  let calls = 0;
+  addTapListener(el, () => { calls++; }, (e) => e.target !== 'checkbox');
+  const pointer = el.fire('pointerup', { button: 0, target: 'checkbox' });
+  const click = el.fire('click', { button: 0, target: 'checkbox' });
+  assert.equal(calls, 0);
+  assert.equal(pointer.defaultPrevented, false);
+  assert.equal(click.defaultPrevented, false);
+});
+
 /** Textarea stub whose closest('form') resolves to `form` (or null). */
 function makeTextarea(form) {
   return { value: '/lgtm', isConnected: true, closest: (sel) => (sel === 'form' ? form : null) };
