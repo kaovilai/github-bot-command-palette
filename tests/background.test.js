@@ -667,3 +667,84 @@ test('handleRerunFailedActionsJobs: posts to the run-level rerun-failed-jobs end
   const result = await ctx.handleRerunFailedActionsJobs('org/repo', '123');
   assertResultEqual(result, { success: true });
 });
+
+// ── findFailedStepLog ──────────────────────────────────────────────────────
+// Mocks GCS's two endpoints findFailedStepLog/gcsListDir/gcsFetchText touch:
+// the "List Objects" JSON API (?prefix=...&delimiter=/) and the public
+// per-object download URL. `listings` keys are directory prefixes (no
+// trailing slash); `texts` keys are full object paths, value null = 404.
+function makeGcsFetch({ listings = {}, texts = {} }) {
+  return async (url) => {
+    if (url.includes('/storage/v1/b/')) {
+      const prefix = decodeURIComponent(url.match(/[?&]prefix=([^&]+)/)[1]).replace(/\/$/, '');
+      const data = listings[prefix] || {};
+      return { ok: true, json: async () => ({ prefixes: (data.prefixes || []).map(p => p + '/'), items: data.items || [] }) };
+    }
+    const hit = Object.entries(texts).find(([path]) => url.includes(path));
+    if (!hit || hit[1] === null) return { ok: false, status: 404 };
+    return { ok: true, text: async () => hit[1] };
+  };
+}
+
+test('findFailedStepLog: a per-step finished.json with passed:false wins over every fallback', async () => {
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/testA'] },
+      'p/artifacts/testA': { prefixes: ['p/artifacts/testA/step1'] },
+    },
+    texts: {
+      'p/artifacts/testA/step1/finished.json': JSON.stringify({ passed: false }),
+      'p/artifacts/testA/step1/build-log.txt': 'the real failure',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assertResultEqual(result, { label: 'testA/step1/build-log.txt', text: 'the real failure' });
+});
+
+test('findFailedStepLog: falls back to the top-level build-log.txt when the failing step died before writing its own artifacts', async () => {
+  // Models a pre-step pod Evicted after 0s (DiskPressure): its step dir has
+  // no finished.json at all, so nothing in the per-step scan looks failed.
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/testA', 'p/artifacts/build-logs'] },
+      'p/artifacts/testA': { prefixes: ['p/artifacts/testA/step1'] },
+      'p/artifacts/testA/step1': { prefixes: [], items: [] },
+      'p/artifacts/build-logs': { items: [{ name: 'p/artifacts/build-logs/img1.log' }] },
+    },
+    texts: {
+      'p/artifacts/testA/step1/finished.json': null,
+      'p/build-log.txt': 'INFO doing setup\nERRO Evicted Pod was rejected: DiskPressure\nmore context',
+      'p/artifacts/build-logs/img1.log': 'image built fine',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assert.equal(result.label, 'build-log.txt (ci-operator)');
+  assert.match(result.text, /^ERRO Evicted Pod was rejected: DiskPressure/);
+  // Must not fall through to the unrelated (successful) image build logs.
+  assert.ok(!result.text.includes('image built fine'));
+});
+
+test('findFailedStepLog: falls back to image build-logs when the top-level build-log.txt has no ERRO block', async () => {
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/build-logs'] },
+      'p/artifacts/build-logs': { items: [{ name: 'p/artifacts/build-logs/img1.log' }] },
+    },
+    texts: {
+      'p/build-log.txt': 'INFO all quiet, no failure marker here',
+      'p/artifacts/build-logs/img1.log': 'image build actually failed here',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assert.equal(result.label, 'build-logs/*.log');
+  assert.match(result.text, /image build actually failed here/);
+});
+
+test('findFailedStepLog: returns null when nothing failed anywhere', async () => {
+  ctx.fetch = makeGcsFetch({
+    listings: { 'p/artifacts': { prefixes: [] } },
+    texts: { 'p/build-log.txt': null },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assert.equal(result, null);
+});

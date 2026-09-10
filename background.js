@@ -677,8 +677,9 @@ async function gcsFetchText(bucket, objectPath) {
 /**
  * Walk a Prow job's GCS artifact tree to find whichever step actually failed:
  * a multi-stage test step's build-log.txt (its finished.json says
- * {"passed":false}), or — when the job never reached a test step at all —
- * the image build-logs/*.log files instead.
+ * {"passed":false}); the job's own top-level build-log.txt (ci-operator's
+ * own log) when no step reported one; or — as a last resort — the image
+ * build-logs/*.log files instead.
  * @param {string} bucket
  * @param {string} prefix - Job root prefix (no trailing slash), e.g.
  *   "pr-logs/pull/<org>_<repo>/<pr>/<job>/<build-id>".
@@ -713,8 +714,26 @@ async function findFailedStepLog(bucket, prefix) {
     }
   }
 
-  // No test step reported a failure — the job likely died during image
-  // builds, before any test step ran. Surface those logs instead.
+  // No per-step finished.json reported a failure — the failing step may have
+  // died too fast to write its own artifacts at all (e.g. a pre-step pod
+  // Evicted after 0s under node DiskPressure never creates a finished.json or
+  // build-log.txt of its own). The job's top-level build-log.txt always
+  // exists and ci-operator writes an "ERRO" block into it naming the real
+  // failure, so it's a more reliable catch-all than guessing from the image
+  // build-logs dump below (which, for a pre-step/infra failure like this,
+  // would otherwise just show unrelated, successfully-built images).
+  try {
+    const rootLog = await gcsFetchText(bucket, `${prefix}/build-log.txt`);
+    const erroIdx = rootLog.indexOf('ERRO');
+    if (erroIdx !== -1) {
+      return { label: 'build-log.txt (ci-operator)', text: rootLog.slice(erroIdx, erroIdx + 8000) };
+    }
+  } catch (e) {
+    // fall through to the image build-logs dump below
+  }
+
+  // Last resort: the job may have died during image builds themselves,
+  // before ci-operator ever logged an ERRO line. Surface those logs instead.
   const buildLogsDir = top.prefixes.find(p => p.split('/').pop() === 'build-logs');
   if (buildLogsDir) {
     const buildLogs = await gcsListDir(bucket, buildLogsDir);
