@@ -28,7 +28,7 @@ GHBCP.addTapListener = function addTapListener(el, handler) {
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 13;
+  const SCHEMA_VERSION = 14;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -255,8 +255,10 @@ GHBCP.ConfigManager = (() => {
         id: 'profile-dependabot',
         name: 'Dependabot',
         description: 'GitHub Dependabot dependency update commands',
-        enabled: false,
+        enabled: true,
         repoPatterns: ['*'],
+        // Only ever shown on PRs actually opened by Dependabot — see matchesAuthor().
+        authorPatterns: ['dependabot[bot]'],
         globalCommands: [
           cmd('Rebase', '@dependabot rebase', 'primary', { description: 'Rebase this PR' }),
           cmd('Recreate', '@dependabot recreate', 'warning', { description: 'Close and recreate this PR' }),
@@ -621,13 +623,33 @@ GHBCP.ConfigManager = (() => {
   }
 
   /**
-   * Return the list of enabled profiles whose `repoPatterns` match `repoFullName`,
-   * after applying any repo-level overrides (disabled/extra profiles).
+   * Return true if `profile` is allowed to apply to a PR authored by `prAuthor`.
+   * Profiles without an `authorPatterns` list (the common case) always match,
+   * preserving existing repo-only gating. Profiles that declare
+   * `authorPatterns` (e.g. the built-in Dependabot profile, restricted to
+   * `dependabot[bot]`) only match when `prAuthor` is known and matches one of
+   * the glob patterns — this keeps bot-specific command buttons from showing
+   * up on PRs the bot didn't author.
+   * @param {Object} profile     - Profile object, optionally with `authorPatterns`.
+   * @param {?string} prAuthor   - Detected PR author login/display name, or null/undefined.
+   * @returns {boolean}
+   */
+  function matchesAuthor(profile, prAuthor) {
+    if (!profile.authorPatterns || profile.authorPatterns.length === 0) return true;
+    if (!prAuthor) return false;
+    return profile.authorPatterns.some(pat => globMatch(pat, prAuthor));
+  }
+
+  /**
+   * Return the list of enabled profiles whose `repoPatterns` match `repoFullName`
+   * and whose `authorPatterns` (if any) match `prAuthor`, after applying any
+   * repo-level overrides (disabled/extra profiles).
    * @param {Object} config       - Full config object.
    * @param {string} repoFullName - Repository in `org/repo` format.
+   * @param {?string} [prAuthor]  - Detected PR author login/display name, or null/undefined.
    * @returns {Object[]} Array of matched, filtered profile objects.
    */
-  function getMatchingProfiles(config, repoFullName) {
+  function getMatchingProfiles(config, repoFullName, prAuthor) {
     const profiles = (config.profiles || []).filter(p => {
       if (!p.enabled) return false;
       return p.repoPatterns.some(pat => globMatch(pat, repoFullName));
@@ -653,7 +675,7 @@ GHBCP.ConfigManager = (() => {
       }
     }
 
-    return profiles;
+    return profiles.filter(p => matchesAuthor(p, prAuthor));
   }
 
   /**
@@ -745,6 +767,7 @@ GHBCP.ConfigManager = (() => {
     clearGithubToken,
     resetToDefaults,
     getMatchingProfiles,
+    matchesAuthor,
     getExtraCommands,
     filterCommandsByPlugins,
     globMatch,

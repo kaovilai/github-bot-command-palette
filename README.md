@@ -81,6 +81,7 @@ Bot profile detail view with all commands, styles, and shortcuts:
 - **Slash command buttons** — one-click `/lgtm`, `/approve`, `/retest`, `/hold`, etc.
 - **Profile system** — configure commands per bot system (Prow, Mergify, Changesets, etc.)
 - **Repo pattern matching** — glob patterns like `openshift/*` to scope profiles
+- **PR author matching** — profiles can be restricted to PRs opened by a specific bot (e.g. built-in Dependabot commands only show up on PRs authored by `dependabot[bot]`)
 - **Inline check buttons** — retest buttons next to failed CI checks
 - **GitHub Actions rerun (optional)** — one-click rerun for checks Prow doesn't own, via a self-supplied token — see [below](#github-actions-rerun-optional)
 - **Dynamic commands** — auto-generate buttons from failed check names (e.g., `/pj-rehearse <job-name>`)
@@ -101,7 +102,7 @@ Bot profile detail view with all commands, styles, and shortcuts:
 | OpenShift Specialized | `openshift/*` | `/testwith`, `/testwith abort`, `/validate-backports`, `/pipeline required` |
 | Mergify | `*` (disabled by default) | `/mergify requeue`, `/mergify refresh` |
 | Changesets Bot | `*` (disabled by default) | `/changeset <type>` |
-| Dependabot | `*` (disabled by default) | `@dependabot rebase`, `@dependabot recreate`, `@dependabot merge`, `@dependabot squash and merge`, `@dependabot cancel merge`, `@dependabot reopen`, `@dependabot close`, `@dependabot ignore this major/minor version`, `@dependabot ignore this dependency` |
+| Dependabot | `*` — buttons only appear on PRs authored by `dependabot[bot]` | `@dependabot rebase`, `@dependabot recreate`, `@dependabot merge`, `@dependabot squash and merge`, `@dependabot cancel merge`, `@dependabot reopen`, `@dependabot close`, `@dependabot ignore this major/minor version`, `@dependabot ignore this dependency` |
 | Claude | `*` (disabled by default) | `@claude <instruction>` (free-form input), `@claude review this PR`, `@claude fix this`, `@claude implement …` |
 | CodeRabbit AI | `*` (disabled by default) | `@coderabbitai full review`, `@coderabbitai review`, `@coderabbitai summary`, `@coderabbitai generate docstrings`, `@coderabbitai resolve`, `@coderabbitai pause`, `@coderabbitai resume`, `@coderabbitai help` |
 
@@ -171,7 +172,7 @@ tests/                 — Unit and integration tests
 
 See `config-export.json` for the full schema. Key types:
 
-- **BotProfile** — name, repo patterns, global/check/dynamic commands
+- **BotProfile** — name, repo patterns, optional author patterns (restrict to PRs opened by a matching author, e.g. `dependabot[bot]`), global/check/dynamic commands
 - **BotCommand** — label, command text, style, input support, keyboard shortcut
 - **DynamicCommandRule** — JS expression evaluated with check context (testName, checkName)
 

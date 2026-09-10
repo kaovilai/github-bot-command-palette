@@ -244,6 +244,31 @@ function submitCommentForm(textarea) {
   }
 
   /**
+   * Detect the PR author's login by reading GitHub's PR header summary line —
+   * "<author> wants to merge N commits into <base> from <head>" (see
+   * detectTargetBranch() above for why that line is relied on elsewhere too).
+   * The author is always rendered as a hovercard-enabled link immediately
+   * before that text, whether it's a human user (`data-hovercard-type="user"`)
+   * or a bot/GitHub App like `dependabot[bot]`
+   * (`data-hovercard-type="organization"`, linking to `/apps/dependabot`).
+   * This lets bot-authored PRs be identified reliably without depending on
+   * GitHub's frequently-changing generated CSS class names.
+   * @returns {string|null} Author's display text (e.g. "dependabot[bot]"), or null.
+   */
+  function detectPRAuthor() {
+    const candidates = document.querySelectorAll(
+      'a[data-hovercard-type="user"], a[data-hovercard-type="organization"]'
+    );
+    for (const a of candidates) {
+      const parent = a.parentElement;
+      if (parent && /\bwants to merge\b/.test(parent.textContent)) {
+        return a.textContent.trim();
+      }
+    }
+    return null;
+  }
+
+  /**
    * Create an accessible button element for a slash command.
    * @param {Object} command - Command descriptor (id, label, style, description, shortcut, _pluginDisabled).
    * @param {Object} context - Contextual data passed to the click handler (repoName, prNumber, testName, etc.).
@@ -2757,7 +2782,8 @@ function submitCommentForm(textarea) {
       if (!currentRepo) return;
       if (CM.isRepoExcluded(config, currentRepo)) return;
 
-      let profiles = CM.getMatchingProfiles(config, currentRepo);
+      const prAuthor = detectPRAuthor();
+      let profiles = CM.getMatchingProfiles(config, currentRepo, prAuthor);
       if (profiles.length === 0) return;
 
       const filterMode = config.globalSettings.pluginFilterMode || 'disabled';

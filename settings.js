@@ -162,7 +162,7 @@
           <div>
             <span class="profile-name">${esc(p.name)}</span>
             <span class="profile-desc"> — ${esc(p.description)}</span>
-            <div class="profile-patterns">${p.repoPatterns.map(r => esc(r)).join(', ')} · ${cmdCount} commands</div>
+            <div class="profile-patterns">${p.repoPatterns.map(r => esc(r)).join(', ')}${(p.authorPatterns && p.authorPatterns.length) ? ` · author: ${p.authorPatterns.map(r => esc(r)).join(', ')}` : ''} · ${cmdCount} commands</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="toggle">

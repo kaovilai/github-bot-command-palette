@@ -64,8 +64,11 @@
     if (matched.length > 0) {
       html += '<div class="profiles-heading">Matched Profiles:</div>';
       for (const p of matched) {
+        const authorNote = (p.authorPatterns && p.authorPatterns.length)
+          ? ` <span class="no-pr" style="font-size:11px">(only on PRs by ${esc(p.authorPatterns.join(', '))})</span>`
+          : '';
         html += `<div class="profile-item">
-          <span>${esc(p.name)}</span>
+          <span>${esc(p.name)}${authorNote}</span>
           <span class="toggle">
             <input type="checkbox" data-pid="${p.id}" aria-label="Enable ${esc(p.name)}" ${p.enabled ? 'checked' : ''}>
             <span class="slider"></span>

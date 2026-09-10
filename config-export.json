@@ -88,8 +88,9 @@
       "id": "profile-dependabot",
       "name": "Dependabot",
       "description": "GitHub Dependabot dependency update commands",
-      "enabled": false,
+      "enabled": true,
       "repoPatterns": ["*"],
+      "authorPatterns": ["dependabot[bot]"],
       "globalCommands": [
         { "id": "cmd-dependabot-rebase", "label": "Rebase", "command": "@dependabot rebase", "description": "Rebase this PR", "style": "primary", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
         { "id": "cmd-dependabot-recreate", "label": "Recreate", "command": "@dependabot recreate", "description": "Close and recreate this PR", "style": "warning", "requireConfirm": false, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },

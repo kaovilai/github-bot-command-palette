@@ -244,6 +244,82 @@ test('getMatchingProfiles: extraProfiles silently ignores unknown profile IDs', 
 });
 
 // ---------------------------------------------------------------------------
+// getMatchingProfiles / matchesAuthor — author-restricted profiles (Dependabot)
+// ---------------------------------------------------------------------------
+function makeConfigWithAuthor(overrides = {}) {
+  return {
+    profiles: [
+      { id: 'p1', enabled: true, repoPatterns: ['*'], globalCommands: [], checkCommands: [] },
+      { id: 'p-dependabot', enabled: true, repoPatterns: ['*'], authorPatterns: ['dependabot[bot]'], globalCommands: [], checkCommands: [] }
+    ],
+    repoOverrides: [],
+    ...overrides
+  };
+}
+
+test('matchesAuthor: profile without authorPatterns always matches', () => {
+  const CM = makeContext();
+  assert.equal(CM.matchesAuthor({ id: 'p1' }, 'dependabot[bot]'), true);
+  assert.equal(CM.matchesAuthor({ id: 'p1', authorPatterns: [] }, null), true);
+});
+
+test('matchesAuthor: profile with authorPatterns requires a matching prAuthor', () => {
+  const CM = makeContext();
+  const profile = { authorPatterns: ['dependabot[bot]'] };
+  assert.equal(CM.matchesAuthor(profile, 'dependabot[bot]'), true);
+  assert.equal(CM.matchesAuthor(profile, 'someone-else'), false);
+  assert.equal(CM.matchesAuthor(profile, null), false, 'unknown author should not match a restricted profile');
+});
+
+test('matchesAuthor: authorPatterns support glob wildcards', () => {
+  const CM = makeContext();
+  const profile = { authorPatterns: ['*[bot]'] };
+  assert.equal(CM.matchesAuthor(profile, 'dependabot[bot]'), true);
+  assert.equal(CM.matchesAuthor(profile, 'renovate[bot]'), true);
+  assert.equal(CM.matchesAuthor(profile, 'a-human'), false);
+});
+
+test('getMatchingProfiles: author-restricted profile is excluded when prAuthor is not provided', () => {
+  const CM = makeContext();
+  const config = makeConfigWithAuthor();
+  const result = CM.getMatchingProfiles(config, 'org/repo');
+  const ids = result.map(p => p.id);
+  assert.ok(ids.includes('p1'), 'unrestricted profile should still match');
+  assert.ok(!ids.includes('p-dependabot'), 'author-restricted profile should be excluded without a known PR author');
+});
+
+test('getMatchingProfiles: author-restricted profile is excluded when prAuthor does not match', () => {
+  const CM = makeContext();
+  const config = makeConfigWithAuthor();
+  const result = CM.getMatchingProfiles(config, 'org/repo', 'some-human-author');
+  const ids = result.map(p => p.id);
+  assert.ok(!ids.includes('p-dependabot'), 'author-restricted profile should be excluded for a non-matching author');
+});
+
+test('getMatchingProfiles: author-restricted profile is included when prAuthor matches', () => {
+  const CM = makeContext();
+  const config = makeConfigWithAuthor();
+  const result = CM.getMatchingProfiles(config, 'org/repo', 'dependabot[bot]');
+  const ids = result.map(p => p.id);
+  assert.ok(ids.includes('p-dependabot'), 'author-restricted profile should be included when the PR author matches');
+});
+
+test('getMatchingProfiles: author restriction also applies to profiles added via extraProfiles override', () => {
+  const CM = makeContext();
+  const config = makeConfigWithAuthor({
+    profiles: [
+      { id: 'p-dependabot', enabled: false, repoPatterns: ['other/*'], authorPatterns: ['dependabot[bot]'], globalCommands: [], checkCommands: [] }
+    ],
+    repoOverrides: [{ pattern: 'org/repo', extraProfiles: ['p-dependabot'] }]
+  });
+  const noAuthor = CM.getMatchingProfiles(config, 'org/repo').map(p => p.id);
+  assert.ok(!noAuthor.includes('p-dependabot'), 'author restriction still applies even when explicitly added via extraProfiles');
+
+  const withAuthor = CM.getMatchingProfiles(config, 'org/repo', 'dependabot[bot]').map(p => p.id);
+  assert.ok(withAuthor.includes('p-dependabot'), 'should be included once the PR author matches');
+});
+
+// ---------------------------------------------------------------------------
 // filterCommandsByPlugins
 // ---------------------------------------------------------------------------
 function makeProfiles(commands = []) {
