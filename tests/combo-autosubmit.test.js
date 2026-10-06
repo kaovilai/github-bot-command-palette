@@ -247,7 +247,21 @@ test('content-script action controls are bound through the touch-friendly addTap
 });
 
 test('submitPendingCombo falls back to form submission, gated on the comment still being unposted so it cannot double-post', () => {
-  assert.match(contentJs, /if \(textarea\.isConnected && textarea\.value === finalText\) \{\s*\n\s*submitCommentForm\(textarea\);\s*\n\s*\}\s*\n\s*\}, SUBMIT_FALLBACK_DELAY_MS\);/);
+  assert.match(contentJs, /if \(textarea\.isConnected && textarea\.value === finalText && !isSubmitInFlight\(textarea, submitBtn\)\) \{\s*\n\s*submitCommentForm\(textarea\);\s*\n\s*\}\s*\n\s*\}, SUBMIT_FALLBACK_DELAY_MS\);/);
   // …and when the submit button never showed up at all, submit the form directly.
   assert.match(contentJs, /\} else if \(submitCommentForm\(textarea\)\) \{\s*\n\s*showToast\(`Posted \$\{finalLines\.join\(' \+ '\)\}`, 'success'\);\s*\n\s*waitForPostToClear\(textarea, finalButtons, 20\);/);
+});
+
+test('isSubmitInFlight: a disabled submit button / textarea / busy form means the post is merely slow, not ineffective', () => {
+  const { isSubmitInFlight } = loadHelpers();
+  const mk = (form, extra) => Object.assign({ closest: () => form, classList: { contains: () => false } }, extra);
+  const idleForm = { getAttribute: () => null, classList: { contains: () => false } };
+  const idleBtn = { disabled: false, getAttribute: () => null };
+
+  assert.equal(isSubmitInFlight(mk(idleForm), idleBtn), false);
+  assert.equal(isSubmitInFlight(mk(idleForm), { disabled: true, getAttribute: () => null }), true);
+  assert.equal(isSubmitInFlight(mk(idleForm), { disabled: false, getAttribute: (a) => (a === 'aria-disabled' ? 'true' : null) }), true);
+  assert.equal(isSubmitInFlight(mk(idleForm, { disabled: true }), idleBtn), true);
+  assert.equal(isSubmitInFlight(mk({ getAttribute: (a) => (a === 'aria-busy' ? 'true' : null), classList: { contains: () => false } }), idleBtn), true);
+  assert.equal(isSubmitInFlight(mk({ getAttribute: () => null, classList: { contains: (c) => c === 'is-submitting' } }), idleBtn), true);
 });
