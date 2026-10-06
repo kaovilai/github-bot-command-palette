@@ -418,6 +418,10 @@ test('isAllowedRehearsalListUrl: accepts pj-rehearse GCS listing URLs only', () 
   assert.equal(ctx.isAllowedRehearsalListUrl(
     'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/openshift/release/82734/2caacb352141ae8c61046d584bf3c88fe08b2b51'), true);
   assert.equal(ctx.isAllowedRehearsalListUrl(
+    'https://gcs.ci.openshift.org/gcs/test-platform-results-public/pj-rehearse/openshift/release/84228/85de8bd31e87f22c4bf00c1b26166bad47636c8d'), true);
+  assert.equal(ctx.isAllowedRehearsalListUrl(
+    'https://gcs.ci.openshift.org/gcs/test-platform-results/pj-rehearse/openshift/release/84228/abc'), true);
+  assert.equal(ctx.isAllowedRehearsalListUrl(
     'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/other-bucket/thing'), false);
   assert.equal(ctx.isAllowedRehearsalListUrl('https://evil.example.com/pj-rehearse/x'), false);
   assert.equal(ctx.isAllowedRehearsalListUrl(null), false);
