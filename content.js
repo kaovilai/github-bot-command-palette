@@ -166,6 +166,21 @@ function submitCommentForm(textarea) {
   return false;
 }
 
+/**
+ * True when GitHub is visibly mid-post for this comment box: it disables the
+ * submit button / textarea (and marks the form busy) while the request is in
+ * flight. Used to avoid re-submitting a post that is merely slow.
+ * @param {HTMLTextAreaElement} textarea
+ * @param {HTMLElement|null} submitBtn
+ * @returns {boolean}
+ */
+function isSubmitInFlight(textarea, submitBtn) {
+  if (submitBtn && (submitBtn.disabled || submitBtn.getAttribute('aria-disabled') === 'true')) return true;
+  if (textarea.disabled || textarea.readOnly) return true;
+  const form = typeof textarea.closest === 'function' ? textarea.closest('form') : null;
+  return !!(form && (form.getAttribute('aria-busy') === 'true' || form.classList.contains('is-submitting')));
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -2058,8 +2073,11 @@ function submitCommentForm(textarea) {
         // treat the click as ineffective and submit the form directly. Gating
         // on the unchanged text is also what keeps this from double-posting
         // when the click DID work.
+        // A slow-but-working post (e.g. a very long /pj-rehearse line) is
+        // still in flight at this point with the text in the box, so also
+        // bail when the submit is visibly underway.
         setTimeout(() => {
-          if (textarea.isConnected && textarea.value === finalText) {
+          if (textarea.isConnected && textarea.value === finalText && !isSubmitInFlight(textarea, submitBtn)) {
             submitCommentForm(textarea);
           }
         }, SUBMIT_FALLBACK_DELAY_MS);
