@@ -771,10 +771,14 @@ async function handleGetFailedStepLog(url) {
 // The listing is a plain pipe-table: "Test Name | Repo | Type | Reason", one
 // row per job. Only URLs under this prefix are fetched (the URL comes from
 // page DOM, so it must be allowlisted here, not trusted).
-const REHEARSAL_LIST_URL_PREFIX = 'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/';
+const REHEARSAL_LIST_URL_PREFIXES = [
+  'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/',
+  'https://gcs.ci.openshift.org/gcs/test-platform-results/pj-rehearse/',
+  'https://gcs.ci.openshift.org/gcs/test-platform-results-public/pj-rehearse/'
+];
 
 function isAllowedRehearsalListUrl(url) {
-  return typeof url === 'string' && url.startsWith(REHEARSAL_LIST_URL_PREFIX);
+  return typeof url === 'string' && REHEARSAL_LIST_URL_PREFIXES.some(p => url.startsWith(p));
 }
 
 /**

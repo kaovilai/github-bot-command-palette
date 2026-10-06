@@ -572,7 +572,12 @@ function submitCommentForm(textarea) {
 
   // Must match the background allowlist; only links under this prefix in a
   // REHEARSALNOTIFIER comment point at the full affected-jobs listing.
-  const REHEARSAL_LIST_URL_PREFIX = 'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/';
+  const REHEARSAL_LIST_URL_PREFIXES = [
+    'https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pj-rehearse/',
+    'https://gcs.ci.openshift.org/gcs/test-platform-results/pj-rehearse/',
+    'https://gcs.ci.openshift.org/gcs/test-platform-results-public/pj-rehearse/'
+  ];
+  const REHEARSAL_LIST_LINK_SELECTOR = REHEARSAL_LIST_URL_PREFIXES.map(p => `a[href^="${p}"]`).join(', ');
 
   /**
    * Find the link to the full affected-jobs listing in the latest
@@ -587,7 +592,7 @@ function submitCommentForm(textarea) {
       const body = comment.querySelector('.comment-body, .js-comment-body, .markdown-body');
       if (!body) continue;
       if (!body.textContent.includes('REHEARSALNOTIFIER')) continue;
-      const link = body.querySelector(`a[href^="${REHEARSAL_LIST_URL_PREFIX}"]`);
+      const link = body.querySelector(REHEARSAL_LIST_LINK_SELECTOR);
       if (link) url = link.href;
     }
     return url;
