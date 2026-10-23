@@ -29,5 +29,9 @@ jobs:
             exit 0
           fi
           ./scripts/package-extension.sh
-          gh release create "v${VERSION}" "github-bot-command-palette-v${VERSION}.zip" \
+          # Unversioned copy so /releases/latest/download/github-bot-command-palette.zip
+          # is a stable URL for scripted updaters (e.g. Tasker on Android).
+          cp "github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip
+          gh release create "v${VERSION}" \
+            "github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip \
             --target "$GITHUB_SHA" --generate-notes --title "v${VERSION}"
