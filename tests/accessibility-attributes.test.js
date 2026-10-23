@@ -150,10 +150,10 @@ test('injectReviewToolbar guards against null parentElement before DOM insertion
   assert.match(contentJs, /if \(reviewForm\.parentElement\)/);
 });
 
-test('injectReviewDialogBar guards against null textarea parentElement before DOM insertion', () => {
-  // The fieldset branch already checks fieldset.parentElement; the else branch
-  // must be consistent and guard textarea.parentElement the same way.
-  assert.match(contentJs, /else if \(textarea\.parentElement\)/);
+test('injectReviewDialogBar guards against a null anchor parentElement before DOM insertion', () => {
+  // The anchor (fieldset or textarea, climbed out of any flex-row wrapper) must
+  // have a parent before insertBefore is called on it.
+  assert.match(contentJs, /if \(anchor\.parentElement\)/);
 });
 
 test('injectCheckButtons respects showOnlyFailedTests setting', () => {

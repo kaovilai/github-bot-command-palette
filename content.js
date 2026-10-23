@@ -181,6 +181,28 @@ function isSubmitInFlight(textarea, submitBtn) {
   return !!(form && (form.getAttribute('aria-busy') === 'true' || form.classList.contains('is-submitting')));
 }
 
+/**
+ * Walk up from `el` to the ancestor a bar can be inserted *before* so it gets
+ * its own full-width row. A bar dropped next to a textarea whose wrapper is a
+ * flex row (GitHub's review dialog: `inputWrapper` is `display: flex`) ends up
+ * as a sibling column and squeezes the textarea, so climb past row-flex (and
+ * `display: contents`) parents until the parent is block or a flex column.
+ * @param {Element} el - Starting element (usually the textarea or its fieldset).
+ * @param {Element} stop - Never climb above a child of this element (the dialog).
+ * @param {(el: Element) => CSSStyleDeclaration} getStyle - getComputedStyle.
+ * @returns {Element} The element to insert the bar before.
+ */
+function findOwnRowAnchor(el, stop, getStyle) {
+  let node = el;
+  while (node.parentElement && node.parentElement !== stop) {
+    const cs = getStyle(node.parentElement);
+    const rowFlex = /flex/.test(cs.display) && !/column/.test(cs.flexDirection);
+    if (!rowFlex && cs.display !== 'contents') break;
+    node = node.parentElement;
+  }
+  return node;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -2166,11 +2188,12 @@ function isSubmitInFlight(textarea, submitBtn) {
    * Find the most appropriate comment textarea on the current PR page.
    * Priority order: open review dialog textarea → `#new_comment_field` → various
    * legacy selectors for the new-comment form area.
+   * @param {{skipDialog?: boolean}} [opts] - `skipDialog` ignores the review dialog's textarea.
    * @returns {HTMLTextAreaElement|null}
    */
-  function findCommentTextarea() {
+  function findCommentTextarea({ skipDialog = false } = {}) {
     // If a modal review dialog is open, prefer its textarea
-    const reviewDialog = document.querySelector('div[role="dialog"][aria-modal="true"]');
+    const reviewDialog = skipDialog ? null : document.querySelector('div[role="dialog"][aria-modal="true"]');
     if (reviewDialog) {
       const ta = reviewDialog.querySelector('textarea');
       if (ta) return ta;
@@ -2419,7 +2442,10 @@ function isSubmitInFlight(textarea, submitBtn) {
     const existing = document.querySelector('.ghbcp-command-bar');
     if (existing) existing.remove();
 
-    const textarea = findCommentTextarea();
+    // The review dialog's textarea is skipped: injectReviewDialogBar() owns that
+    // bar. Placing this one in the dialog's textarea wrapper (a flex row) put it
+    // beside the textarea and squeezed the comment box.
+    const textarea = findCommentTextarea({ skipDialog: true });
 
     const bar = document.createElement('div');
     bar.className = 'ghbcp-command-bar';
@@ -2704,10 +2730,9 @@ function isSubmitInFlight(textarea, submitBtn) {
     bar.appendChild(buildCommandGroups(profiles, extraCommands));
 
     const fieldset = textarea.closest('fieldset');
-    if (fieldset && fieldset.parentElement) {
-      fieldset.parentElement.insertBefore(bar, fieldset);
-    } else if (textarea.parentElement) {
-      textarea.parentElement.insertBefore(bar, textarea.parentElement.firstChild);
+    const anchor = findOwnRowAnchor(fieldset || textarea, dialog, getComputedStyle);
+    if (anchor.parentElement) {
+      anchor.parentElement.insertBefore(bar, anchor);
     }
   }
 
