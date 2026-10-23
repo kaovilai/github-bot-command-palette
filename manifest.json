@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GitHub Bot Command Palette",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Inject contextual action buttons for CI/bot slash commands on GitHub PR pages",
   "permissions": ["storage"],
   "host_permissions": ["https://github.com/*", "https://raw.githubusercontent.com/*", "https://api.github.com/*", "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/*", "https://gcs.ci.openshift.org/*", "https://storage.googleapis.com/*"],

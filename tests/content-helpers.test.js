@@ -26,7 +26,7 @@ const snippet = contentJs.slice(startIdx, endIdx);
 
 const ctx = {};
 vm.runInNewContext(snippet, ctx);
-const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch } = ctx;
+const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor } = ctx;
 assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds should have been extracted');
 assert.equal(typeof parseRehearsalCheckContext, 'function', 'parseRehearsalCheckContext should have been extracted');
 assert.equal(typeof computePresubmitContextShortName, 'function', 'computePresubmitContextShortName should have been extracted');
@@ -167,3 +167,49 @@ test('findRehearsalJobMatch: returns null for empty/null entries or shortName', 
   assert.equal(findRehearsalJobMatch([{ jobName: 'x', context: 'a/x' }], ''), null);
 });
 
+
+// ── findOwnRowAnchor ─────────────────────────────────────────────────────────
+// Fake just enough DOM: a chain of nodes with parentElement and a style table.
+
+function chain(styles) {
+  // styles[0] is the starting element, last is the dialog (`stop`).
+  const nodes = styles.map((style, i) => ({ id: i, style, parentElement: null }));
+  nodes.forEach((n, i) => { n.parentElement = nodes[i + 1] || null; });
+  const getStyle = (el) => el.style;
+  return { nodes, getStyle };
+}
+
+test('findOwnRowAnchor: block parent means no climbing', () => {
+  const { nodes, getStyle } = chain([{ display: 'block' }, { display: 'block' }, { display: 'block' }]);
+  assert.equal(findOwnRowAnchor(nodes[0], nodes[2], getStyle), nodes[0]);
+});
+
+test('findOwnRowAnchor: climbs past row-flex and display:contents parents', () => {
+  // textarea -> inputWrapper (flex row) -> contents -> column container -> dialog
+  const { nodes, getStyle } = chain([
+    { display: 'block' },
+    { display: 'flex', flexDirection: 'row' },
+    { display: 'contents' },
+    { display: 'flex', flexDirection: 'column' },
+    { display: 'block' }
+  ]);
+  // textarea's parent is the row-flex wrapper (climb), whose parent is `contents` (climb),
+  // whose parent is the column container (stop): anchor is the `contents` node's child chain end.
+  assert.equal(findOwnRowAnchor(nodes[0], nodes[4], getStyle), nodes[2]);
+});
+
+test('findOwnRowAnchor: flex column parent is a valid row stack, no climbing', () => {
+  const { nodes, getStyle } = chain([{ display: 'block' }, { display: 'flex', flexDirection: 'column' }, { display: 'block' }]);
+  assert.equal(findOwnRowAnchor(nodes[0], nodes[2], getStyle), nodes[0]);
+});
+
+test('findOwnRowAnchor: inline-flex row (default direction) is climbed', () => {
+  const { nodes, getStyle } = chain([{ display: 'block' }, { display: 'inline-flex', flexDirection: 'row' }, { display: 'block' }, { display: 'block' }]);
+  assert.equal(findOwnRowAnchor(nodes[0], nodes[3], getStyle), nodes[1]);
+});
+
+test('findOwnRowAnchor: never climbs to or above the dialog', () => {
+  const { nodes, getStyle } = chain([{ display: 'block' }, { display: 'flex', flexDirection: 'row' }, { display: 'flex', flexDirection: 'row' }]);
+  // stop = nodes[2]; node[1]'s parent is the stop, so it must stay at nodes[1].
+  assert.equal(findOwnRowAnchor(nodes[0], nodes[2], getStyle), nodes[1]);
+});
