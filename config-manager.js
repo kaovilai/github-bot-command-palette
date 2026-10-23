@@ -470,64 +470,47 @@ GHBCP.ConfigManager = (() => {
     return config;
   }
 
+  // chrome.storage.sync caps every item at 8192 bytes (key + JSON value) and the
+  // default config alone is ~30 KB, so a single-key write is always rejected
+  // ("kQuotaBytesPerItem quota exceeded"). Configs too big for one item are
+  // sharded across STORAGE_KEY + '_part_<n>' keys, with a small
+  // `{ _chunks: n }` marker stored under STORAGE_KEY itself. Small configs keep
+  // the legacy single-key format. Chunks are measured in characters:
+  // CHUNK_CHARS * 3 bytes (worst-case UTF-8) stays well under the 8 KB cap.
+  const CHUNK_KEY_PREFIX = STORAGE_KEY + '_part_';
+  const CHUNK_CHARS = 2000;
+  const MAX_INLINE_CHARS = 2000;
+
   /**
-   * Load the stored config, applying schema migration if necessary.
-   * Falls back to a deep copy of DEFAULT_CONFIG when storage is unavailable.
-   * @returns {Promise<Object>} Resolved configuration object.
+   * Promise wrapper over `chrome.storage.sync.get` that rejects on lastError.
+   * @param {string|string[]} keys
+   * @returns {Promise<Object>}
    */
-  async function getConfig() {
-    if (!isContextValid()) return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-    return new Promise(resolve => {
+  function syncGet(keys) {
+    return new Promise((resolve, reject) => {
       try {
-        chrome.storage.sync.get(STORAGE_KEY, async result => {
+        chrome.storage.sync.get(keys, result => {
           if (chrome.runtime.lastError) {
-            resolve(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
-            return;
+            reject(new Error(chrome.runtime.lastError.message || 'Storage read failed'));
+          } else {
+            resolve(result || {});
           }
-          let config = result[STORAGE_KEY] || JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-          // Defensive: fill in missing top-level keys so callers never crash on
-          // partial or manually-edited stored configs.
-          if (!config.globalSettings) config.globalSettings = JSON.parse(JSON.stringify(DEFAULT_CONFIG.globalSettings));
-          // Fill in individual missing globalSettings keys so users upgrading from older
-          // configs get correct defaults rather than undefined (which can fall back to
-          // the wrong value at each call-site, e.g. pluginFilterMode → 'disabled'
-          // instead of the intended 'filter').
-          else {
-            const gsDefaults = DEFAULT_CONFIG.globalSettings;
-            for (const key of Object.keys(gsDefaults)) {
-              if (!(key in config.globalSettings)) {
-                config.globalSettings[key] = gsDefaults[key];
-              }
-            }
-          }
-          if (!config.repoOverrides) config.repoOverrides = [];
-          if (!config.pluginConfigSources) config.pluginConfigSources = [];
-          if (!config.profiles) config.profiles = [];
-          if (!config.version || config.version < SCHEMA_VERSION) {
-            config = migrateConfig(config);
-            // Save without the transient _migrated flag so the toast only shows once.
-            const toSave = Object.assign({}, config);
-            delete toSave._migrated;
-            try { await saveConfig(toSave); } catch (e) { /* best effort */ }
-          }
-          resolve(config);
         });
       } catch (e) {
-        resolve(JSON.parse(JSON.stringify(DEFAULT_CONFIG)));
+        reject(e);
       }
     });
   }
 
   /**
-   * Persist `config` to `chrome.storage.sync`.
-   * @param {Object} config - The configuration object to save.
-   * @returns {Promise<void>} Rejects if storage write fails.
+   * Promise wrapper over `chrome.storage.sync.set` that rejects on lastError.
+   * @param {Object} items
+   * @returns {Promise<void>}
    */
-  async function saveConfig(config) {
-    if (!isContextValid()) return;
+  function syncSet(items) {
     return new Promise((resolve, reject) => {
       try {
-        chrome.storage.sync.set({ [STORAGE_KEY]: config }, () => {
+        chrome.storage.sync.set(items, () => {
           if (chrome.runtime.lastError) {
             reject(chrome.runtime.lastError);
           } else {
@@ -538,6 +521,107 @@ GHBCP.ConfigManager = (() => {
         reject(e);
       }
     });
+  }
+
+  /**
+   * Read the raw stored config, reassembling sharded chunks when present.
+   * @returns {Promise<Object|undefined>} Parsed config, or undefined if nothing is stored.
+   */
+  async function readStoredConfig() {
+    const stored = (await syncGet(STORAGE_KEY))[STORAGE_KEY];
+    if (!stored || typeof stored._chunks !== 'number') return stored;
+    const keys = Array.from({ length: stored._chunks }, (_, i) => CHUNK_KEY_PREFIX + i);
+    const parts = await syncGet(keys);
+    let json = '';
+    for (const k of keys) {
+      if (typeof parts[k] !== 'string') throw new Error('Stored config is incomplete');
+      json += parts[k];
+    }
+    return JSON.parse(json);
+  }
+
+  /**
+   * Load the stored config, applying schema migration if necessary.
+   * Falls back to a deep copy of DEFAULT_CONFIG when storage is unavailable,
+   * unless `opts.strict` is set — then a storage read error rejects instead, so
+   * a caller that writes the result back (the Settings page) can't overwrite
+   * the user's real config with defaults after a transient read failure.
+   * @param {{strict?: boolean}} [opts]
+   * @returns {Promise<Object>} Resolved configuration object.
+   */
+  async function getConfig(opts) {
+    const strict = !!(opts && opts.strict);
+    const defaults = () => JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    if (!isContextValid()) {
+      if (strict) throw new Error('Extension context invalidated');
+      return defaults();
+    }
+    let config;
+    try {
+      config = (await readStoredConfig()) || defaults();
+    } catch (e) {
+      if (strict) throw e;
+      return defaults();
+    }
+    // Defensive: fill in missing top-level keys so callers never crash on
+    // partial or manually-edited stored configs.
+    if (!config.globalSettings) config.globalSettings = JSON.parse(JSON.stringify(DEFAULT_CONFIG.globalSettings));
+    // Fill in individual missing globalSettings keys so users upgrading from older
+    // configs get correct defaults rather than undefined (which can fall back to
+    // the wrong value at each call-site, e.g. pluginFilterMode → 'disabled'
+    // instead of the intended 'filter').
+    else {
+      const gsDefaults = DEFAULT_CONFIG.globalSettings;
+      for (const key of Object.keys(gsDefaults)) {
+        if (!(key in config.globalSettings)) {
+          config.globalSettings[key] = gsDefaults[key];
+        }
+      }
+    }
+    if (!config.repoOverrides) config.repoOverrides = [];
+    if (!config.pluginConfigSources) config.pluginConfigSources = [];
+    if (!config.profiles) config.profiles = [];
+    if (!config.version || config.version < SCHEMA_VERSION) {
+      config = migrateConfig(config);
+      // Save without the transient _migrated flag so the toast only shows once.
+      const toSave = Object.assign({}, config);
+      delete toSave._migrated;
+      try { await saveConfig(toSave); } catch (e) { /* best effort */ }
+    }
+    return config;
+  }
+
+  /**
+   * Persist `config` to `chrome.storage.sync`, sharding it across several keys
+   * when it exceeds the per-item quota (see CHUNK_KEY_PREFIX above).
+   * @param {Object} config - The configuration object to save.
+   * @returns {Promise<void>} Rejects if storage write fails.
+   */
+  async function saveConfig(config) {
+    if (!isContextValid()) return;
+    const json = JSON.stringify(config);
+    const items = {};
+    let nextChunks = 0;
+    if (json.length <= MAX_INLINE_CHARS) {
+      items[STORAGE_KEY] = config;
+    } else {
+      nextChunks = Math.ceil(json.length / CHUNK_CHARS);
+      items[STORAGE_KEY] = { _chunks: nextChunks };
+      for (let i = 0; i < nextChunks; i++) {
+        items[CHUNK_KEY_PREFIX + i] = json.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS);
+      }
+    }
+    let prevChunks = 0;
+    try {
+      const prev = (await syncGet(STORAGE_KEY))[STORAGE_KEY];
+      if (prev && typeof prev._chunks === 'number') prevChunks = prev._chunks;
+    } catch (e) { /* best effort: only used to clean up stale chunks */ }
+    await syncSet(items);
+    if (prevChunks > nextChunks && chrome.storage.sync.remove) {
+      const stale = [];
+      for (let i = nextChunks; i < prevChunks; i++) stale.push(CHUNK_KEY_PREFIX + i);
+      try { chrome.storage.sync.remove(stale, () => { void chrome.runtime.lastError; }); } catch (e) { /* best effort */ }
+    }
   }
 
   const GITHUB_TOKEN_STORAGE_KEY = 'ghbcp_github_token';

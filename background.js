@@ -82,8 +82,21 @@ function storageSet(area, key, value) {
   });
 }
 
+// config-manager.js shards configs over the 8 KB per-item sync quota across
+// `<STORAGE_KEY>_part_<n>` keys, leaving `{ _chunks: n }` under STORAGE_KEY.
 async function getConfig() {
-  return storageGet('sync', STORAGE_KEY, null);
+  const stored = await storageGet('sync', STORAGE_KEY, null);
+  if (!stored || typeof stored._chunks !== 'number') return stored;
+  const keys = Array.from({ length: stored._chunks }, (_, i) => STORAGE_KEY + '_part_' + i);
+  const parts = await new Promise(resolve => {
+    chrome.storage.sync.get(keys, result => resolve(chrome.runtime.lastError ? null : result));
+  });
+  if (!parts || keys.some(k => typeof parts[k] !== 'string')) return null;
+  try {
+    return JSON.parse(keys.map(k => parts[k]).join(''));
+  } catch (e) {
+    return null;
+  }
 }
 
 async function getCache() {

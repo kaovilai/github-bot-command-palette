@@ -588,12 +588,102 @@ function makeContextWithCapturingSave() {
   return { CM: ctx.window.GHBCP.ConfigManager, getSaved: () => savedObj };
 }
 
+// Rebuild the config from what saveConfig wrote, whether it stored it inline
+// or sharded across `<key>_part_<n>` keys (configs over the 8 KB sync item cap).
+function reassembleSaved(saved, key) {
+  const head = saved[key];
+  if (!head || typeof head._chunks !== 'number') return head;
+  let json = '';
+  for (let i = 0; i < head._chunks; i++) json += saved[key + '_part_' + i];
+  return JSON.parse(json);
+}
+
 test('saveConfig: persists config to storage under the correct key', async () => {
   const { CM, getSaved } = makeContextWithCapturingSave();
   const config = { version: 3, profiles: [], repoOverrides: [], globalSettings: {} };
   await CM.saveConfig(config);
   assert.ok(getSaved() !== null, 'storage.set should have been called');
   assert.deepEqual(getSaved()[CM.STORAGE_KEY], config);
+});
+
+// A stateful chrome.storage.sync stub that enforces the real 8192-byte per-item
+// quota (key + JSON value), so tests catch configs a real browser would reject.
+function makeContextWithQuotaStorage() {
+  const store = {};
+  const ctx = vm.createContext({
+    window: { GHBCP: { CommandToPlugin: {} } },
+    crypto: { randomUUID: () => 'test-uuid-1234' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { id: 'fake-id', lastError: null },
+      storage: {
+        sync: {
+          get: (keys, cb) => {
+            const list = Array.isArray(keys) ? keys : [keys];
+            const out = {};
+            for (const k of list) if (k in store) out[k] = JSON.parse(JSON.stringify(store[k]));
+            cb(out);
+          },
+          set: (items, cb) => {
+            for (const [k, v] of Object.entries(items)) {
+              if (k.length + JSON.stringify(v).length > 8192) {
+                ctx.chrome.runtime.lastError = { message: 'Resource::kQuotaBytesPerItem quota exceeded' };
+                cb(); ctx.chrome.runtime.lastError = null;
+                return;
+              }
+            }
+            for (const [k, v] of Object.entries(items)) store[k] = JSON.parse(JSON.stringify(v));
+            cb();
+          },
+          remove: (keys, cb) => { for (const k of [].concat(keys)) delete store[k]; cb && cb(); }
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  return { CM: ctx.window.GHBCP.ConfigManager, store };
+}
+
+test('saveConfig: default-size config (>8 KB) saves under the per-item sync quota and round-trips', async () => {
+  const { CM, store } = makeContextWithQuotaStorage();
+  const config = JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG));
+  assert.ok(JSON.stringify(config).length > 8192, 'precondition: config exceeds one sync item');
+  await CM.saveConfig(config);
+  assert.ok(Object.keys(store).length > 1, 'config should be sharded across several keys');
+  const loaded = await CM.getConfig({ strict: true });
+  assert.equal(JSON.stringify(loaded.profiles), JSON.stringify(config.profiles));
+  assert.equal(loaded.globalSettings.autoSubmit, false);
+});
+
+test('saveConfig: autoSubmit toggled on a sharded config persists across getConfig', async () => {
+  const { CM } = makeContextWithQuotaStorage();
+  const config = await CM.getConfig({ strict: true });
+  config.globalSettings.autoSubmit = true;
+  await CM.saveConfig(config);
+  const reloaded = await CM.getConfig({ strict: true });
+  assert.equal(reloaded.globalSettings.autoSubmit, true);
+});
+
+test('saveConfig: small config keeps the legacy single-key format', async () => {
+  const { CM, store } = makeContextWithQuotaStorage();
+  await CM.saveConfig({ version: 13, profiles: [], repoOverrides: [], globalSettings: {} });
+  assert.deepEqual(Object.keys(store), [CM.STORAGE_KEY]);
+  assert.equal(typeof store[CM.STORAGE_KEY]._chunks, 'undefined');
+});
+
+test('saveConfig: shrinking from sharded to inline removes stale chunk keys', async () => {
+  const { CM, store } = makeContextWithQuotaStorage();
+  await CM.saveConfig(JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG)));
+  assert.ok(Object.keys(store).length > 1);
+  await CM.saveConfig({ version: 13, profiles: [], repoOverrides: [], globalSettings: {} });
+  assert.deepEqual(Object.keys(store), [CM.STORAGE_KEY]);
+});
+
+test('getConfig({strict}): rejects when a stored chunk is missing', async () => {
+  const { CM, store } = makeContextWithQuotaStorage();
+  await CM.saveConfig(JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG)));
+  delete store[CM.STORAGE_KEY + '_part_1'];
+  await assert.rejects(() => CM.getConfig({ strict: true }), /incomplete/);
 });
 
 test('saveConfig: rejects when chrome.runtime.lastError is set after set', async () => {
@@ -707,7 +797,7 @@ test('resetToDefaults: returns DEFAULT_CONFIG and saves it to storage', async ()
   assert.equal(config.version, CM.DEFAULT_CONFIG.version, 'returned config has correct version');
   assert.ok(Array.isArray(config.profiles), 'returned config has profiles array');
   assert.ok(getSaved() !== null, 'storage.set should have been called');
-  assert.equal(getSaved()[CM.STORAGE_KEY].version, CM.DEFAULT_CONFIG.version,
+  assert.equal(reassembleSaved(getSaved(), CM.STORAGE_KEY).version, CM.DEFAULT_CONFIG.version,
     'saved config version should match DEFAULT_CONFIG version');
 });
 
@@ -715,7 +805,7 @@ test('resetToDefaults: saved config has the same version as the returned config'
   const { CM, getSaved } = makeContextWithCapturingSave();
   const config = await CM.resetToDefaults();
   assert.equal(
-    getSaved()[CM.STORAGE_KEY].version,
+    reassembleSaved(getSaved(), CM.STORAGE_KEY).version,
     config.version,
     'saved config version should match returned config version'
   );
