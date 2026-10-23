@@ -134,6 +134,25 @@
   <h1>GitHub Bot Command Palette</h1>
   <p class="subtitle">Configure bot profiles and slash commands for GitHub PRs</p>
 
+  <div class="section" id="update-section" hidden>
+    <div class="inline-fields" style="align-items:center">
+      <span>Version <strong id="ext-version"></strong></span>
+      <button class="btn btn-sm" id="btn-check-update">Check for updates</button>
+    </div>
+    <div id="update-status" class="status"></div>
+    <div id="update-actions" hidden>
+      <p class="subtitle" style="margin:8px 0">
+        Get the new files (<code>git pull</code> in your checkout, or unzip the release over the
+        folder you loaded), then reload. Android browsers: re-copy the folder to the device first.
+        Settings are kept.
+      </p>
+      <div class="inline-fields">
+        <a class="btn btn-sm" id="update-release-link" style="text-decoration:none;color:inherit;justify-content:center" href="https://github.com/kaovilai/github-bot-command-palette/releases/latest" target="_blank" rel="noopener noreferrer">Open release (.zip)</a>
+        <button class="btn btn-sm btn-primary" id="btn-reload-extension">Reload extension</button>
+      </div>
+    </div>
+  </div>
+
   <h2>Global Settings</h2>
   <div class="section" id="global-settings">
     <label>

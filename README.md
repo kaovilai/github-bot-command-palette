@@ -76,6 +76,20 @@ Bot profile detail view with all commands, styles, and shortcuts:
 4. Click **Load unpacked** and select the `github-bot-command-palette` directory
 5. Navigate to any GitHub PR page — command buttons appear above the comment box
 
+### Updating
+
+Side-loaded installs don't auto-update, so the extension checks `manifest.json` on `main`
+(on browser start, and when you open the popup or Settings) and tells you when a newer
+version exists: an `↑` badge on the toolbar icon, plus an **Update available** card in
+Settings with a **Reload extension** button. Web Store installs update themselves and
+skip the check.
+
+- **Desktop (git checkout):** `git pull`, then **Reload extension** in Settings (or the reload icon on `chrome://extensions`).
+- **Desktop / Android (zip):** download `github-bot-command-palette-vX.Y.Z.zip` from the [latest release](https://github.com/kaovilai/github-bot-command-palette/releases/latest), unzip it over the folder you loaded, then **Reload extension**.
+- **Android (Titanium):** replace the files in the folder you picked for **Load unpacked**, then **Reload extension** (or the reload icon on `chrome://extensions`). You don't need to pick the folder again, and your settings are kept.
+
+Releases are cut automatically when the `version` in `manifest.json` changes on `main`, so bump it in any PR you want users to be notified about.
+
 ## Features
 
 - **Slash command buttons** — one-click `/lgtm`, `/approve`, `/retest`, `/hold`, etc.
