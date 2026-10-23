@@ -7,6 +7,10 @@ const CACHE_KEY = 'ghbcp_plugin_cache';
 const PRESUBMITS_CACHE_KEY = 'ghbcp_presubmits_cache';
 const GITHUB_TOKEN_STORAGE_KEY = 'ghbcp_github_token';
 
+const UPDATE_CACHE_KEY = 'ghbcp_update_cache';
+const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/manifest.json';
+const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getEnabledPlugins') {
     handleGetEnabledPlugins(msg.repo, false).then(sendResponse);
@@ -56,7 +60,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleRerunFailedActionsJobs(msg.repo, msg.runId).then(sendResponse);
     return true;
   }
+  if (msg.action === 'checkForUpdate') {
+    handleCheckForUpdate(msg.force).then(sendResponse);
+    return true;
+  }
 });
+
+// Passive update check: onInstalled also fires after chrome.runtime.reload(), which clears a stale badge.
+chrome.runtime.onStartup.addListener(() => { handleCheckForUpdate(false); });
+chrome.runtime.onInstalled.addListener(() => { handleCheckForUpdate(false); });
 
 function storageGet(area, key, defaultValue) {
   return new Promise(resolve => {
@@ -529,6 +541,51 @@ async function handleVerifyGithubToken(token) {
     return { success: true, login: data.login };
   } catch (e) {
     return { success: false, error: 'network-error' };
+  }
+}
+
+/**
+ * Compare dotted numeric versions ("1.0.10" > "1.0.9"). Missing parts count as 0.
+ * @returns {number} >0 if a is newer than b, <0 if older, 0 if equal.
+ */
+function compareVersions(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * Compare the installed version against manifest.json on main. For side-loaded
+ * (unpacked / zip) installs, which have no store auto-update. Web Store installs
+ * carry an injected `update_url` and update themselves, so they skip the check.
+ * Needs no new permission: raw.githubusercontent.com is already a host permission.
+ * @param {boolean} force - Bypass the cached result.
+ * @returns {Promise<{current: string, latest?: string, updateAvailable: boolean, managed?: boolean, checkedAt?: number, error?: string}>}
+ */
+async function handleCheckForUpdate(force) {
+  const manifest = chrome.runtime.getManifest();
+  const current = manifest.version;
+  if (manifest.update_url) return { current, updateAvailable: false, managed: true };
+
+  const cached = await storageGet('local', UPDATE_CACHE_KEY, null);
+  if (!force && cached && cached.current === current && Date.now() - cached.checkedAt < UPDATE_CHECK_TTL_MS) {
+    return cached;
+  }
+  try {
+    const resp = await fetch(UPDATE_MANIFEST_URL, { cache: 'no-store' });
+    if (!resp.ok) return { current, updateAvailable: false, error: `HTTP ${resp.status}` };
+    const latest = (await resp.json()).version;
+    if (typeof latest !== 'string') return { current, updateAvailable: false, error: 'invalid-manifest' };
+    const result = { current, latest, updateAvailable: compareVersions(latest, current) > 0, checkedAt: Date.now() };
+    await storageSet('local', UPDATE_CACHE_KEY, result).catch(() => {});
+    chrome.action.setBadgeText({ text: result.updateAvailable ? '↑' : '' });
+    return result;
+  } catch (e) {
+    return { current, updateAvailable: false, error: 'network-error' };
   }
 }
 

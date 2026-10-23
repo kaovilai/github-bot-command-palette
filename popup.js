@@ -4,6 +4,13 @@
   const addTapListener = GHBCP.addTapListener;
   const esc = CM.escapeHtml;
   const contentDiv = document.getElementById('content');
+  // Side-loaded installs only (cached for hours by the background; Web Store installs report no update).
+  chrome.runtime.sendMessage({ action: 'checkForUpdate' }).then(info => {
+    if (!info || !info.updateAvailable) return;
+    const banner = document.getElementById('update-banner');
+    banner.textContent = `Update available: ${info.current} → ${info.latest} — see Settings`;
+    banner.hidden = false;
+  }).catch(() => {});
   let currentTab = null;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

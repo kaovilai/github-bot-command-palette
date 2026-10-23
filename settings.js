@@ -114,6 +114,54 @@
     document.getElementById('opt-github-token').value = token || '';
   }
 
+  /**
+   * Show the installed version and wire up "Check for updates" / "Reload extension".
+   * Side-loaded installs only: the background reports `managed` for Web Store
+   * installs (which auto-update), and the whole section is then hidden.
+   */
+  function bindUpdateSection() {
+    const section = document.getElementById('update-section');
+    const statusEl = document.getElementById('update-status');
+    const actionsEl = document.getElementById('update-actions');
+    const releaseLink = document.getElementById('update-release-link');
+
+    const render = (info) => {
+      if (!info || info.managed) { section.hidden = true; return; }
+      section.hidden = false;
+      document.getElementById('ext-version').textContent = info.current;
+      actionsEl.hidden = !info.updateAvailable;
+      if (info.error) {
+        statusEl.textContent = 'Update check failed: ' + info.error;
+        statusEl.className = 'status status-error';
+      } else if (info.updateAvailable) {
+        statusEl.textContent = `Update available: ${info.current} → ${info.latest}`;
+        statusEl.className = 'status status-success';
+        // `latest` comes from a fetched manifest — only build links from a plain version string.
+        if (/^\d+(\.\d+)*$/.test(info.latest)) {
+          releaseLink.href = `https://github.com/kaovilai/github-bot-command-palette/releases/tag/v${info.latest}`;
+        }
+      } else if (info.latest) {
+        statusEl.textContent = 'You are on the latest version';
+        statusEl.className = 'status status-success';
+      } else {
+        statusEl.className = 'status';
+      }
+    };
+
+    const check = async (force) => {
+      try {
+        render(await chrome.runtime.sendMessage({ action: 'checkForUpdate', force }));
+      } catch (err) {
+        statusEl.textContent = 'Update check failed: ' + err.message;
+        statusEl.className = 'status status-error';
+      }
+    };
+
+    addTapListener(document.getElementById('btn-check-update'), () => check(true));
+    addTapListener(document.getElementById('btn-reload-extension'), () => chrome.runtime.reload());
+    check(false);
+  }
+
   /** Wire up the GitHub token field's autosave and the Verify Token button. */
   function bindGithubToken() {
     document.getElementById('opt-github-token').addEventListener('change', async (e) => {
@@ -727,6 +775,7 @@
   });
 
   // Init
+  bindUpdateSection();
   try {
     config = await CM.getConfig({ strict: true });
   } catch (err) {

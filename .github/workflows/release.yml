@@ -1,0 +1,33 @@
+name: Release
+
+# Publishes a GitHub Release (with the packaged zip) whenever manifest.json's
+# version on main has no matching tag yet. The extension's in-app update check
+# compares against this same manifest.json, and links to the release.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - manifest.json
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Publish release if this version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "v${VERSION} already released; nothing to do"
+            exit 0
+          fi
+          ./scripts/package-extension.sh
+          gh release create "v${VERSION}" "github-bot-command-palette-v${VERSION}.zip" \
+            --target "$GITHUB_SHA" --generate-notes --title "v${VERSION}"

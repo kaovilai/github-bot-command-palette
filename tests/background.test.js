@@ -23,7 +23,8 @@ const backgroundSrc = fs.readFileSync(path.resolve(__dirname, '..', 'background.
 // Strip the chrome runtime listener and importScripts so Node can eval the rest
 const stripped = backgroundSrc
   .replace(/importScripts\([^)]*\);?/g, '')
-  .replace(/chrome\.runtime\.onMessage\.addListener[\s\S]*?\}\);/, '');
+  .replace(/chrome\.runtime\.onMessage\.addListener[\s\S]*?\}\);/, '')
+  .replace(/chrome\.runtime\.on(?:Startup|Installed)\.addListener\(.*\);/g, '');
 
 const ctx = { jsyaml, console };
 vm.runInNewContext(stripped, ctx);

@@ -19,6 +19,9 @@ receive, or store any data about you.
   `storage.googleapis.com`. These requests contain repository names, PR
   numbers, and file paths needed for the lookup. They go directly from your
   browser to those services and are subject to their own privacy policies.
+- **Update check** (side-loaded installs only): the extension fetches this project's
+  public `manifest.json` from `raw.githubusercontent.com` to compare version numbers.
+  The request carries no personal data. Chrome Web Store installs skip it.
 
 ## What the extension stores
 
