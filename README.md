@@ -85,8 +85,24 @@ Settings with a **Reload extension** button. Web Store installs update themselve
 skip the check.
 
 - **Desktop (git checkout):** `git pull`, then **Reload extension** in Settings (or the reload icon on `chrome://extensions`).
-- **Desktop / Android (zip):** download `github-bot-command-palette-vX.Y.Z.zip` from the [latest release](https://github.com/kaovilai/github-bot-command-palette/releases/latest), unzip it over the folder you loaded, then **Reload extension**.
-- **Android (Titanium):** replace the files in the folder you picked for **Load unpacked**, then **Reload extension** (or the reload icon on `chrome://extensions`). You don't need to pick the folder again, and your settings are kept.
+- **Desktop (zip):** download `github-bot-command-palette-vX.Y.Z.zip` from the [latest release](https://github.com/kaovilai/github-bot-command-palette/releases/latest), unzip it over the folder you loaded, then **Reload extension**.
+- **Android (Titanium, one-tap with Tasker):** see [below](#android-one-tap-updates-with-tasker).
+
+**Why not just unzip on Android?** **Reload extension** re-reads the folder you originally picked for **Load unpacked**. Most Android unzip tools extract into a *new* folder named after the zip, so the loaded folder stays on the old version. Picking the new folder creates a different extension (the ID comes from the folder path), and its settings start empty. The update has to land in the *same* folder, which is what the recipe below does.
+
+#### Android: one-tap updates with Tasker
+
+Every release also attaches an unversioned `github-bot-command-palette.zip`, so this URL always serves the newest build: `https://github.com/kaovilai/github-bot-command-palette/releases/latest/download/github-bot-command-palette.zip`.
+
+One-time setup: extract that zip into `Download/ghbcp` (or any folder), then in Titanium use **Load unpacked** and pick that folder.
+
+Tasker task `Update GHBCP` (grant Tasker "All files access" first; option labels may differ slightly between Tasker versions, and the unzip must target the loaded folder):
+
+1. **Net → HTTP Request** — Method `GET`, URL above, *File To Save With Output*: `Download/ghbcp-update.zip`, *Timeout* 60.
+2. **File → Unzip File** — *Path*: `Download/ghbcp-update.zip`, *Destination*: `Download/ghbcp` (the folder you picked, not a new one), *Delete Zip After*: on.
+3. **Alert → Flash** — `Extension files updated. Tap Reload extension.`
+
+Add it as a home-screen shortcut or widget. To finish, tap **Reload extension** in Settings (or the reload icon on `chrome://extensions`). Settings are kept because the folder, and therefore the extension ID, never changes. Files deleted in a newer release stay behind in the folder; they're unused and harmless.
 
 Releases are cut automatically when the `version` in `manifest.json` changes on `main`, so bump it in any PR you want users to be notified about.
 
