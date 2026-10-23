@@ -36,7 +36,9 @@
     el.textContent = msg;
     el.className = 'status status-' + type;
     clearTimeout(_statusTimer);
-    _statusTimer = setTimeout(() => { el.className = 'status'; }, 3000);
+    // Errors stay until the next status update — a 3s flash is easy to miss on
+    // touch devices, which hid quota/save failures from the user.
+    if (type !== 'error') _statusTimer = setTimeout(() => { el.className = 'status'; }, 3000);
   }
 
   /** Populate the global-settings form fields from the current config. */
@@ -55,7 +57,23 @@
 
   /** Attach change-event listeners to global-settings form fields so each change auto-saves. */
   function bindGlobalSettings() {
-    async function readAndSave() {
+    // Serialize saves so overlapping `input`/`change` events can't interleave
+    // their read-modify-write cycles and drop each other's changes.
+    let saveChain = Promise.resolve();
+    function readAndSave() {
+      saveChain = saveChain.then(doReadAndSave);
+      return saveChain;
+    }
+
+    async function doReadAndSave() {
+      try {
+        // Re-read storage so only global settings are overwritten, never stale
+        // profiles/sources; strict so a read failure aborts instead of saving defaults.
+        config = await CM.getConfig({ strict: true });
+      } catch (err) {
+        showStatus('Save failed: ' + err.message, 'error');
+        return;
+      }
       config.globalSettings.enabled = document.getElementById('opt-enabled').checked;
       config.globalSettings.confirmBeforePost = document.getElementById('opt-confirm').checked;
       config.globalSettings.autoSubmit = document.getElementById('opt-autosubmit').checked;
@@ -710,10 +728,14 @@
 
   // Init
   try {
-    await loadConfig();
+    config = await CM.getConfig({ strict: true });
   } catch (err) {
+    // Don't fall back to defaults: the form would then overwrite the stored
+    // config on the next toggle. Show the error and leave settings read-only.
     showStatus('Failed to load settings: ' + err.message, 'error');
-    config = defaultConfig();
+    document.querySelectorAll('#global-settings input, #global-settings select, #global-settings textarea')
+      .forEach(el => { el.disabled = true; });
+    return;
   }
   renderGlobalSettings();
   bindGlobalSettings();
