@@ -203,6 +203,41 @@ function findOwnRowAnchor(el, stop, getStyle) {
   return node;
 }
 
+/**
+ * True when every character of `term` appears in `haystack` in the same order,
+ * gaps allowed. Case-sensitive — callers lowercase both sides first.
+ * @param {string} term
+ * @param {string} haystack
+ * @returns {boolean}
+ */
+function isInOrderSubsequence(term, haystack) {
+  let idx = 0;
+  for (let i = 0; i < haystack.length && idx < term.length; i++) {
+    if (haystack[i] === term[idx]) idx++;
+  }
+  return idx === term.length;
+}
+
+/**
+ * Match a job name against the job picker's search box. Every whitespace-
+ * separated term (quoted terms may contain spaces) must appear either as a
+ * plain substring or as an in-order subsequence — so a compact query like
+ * "5.0cli" still finds "5.0-e2e-test-cli-aws", while "cli-aws" keeps matching
+ * literally. An empty query matches everything.
+ * Pure function, no chrome/DOM globals touched.
+ * @param {string} name - Job/check name.
+ * @param {string} query - Raw search box contents.
+ * @returns {boolean}
+ */
+function matchesJobSearch(name, query) {
+  const haystack = String(name).toLowerCase();
+  const terms = query.toLowerCase().match(/"[^"]*"|\S+/g) || [];
+  return terms.every(t => {
+    const term = t.replace(/^"|"$/g, '');
+    return !term || haystack.includes(term) || isInOrderSubsequence(term, haystack);
+  });
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -1176,11 +1211,7 @@ function findOwnRowAnchor(el, stop, getStyle) {
     function renderJobs(searchFilter) {
       list.innerHTML = '';
       const filtered = searchFilter
-        ? jobs.filter(j => {
-            const name = j.name.toLowerCase();
-            const terms = searchFilter.toLowerCase().match(/"[^"]*"|\S+/g) || [];
-            return terms.every(t => name.includes(t.replace(/^"|"$/g, '')));
-          })
+        ? jobs.filter(j => matchesJobSearch(j.name, searchFilter))
         : jobs;
 
       if (filtered.length === 0) {
