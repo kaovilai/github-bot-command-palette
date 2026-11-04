@@ -251,6 +251,12 @@ test('matchesJobSearch: quoted terms opt out of the fuzzy fallbacks', () => {
   assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '"5.0cli"'), false);
 });
 
+test('matchesJobSearch: quoted phrases must stay contiguous, not just in order', () => {
+  // Both words are present and in order here, but separated — the phrase
+  // query must not fall back to subsequence matching.
+  assert.equal(matchesJobSearch('presubmit: e2e unrelated cli aws', '"e2e cli"'), false);
+});
+
 test('matchesJobSearch: reversed fragments match as an unordered character set', () => {
   assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli5.0'), true);
   assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli50'), true);
