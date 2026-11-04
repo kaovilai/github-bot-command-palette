@@ -26,7 +26,7 @@ safe-outputs:
     title-prefix: "[daily] "
     labels: [automation]
     max: 2
-max-runs: 60
+max-turns: 60
 ---
 
 # Daily Repository Improvement
