@@ -26,11 +26,12 @@ const snippet = contentJs.slice(startIdx, endIdx);
 
 const ctx = {};
 vm.runInNewContext(snippet, ctx);
-const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor } = ctx;
+const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch } = ctx;
 assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds should have been extracted');
 assert.equal(typeof parseRehearsalCheckContext, 'function', 'parseRehearsalCheckContext should have been extracted');
 assert.equal(typeof computePresubmitContextShortName, 'function', 'computePresubmitContextShortName should have been extracted');
 assert.equal(typeof findRehearsalJobMatch, 'function', 'findRehearsalJobMatch should have been extracted');
+assert.equal(typeof matchesJobSearch, 'function', 'matchesJobSearch should have been extracted');
 
 // assert.deepEqual/deepStrictEqual also compares prototypes — an object
 // returned from code run in a *different* vm context has a different
@@ -213,3 +214,67 @@ test('findOwnRowAnchor: never climbs to or above the dialog', () => {
   // stop = nodes[2]; node[1]'s parent is the stop, so it must stay at nodes[1].
   assert.equal(findOwnRowAnchor(nodes[0], nodes[2], getStyle), nodes[1]);
 });
+
+test('matchesJobSearch: compact query matches characters spread across the name', () => {
+  // The reported case: typing "5.0cli" must surface "5.0-e2e-test-cli-aws".
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '5.0cli'), true);
+});
+
+test('matchesJobSearch: compact query does not match unrelated jobs sharing the prefix', () => {
+  // Same picker list the user saw — none of these contain c, l, i in order.
+  for (const name of ['5.0-e2e-test-aws', '5.0-ci-index', '5.0-images', '5.0-virt-kdm-e2e-test-aws', '5.0-virt-nokdm-e2e-test-aws']) {
+    assert.equal(matchesJobSearch(name, '5.0cli'), false, `${name} should not match "5.0cli"`);
+  }
+});
+
+test('matchesJobSearch: plain substrings still match contiguously', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli-aws'), true);
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'e2e'), true);
+});
+
+test('matchesJobSearch: matching is case-insensitive', () => {
+  assert.equal(matchesJobSearch('5.0-E2E-Test-CLI-aws', '5.0cli'), true);
+});
+
+test('matchesJobSearch: every whitespace-separated term must match', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '5.0 cli'), true);
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '5.0 nomatch'), false);
+});
+
+test('matchesJobSearch: quoted terms match as one phrase containing spaces', () => {
+  assert.equal(matchesJobSearch('presubmit: e2e cli aws', '"e2e cli"'), true);
+  assert.equal(matchesJobSearch('presubmit: e2e cli aws', '"cli e2e"'), false);
+});
+
+test('matchesJobSearch: quoted terms opt out of the fuzzy fallbacks', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '"cli5.0"'), false);
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '"5.0cli"'), false);
+});
+
+test('matchesJobSearch: quoted phrases must stay contiguous, not just in order', () => {
+  // Both words are present and in order here, but separated — the phrase
+  // query must not fall back to subsequence matching.
+  assert.equal(matchesJobSearch('presubmit: e2e unrelated cli aws', '"e2e cli"'), false);
+});
+
+test('matchesJobSearch: reversed fragments match as an unordered character set', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli5.0'), true);
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli50'), true);
+});
+
+test('matchesJobSearch: unordered fallback still needs every character present', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli5.0x'), false);
+});
+
+test('matchesJobSearch: unordered fallback is skipped for 1-2 character terms', () => {
+  // "sa" is not a substring of "aws-test" and appears out of order; matching
+  // it anyway would make nearly every job match a two-key query.
+  assert.equal(matchesJobSearch('aws-test', 'sa'), false);
+  assert.equal(matchesJobSearch('aws-test', 'saw'), true);
+});
+
+test('matchesJobSearch: empty or whitespace-only query matches everything', () => {
+  assert.equal(matchesJobSearch('anything', ''), true);
+  assert.equal(matchesJobSearch('anything', '   '), true);
+});
+

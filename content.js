@@ -203,6 +203,71 @@ function findOwnRowAnchor(el, stop, getStyle) {
   return node;
 }
 
+/**
+ * True when every character of `term` appears in `haystack` in the same order,
+ * gaps allowed. Case-sensitive — callers lowercase both sides first.
+ * @param {string} term
+ * @param {string} haystack
+ * @returns {boolean}
+ */
+function isInOrderSubsequence(term, haystack) {
+  let idx = 0;
+  for (let i = 0; i < haystack.length && idx < term.length; i++) {
+    if (haystack[i] === term[idx]) idx++;
+  }
+  return idx === term.length;
+}
+
+/**
+ * True when `haystack` contains every character of `term` at least as many
+ * times as `term` does, in any order — so "cli5.0" finds
+ * "5.0-e2e-test-cli-aws" with the fragments reversed.
+ * Case-sensitive — callers lowercase both sides first.
+ * @param {string} term
+ * @param {string} haystack
+ * @returns {boolean}
+ */
+function isUnorderedSubset(term, haystack) {
+  const available = new Map();
+  for (let i = 0; i < haystack.length; i++) {
+    const ch = haystack[i];
+    available.set(ch, (available.get(ch) || 0) + 1);
+  }
+  for (let i = 0; i < term.length; i++) {
+    const left = available.get(term[i]) || 0;
+    if (left === 0) return false;
+    available.set(term[i], left - 1);
+  }
+  return true;
+}
+
+/**
+ * Match a job name against the job picker's search box. Every whitespace-
+ * separated term (quoted terms may contain spaces) must appear as a plain
+ * substring, or else as an in-order subsequence ("5.0cli" finds
+ * "5.0-e2e-test-cli-aws"), or — for terms of 3+ characters — as an unordered
+ * set of characters ("cli5.0" finds the same job). The unordered fallback is
+ * limited to longer terms because on 1-2 character queries it would match
+ * nearly every job. Quoted terms are matched literally: quotes are how you
+ * opt out of the fuzzy fallbacks. An empty query matches everything.
+ * Pure function, no chrome/DOM globals touched.
+ * @param {string} name - Job/check name.
+ * @param {string} query - Raw search box contents.
+ * @returns {boolean}
+ */
+function matchesJobSearch(name, query) {
+  const haystack = String(name).toLowerCase();
+  const terms = query.toLowerCase().match(/"[^"]*"|\S+/g) || [];
+  return terms.every(raw => {
+    const quoted = raw.length > 1 && raw.startsWith('"') && raw.endsWith('"');
+    const term = quoted ? raw.slice(1, -1) : raw;
+    if (!term || haystack.includes(term)) return true;
+    if (quoted) return false;
+    return isInOrderSubsequence(term, haystack) ||
+      (term.length >= 3 && isUnorderedSubset(term, haystack));
+  });
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -1176,11 +1241,7 @@ function findOwnRowAnchor(el, stop, getStyle) {
     function renderJobs(searchFilter) {
       list.innerHTML = '';
       const filtered = searchFilter
-        ? jobs.filter(j => {
-            const name = j.name.toLowerCase();
-            const terms = searchFilter.toLowerCase().match(/"[^"]*"|\S+/g) || [];
-            return terms.every(t => name.includes(t.replace(/^"|"$/g, '')));
-          })
+        ? jobs.filter(j => matchesJobSearch(j.name, searchFilter))
         : jobs;
 
       if (filtered.length === 0) {
