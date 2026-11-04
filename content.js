@@ -219,11 +219,37 @@ function isInOrderSubsequence(term, haystack) {
 }
 
 /**
+ * True when `haystack` contains every character of `term` at least as many
+ * times as `term` does, in any order — so "cli5.0" finds
+ * "5.0-e2e-test-cli-aws" with the fragments reversed.
+ * Case-sensitive — callers lowercase both sides first.
+ * @param {string} term
+ * @param {string} haystack
+ * @returns {boolean}
+ */
+function isUnorderedSubset(term, haystack) {
+  const available = new Map();
+  for (let i = 0; i < haystack.length; i++) {
+    const ch = haystack[i];
+    available.set(ch, (available.get(ch) || 0) + 1);
+  }
+  for (let i = 0; i < term.length; i++) {
+    const left = available.get(term[i]) || 0;
+    if (left === 0) return false;
+    available.set(term[i], left - 1);
+  }
+  return true;
+}
+
+/**
  * Match a job name against the job picker's search box. Every whitespace-
- * separated term (quoted terms may contain spaces) must appear either as a
- * plain substring or as an in-order subsequence — so a compact query like
- * "5.0cli" still finds "5.0-e2e-test-cli-aws", while "cli-aws" keeps matching
- * literally. An empty query matches everything.
+ * separated term (quoted terms may contain spaces) must appear as a plain
+ * substring, or else as an in-order subsequence ("5.0cli" finds
+ * "5.0-e2e-test-cli-aws"), or — for terms of 3+ characters — as an unordered
+ * set of characters ("cli5.0" finds the same job). The unordered fallback is
+ * limited to longer terms because on 1-2 character queries it would match
+ * nearly every job. Quoted terms are matched literally: quotes are how you
+ * opt out of the fuzzy fallbacks. An empty query matches everything.
  * Pure function, no chrome/DOM globals touched.
  * @param {string} name - Job/check name.
  * @param {string} query - Raw search box contents.
@@ -232,9 +258,13 @@ function isInOrderSubsequence(term, haystack) {
 function matchesJobSearch(name, query) {
   const haystack = String(name).toLowerCase();
   const terms = query.toLowerCase().match(/"[^"]*"|\S+/g) || [];
-  return terms.every(t => {
-    const term = t.replace(/^"|"$/g, '');
-    return !term || haystack.includes(term) || isInOrderSubsequence(term, haystack);
+  return terms.every(raw => {
+    const quoted = raw.length > 1 && raw.startsWith('"') && raw.endsWith('"');
+    const term = quoted ? raw.slice(1, -1) : raw;
+    if (!term || haystack.includes(term)) return true;
+    if (quoted) return false;
+    return isInOrderSubsequence(term, haystack) ||
+      (term.length >= 3 && isUnorderedSubset(term, haystack));
   });
 }
 

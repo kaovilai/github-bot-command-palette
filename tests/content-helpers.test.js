@@ -246,8 +246,25 @@ test('matchesJobSearch: quoted terms match as one phrase containing spaces', () 
   assert.equal(matchesJobSearch('presubmit: e2e cli aws', '"cli e2e"'), false);
 });
 
-test('matchesJobSearch: order matters — a reversed compact query does not match', () => {
-  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli50'), false);
+test('matchesJobSearch: quoted terms opt out of the fuzzy fallbacks', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '"cli5.0"'), false);
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', '"5.0cli"'), false);
+});
+
+test('matchesJobSearch: reversed fragments match as an unordered character set', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli5.0'), true);
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli50'), true);
+});
+
+test('matchesJobSearch: unordered fallback still needs every character present', () => {
+  assert.equal(matchesJobSearch('5.0-e2e-test-cli-aws', 'cli5.0x'), false);
+});
+
+test('matchesJobSearch: unordered fallback is skipped for 1-2 character terms', () => {
+  // "sa" is not a substring of "aws-test" and appears out of order; matching
+  // it anyway would make nearly every job match a two-key query.
+  assert.equal(matchesJobSearch('aws-test', 'sa'), false);
+  assert.equal(matchesJobSearch('aws-test', 'saw'), true);
 });
 
 test('matchesJobSearch: empty or whitespace-only query matches everything', () => {
