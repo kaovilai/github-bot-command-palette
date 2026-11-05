@@ -1,6 +1,5 @@
 const { test, expect, chromium } = require('@playwright/test');
 const path = require('path');
-const fs = require('fs');
 
 const EXTENSION_PATH = path.resolve(__dirname, '..');
 const SAMPLE_HTML = path.resolve(__dirname, '..', 'sample.html.sample');
@@ -56,15 +55,19 @@ test.describe('Cherry-pick picker: parallel vs chain', () => {
   test('Chain picks toggle switches one-command-per-branch into a single chained command', async () => {
     test.setTimeout(120000);
 
-    // Serve the saved PR-page fixture for the document request. GitHub's own
-    // scripts are stripped first: the fixture is a post-render snapshot, and
-    // letting GitHub's app boot would re-render the anonymous view and replace
-    // the (logged-in) comment form with a sign-in prompt. CDN stylesheets
-    // still load, and background (GitHub API) requests pass through untouched.
-    const fixtureHtml = fs.readFileSync(SAMPLE_HTML, 'utf8')
-      .replace(/<script[\s\S]*?<\/script>/gi, '');
+    // Serve the saved PR-page fixture for the document request. A
+    // `script-src 'none'` CSP keeps GitHub's own scripts from booting: the
+    // fixture is a post-render snapshot, and letting GitHub's app run would
+    // re-render the anonymous view and replace the (logged-in) comment form
+    // with a sign-in prompt. Stylesheets still load (no default-src), the
+    // fixture DOM stays byte-for-byte intact, and background (GitHub API)
+    // requests pass through untouched.
     await context.route(PR_URL, route =>
-      route.fulfill({ contentType: 'text/html; charset=utf-8', body: fixtureHtml }));
+      route.fulfill({
+        contentType: 'text/html; charset=utf-8',
+        headers: { 'content-security-policy': "script-src 'none'" },
+        path: SAMPLE_HTML,
+      }));
 
     // chrome.storage is only reachable from extension contexts, so write the
     // test config through the service worker (same trick as the plugin-filter
