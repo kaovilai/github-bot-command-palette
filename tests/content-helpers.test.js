@@ -339,3 +339,12 @@ test('buildJoinedCommandText: unrecognized joinMode yields null instead of a new
   assert.equal(buildJoinedCommandText('/cherry-pick {input}', ['release-1.17'], 'typo-mode'), null);
 });
 
+test('picker submit treats a null join result as refusal only when comment selections exist', () => {
+  // Regression guard (Copilot): when every selection routes to GitHub
+  // Actions reruns, `names` is empty and buildJoinedCommandText returns
+  // null for the empty list — the submit must NOT abort there, or queued
+  // reruns are silently canceled. Only a refusal WITH selections (an
+  // unknown joinMode) alerts and returns.
+  assert.match(contentJs, /if \(!cmdText && names\.length > 0\) \{/);
+});
+

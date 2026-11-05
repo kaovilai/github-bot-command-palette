@@ -1669,13 +1669,13 @@ function buildJoinedCommandText(template, names, joinMode) {
         }
       }
       const cmdText = buildJoinedCommandText(template, names, joinMode);
-      if (!cmdText) {
+      if (!cmdText && names.length > 0) {
         // Selections exist but the helper refused: an unrecognized joinMode
         // (e.g. a typo in an imported config). Explain instead of silently
         // doing nothing — the comma-conflict case above already alerted.
-        if (names.length > 0) {
-          alert(`Unknown join mode "${joinMode}" for ${command.label || command.command} — nothing was posted.`);
-        }
+        // An empty names list is NOT a refusal: every selection was routed
+        // to Actions reruns, and those must still run below.
+        alert(`Unknown join mode "${joinMode}" for ${command.label || command.command} — nothing was posted.`);
         return;
       }
 
