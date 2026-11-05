@@ -518,21 +518,24 @@ test('migrateConfig: preserves user-set enabled=false on a built-in profile', as
   assert.equal(p.enabled, false, 'user-disabled profile should stay disabled after migration');
 });
 
-test('migrateConfig: v13 config upgrades to the choose-mode Cherry-pick command', async () => {
-  // Schema v14 merged the separate "Cherry-pick Chain..." button into
-  // "Cherry-pick..." with joinMode 'choose' — the picker's Chain picks
-  // toggle now decides parallel vs sequential chain per post. A stored v13
-  // config carrying both old entries must come out with only the merged one.
-  const CM = makeContextWithStorage(null);
-  const v13Profile = JSON.parse(JSON.stringify(
+/**
+ * Build a stored v13 universal profile: the v14 default rewound to its v13
+ * shape — the plain branch picker (joinMode '', v13 description) plus the
+ * separate "Cherry-pick Chain..." entry that v14 removed. Shaped like a real
+ * stored object (cmd() always wrote a joinMode string), not a v14 default
+ * with fields deleted.
+ */
+function buildStoredV13Profile(CM) {
+  const profile = JSON.parse(JSON.stringify(
     CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal')));
-  const plain = v13Profile.globalCommands.find(c => c.label === 'Cherry-pick...');
-  delete plain.joinMode; // v13's plain branch picker had no joinMode
-  v13Profile.globalCommands.push({
+  const plain = profile.globalCommands.find(c => c.label === 'Cherry-pick...');
+  plain.joinMode = ''; // v13's plain branch picker had no chain toggle
+  plain.description = 'Cherry-pick this PR to selected branches'; // v13 text
+  profile.globalCommands.push({
     id: 'cmd-old-chain',
     label: 'Cherry-pick Chain...',
     command: '/cherrypick',
-    description: 'Serial cherry-pick chain',
+    description: 'Serial cherry-pick chain: first branch now, remaining branches hop after each merge',
     style: 'neutral',
     requireConfirm: false,
     hasInput: false,
@@ -546,6 +549,16 @@ test('migrateConfig: v13 config upgrades to the choose-mode Cherry-pick command'
     commandTemplate: '/cherrypick {input}',
     shortcut: ''
   });
+  return profile;
+}
+
+test('migrateConfig: v13 config upgrades to the choose-mode Cherry-pick command', async () => {
+  // Schema v14 merged the separate "Cherry-pick Chain..." button into
+  // "Cherry-pick..." with joinMode 'choose' — the picker's Chain picks
+  // toggle now decides parallel vs sequential chain per post. A stored v13
+  // config carrying both old entries must come out with only the merged one.
+  const CM = makeContextWithStorage(null);
+  const v13Profile = buildStoredV13Profile(CM);
   const CM2 = makeContextWithStorage({
     version: 13,
     profiles: [v13Profile],
@@ -559,8 +572,68 @@ test('migrateConfig: v13 config upgrades to the choose-mode Cherry-pick command'
   const cherryPick = profile.globalCommands.find(c => c.label === 'Cherry-pick...');
   assert.ok(cherryPick, 'merged Cherry-pick... command should exist after migration');
   assert.equal(cherryPick.joinMode, 'choose');
-  assert.ok(!profile.globalCommands.some(c => c.label === 'Cherry-pick Chain...'),
-    'old Cherry-pick Chain... entry should be dropped by the built-in profile refresh');
+  assert.ok(!profile.globalCommands.some(c => c.command === '/cherrypick'),
+    'old Cherry-pick Chain... entry should be dropped by the v14 merge');
+});
+
+test('migrateConfig: v13 keeps saved edits to built-in profiles', async () => {
+  // The settings editor edits built-in profiles in place, so the v13 → v14
+  // step must not refresh them wholesale: saved name/description/patterns,
+  // edited commands, and added commands all survive — only the Cherry-pick
+  // merge (drop the Chain entry, default the picker to 'choose') applies.
+  const CM = makeContextWithStorage(null);
+  const v13Profile = buildStoredV13Profile(CM);
+  v13Profile.name = 'My Prow commands';
+  v13Profile.description = 'tweaked by me';
+  v13Profile.repoPatterns = ['openshift/*'];
+  const cc = v13Profile.globalCommands.find(c => c.command === '/cc');
+  cc.label = 'Ping User';
+  v13Profile.globalCommands.push({
+    id: 'cmd-my-own', label: 'Hold', command: '/hold', description: 'Hold merge',
+    style: 'warning', requireConfirm: false, hasInput: false, hasJobPicker: false,
+    hasPayloadPicker: false, jobPickerFilter: 'all', jobSource: '', joinMode: '',
+    expandRehearsalJobs: false, inputPlaceholder: '', commandTemplate: '', shortcut: ''
+  });
+  const CM2 = makeContextWithStorage({
+    version: 13,
+    profiles: [v13Profile],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  });
+  const config = await CM2.getConfig();
+  const profile = config.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  assert.equal(profile.name, 'My Prow commands', 'edited profile name should survive');
+  assert.equal(profile.description, 'tweaked by me', 'edited profile description should survive');
+  assert.deepEqual(profile.repoPatterns, ['openshift/*'], 'edited repoPatterns should survive');
+  assert.ok(profile.globalCommands.some(c => c.label === 'Ping User'),
+    'edited built-in command should survive');
+  assert.ok(profile.globalCommands.some(c => c.id === 'cmd-my-own'),
+    'command added to the built-in profile should survive');
+  const cherryPick = profile.globalCommands.find(c => c.command === '/cherry-pick');
+  assert.equal(cherryPick.joinMode, 'choose', 'default v13 joinMode still upgrades to choose');
+  assert.ok(!profile.globalCommands.some(c => c.command === '/cherrypick'),
+    'old Cherry-pick Chain... entry should still be dropped');
+});
+
+test('migrateConfig: v13 keeps a customized Cherry-pick joinMode', async () => {
+  // A user who set their own joinMode on the branch picker (e.g. always
+  // chain) must not have it overwritten with the new 'choose' default.
+  const CM = makeContextWithStorage(null);
+  const v13Profile = buildStoredV13Profile(CM);
+  v13Profile.globalCommands.find(c => c.command === '/cherry-pick').joinMode = 'single-command';
+  const CM2 = makeContextWithStorage({
+    version: 13,
+    profiles: [v13Profile],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  });
+  const config = await CM2.getConfig();
+  const profile = config.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  const cherryPick = profile.globalCommands.find(c => c.command === '/cherry-pick');
+  assert.equal(cherryPick.joinMode, 'single-command',
+    'customized joinMode should survive the v13 → v14 migration');
 });
 
 test('migrateConfig: runs migration when stored config has no version field', async () => {

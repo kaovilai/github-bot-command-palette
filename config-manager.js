@@ -434,7 +434,14 @@ GHBCP.ConfigManager = (() => {
   /**
    * Migrate a stored config object to the current schema version.
    * Refreshes built-in profiles from DEFAULT_CONFIG while preserving user's `enabled` state,
-   * and appends any new built-in profiles not yet in the stored config.
+   * and appends any new built-in profiles not yet in the stored config —
+   * except the v13 → v14 step, which instead keeps each stored built-in
+   * profile's saved edits (the settings editor edits built-ins in place, so
+   * a wholesale refresh would silently revert them) and applies only the
+   * Cherry-pick merge: the removed "Cherry-pick Chain..." entry is dropped
+   * and the `/cherry-pick` branch picker moves to the new 'choose' joinMode
+   * unless the user set a custom one. Older stored shapes keep the
+   * wholesale refresh.
    * @param {Object} config - Stored config object (mutated in place).
    * @returns {Object} The mutated config with `version` bumped and `_migrated: true`.
    */
@@ -442,12 +449,26 @@ GHBCP.ConfigManager = (() => {
     if (config.version >= SCHEMA_VERSION) return config;
     const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     const defaultMap = new Map(defaults.profiles.map(p => [p.id, p]));
+    const surgicalV14 = config.version === 13;
     for (let i = 0; i < config.profiles.length; i++) {
       const p = config.profiles[i];
       if (BUILTIN_PROFILE_IDS.has(p.id) && defaultMap.has(p.id)) {
-        const updated = defaultMap.get(p.id);
-        updated.enabled = p.enabled;
-        config.profiles[i] = updated;
+        if (surgicalV14) {
+          // Keep the stored profile; merge in only the v14 Cherry-pick
+          // change. Command ids are per-install random (see cmd()), so the
+          // entries are matched by command string.
+          p.globalCommands = (p.globalCommands || [])
+            .filter(c => c.command !== '/cherrypick');
+          for (const c of p.globalCommands) {
+            if (c.command === '/cherry-pick' && !c.joinMode) {
+              c.joinMode = 'choose';
+            }
+          }
+        } else {
+          const updated = defaultMap.get(p.id);
+          updated.enabled = p.enabled;
+          config.profiles[i] = updated;
+        }
       }
     }
     for (const [id, dp] of defaultMap) {
