@@ -455,13 +455,23 @@ GHBCP.ConfigManager = (() => {
       if (BUILTIN_PROFILE_IDS.has(p.id) && defaultMap.has(p.id)) {
         if (surgicalV14) {
           // Keep the stored profile; merge in only the v14 Cherry-pick
-          // change. Command ids are per-install random (see cmd()), so the
+          // change, and only in the universal profile — the one built-in
+          // whose v13 default carried the plain picker and the "Cherry-pick
+          // Chain..." entry. The Chain entry is dropped only when the merged
+          // /cherry-pick replacement is present, so a user who deleted the
+          // plain picker keeps their Chain button instead of losing their
+          // only cherry-pick action. Commands in other built-in profiles
+          // (e.g. a user-added /cherrypick) are their own config and stay
+          // untouched. Command ids are per-install random (see cmd()), so
           // entries are matched by command string.
-          p.globalCommands = (p.globalCommands || [])
-            .filter(c => c.command !== '/cherrypick');
-          for (const c of p.globalCommands) {
-            if (c.command === '/cherry-pick' && !c.joinMode) {
-              c.joinMode = 'choose';
+          if (p.id === 'profile-tide-prow-universal' &&
+              (p.globalCommands || []).some(c => c.command === '/cherry-pick')) {
+            p.globalCommands = p.globalCommands
+              .filter(c => c.command !== '/cherrypick');
+            for (const c of p.globalCommands) {
+              if (c.command === '/cherry-pick' && !c.joinMode) {
+                c.joinMode = 'choose';
+              }
             }
           }
         } else {

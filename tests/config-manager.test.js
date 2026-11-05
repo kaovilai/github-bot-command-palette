@@ -636,6 +636,59 @@ test('migrateConfig: v13 keeps a customized Cherry-pick joinMode', async () => {
     'customized joinMode should survive the v13 → v14 migration');
 });
 
+test('migrateConfig: v13 keeps a user-added /cherrypick in other built-in profiles', async () => {
+  // The v14 Chain-entry removal must apply only to the universal profile
+  // (the only built-in whose v13 default carried it). A /cherrypick command
+  // the user added to an unrelated built-in profile is their own config and
+  // must survive the migration.
+  const CM = makeContextWithStorage(null);
+  const v13Profile = buildStoredV13Profile(CM);
+  const releaseProfile = JSON.parse(JSON.stringify(
+    CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-prow-openshift-release')));
+  releaseProfile.globalCommands.push({
+    id: 'cmd-my-chain', label: 'My Chain', command: '/cherrypick',
+    description: 'user-added chain command', style: 'neutral', requireConfirm: false,
+    hasInput: false, hasJobPicker: true, hasPayloadPicker: false, jobPickerFilter: 'all',
+    jobSource: 'branches', joinMode: 'single-command', expandRehearsalJobs: false,
+    inputPlaceholder: 'branch1 branch2', commandTemplate: '/cherrypick {input}', shortcut: ''
+  });
+  const CM2 = makeContextWithStorage({
+    version: 13,
+    profiles: [v13Profile, releaseProfile],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  });
+  const config = await CM2.getConfig();
+  const universal = config.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  assert.ok(!universal.globalCommands.some(c => c.command === '/cherrypick'),
+    "the universal profile's old Chain entry should still be dropped");
+  const release = config.profiles.find(p => p.id === 'profile-prow-openshift-release');
+  assert.ok(release.globalCommands.some(c => c.id === 'cmd-my-chain'),
+    'user-added /cherrypick in another built-in profile should survive');
+});
+
+test('migrateConfig: v13 keeps the Chain entry when no replacement exists', async () => {
+  // A user who deleted the plain /cherry-pick picker but kept the Chain
+  // button has no merged replacement — removing the Chain entry would leave
+  // them without any cherry-pick action, so it must stay.
+  const CM = makeContextWithStorage(null);
+  const v13Profile = buildStoredV13Profile(CM);
+  v13Profile.globalCommands = v13Profile.globalCommands
+    .filter(c => c.command !== '/cherry-pick');
+  const CM2 = makeContextWithStorage({
+    version: 13,
+    profiles: [v13Profile],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  });
+  const config = await CM2.getConfig();
+  const profile = config.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  assert.ok(profile.globalCommands.some(c => c.command === '/cherrypick'),
+    'the Chain entry should survive when the /cherry-pick replacement is absent');
+});
+
 test('migrateConfig: runs migration when stored config has no version field', async () => {
   // A config without a `version` field should be treated as older than any
   // versioned config and have migration run (adding missing built-in profiles).
