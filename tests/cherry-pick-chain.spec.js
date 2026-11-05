@@ -90,7 +90,11 @@ test.describe('Cherry-pick picker: parallel vs chain', () => {
     await sw.evaluate(cmd => {
       return new Promise(resolve => {
         const config = {
-          version: 1,
+          // Current schema version: a stored version below it gets migrated
+          // on load, and older migration steps can replace built-in profiles
+          // wholesale — silently discarding this command. Version 14 keeps
+          // the stored profile exactly as written here.
+          version: 14,
           profiles: [{
             id: 'profile-tide-prow-universal',
             name: 'Tide/Prow — Universal',

@@ -330,3 +330,12 @@ test('buildJoinedCommandText: single selection is identical in both modes', () =
   assert.equal(buildJoinedCommandText('/cherry-pick {input}', ['release-1.17'], 'single-command'), '/cherry-pick release-1.17');
 });
 
+test('buildJoinedCommandText: unrecognized joinMode yields null instead of a newline fallback', () => {
+  // 'choose' must be resolved by the picker (Chain-picks toggle) before it
+  // reaches this helper; if it (or any unknown value) leaks through, refuse
+  // rather than silently posting one-command-per-branch — the profile asked
+  // for a different shape of submission.
+  assert.equal(buildJoinedCommandText('/cherry-pick {input}', ['release-1.17', 'release-1.16'], 'choose'), null);
+  assert.equal(buildJoinedCommandText('/cherry-pick {input}', ['release-1.17'], 'typo-mode'), null);
+});
+

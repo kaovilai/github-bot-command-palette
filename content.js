@@ -294,6 +294,9 @@ function matchesJobSearch(name, query) {
  */
 function buildJoinedCommandText(template, names, joinMode) {
   if (!Array.isArray(names) || names.length === 0) return null;
+  if (!joinMode) {
+    return names.map(n => template.replace('{input}', n)).join('\n');
+  }
   if (joinMode === 'single-command') {
     return template.replace('{input}', names.join(' '));
   }
@@ -301,7 +304,10 @@ function buildJoinedCommandText(template, names, joinMode) {
     if (names.some(n => String(n).includes(','))) return null;
     return template.replace('{input}', names.join(','));
   }
-  return names.map(n => template.replace('{input}', n)).join('\n');
+  // Unrecognized joinMode (e.g. an unresolved 'choose') — refuse rather
+  // than guess: falling back to the parallel newline join would silently
+  // post a different shape of command than the profile configured.
+  return null;
 }
 
 (async () => {
@@ -1735,9 +1741,14 @@ function buildJoinedCommandText(template, names, joinMode) {
     // search input and job list have their own handlers, but footer controls
     // (Chain picks, Reorder, ↑/↓) bubble here with nowhere else to go.
     // closePicker() is idempotent, so the second call from an inner
-    // handler's bubbling is harmless.
+    // handler's bubbling is harmless. stopPropagation keeps the Escape from
+    // also reaching GitHub's own page-level handlers (shortcuts, its own
+    // dialogs) once this dialog has consumed it.
     picker.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closePicker();
+      if (e.key === 'Escape') {
+        closePicker();
+        e.stopPropagation();
+      }
     });
 
     picker.appendChild(list);
