@@ -204,7 +204,9 @@ test('job picker chain toggle only renders for joinMode choose and explains itse
   // velero /backport) are unaffected. The checkbox is wrapped in its <label>
   // (implicit labeling for screen readers) and the label carries a title
   // tooltip explaining both modes.
-  assert.match(contentJs, /command\.joinMode === 'choose'/);
+  // Anchored to the chain-label block: a bare joinMode match would also pass
+  // against the Reorder button's guard, so removing this one would go unnoticed.
+  assert.match(contentJs, /if \(command\.joinMode === 'choose'\) \{\s*const chainLabel = document\.createElement\('label'\);/);
   assert.match(contentJs, /chainLabel\.className = 'ghbcp-job-picker-chain'/);
   assert.match(contentJs, /chainLabel\.appendChild\(chainCb\)/);
   assert.match(contentJs, /chainLabel\.title =/);

@@ -1292,6 +1292,9 @@ function buildJoinedCommandText(template, names, joinMode) {
 
     let dragName = null;
     let dragSnapshot = null;
+    // Set by an order row's drop handler — only a drop that landed on an
+    // order row may commit the dragged order (see dragend).
+    let dropHandled = false;
 
     /** Rebuild chainOrder from the panel's row order (after a drag finishes). */
     function syncChainOrderFromDOM() {
@@ -1323,9 +1326,12 @@ function buildJoinedCommandText(template, names, joinMode) {
       if (target) target.focus();
     }
 
+    /**
+     * Rebuild the order-editor rows from `chainOrder`. Never call mid-drag —
+     * it would remove the node the browser is dragging; drag moves DOM nodes
+     * and syncs the array back on dragend.
+     */
     function renderChainOrder() {
-      // Full rebuild — never call mid-drag (it would remove the node the
-      // browser is dragging); drag moves DOM nodes and syncs on dragend.
       orderList.textContent = '';
       chainOrder.forEach((name, idx) => {
         const row = document.createElement('div');
@@ -1384,6 +1390,7 @@ function buildJoinedCommandText(template, names, joinMode) {
           }
           dragName = name;
           dragSnapshot = chainOrder.slice();
+          dropHandled = false;
           row.classList.add('dragging');
           if (e.dataTransfer) {
             e.dataTransfer.effectAllowed = 'move';
@@ -1391,8 +1398,13 @@ function buildJoinedCommandText(template, names, joinMode) {
           }
         });
         row.addEventListener('dragover', (e) => {
-          if (!dragName || dragName === name) return;
+          if (!dragName) return;
+          // Accept the drop on every row — including the dragged row, which
+          // slides under the pointer as it moves: without preventDefault()
+          // here the browser marks the position invalid, so releasing over
+          // the dragged row itself would cancel the whole drag.
           e.preventDefault();
+          if (dragName === name) return;
           const dragRow = orderList.querySelector('.dragging');
           if (!dragRow) return;
           // Insert into the slot under the pointer: above the row's midpoint
@@ -1401,10 +1413,17 @@ function buildJoinedCommandText(template, names, joinMode) {
           const after = (e.clientY - rect.top) > rect.height / 2;
           orderList.insertBefore(dragRow, after ? row.nextSibling : row);
         });
-        row.addEventListener('drop', (e) => e.preventDefault());
+        row.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropHandled = true;
+        });
         row.addEventListener('dragend', (e) => {
           row.classList.remove('dragging');
-          const cancelled = e.dataTransfer && e.dataTransfer.dropEffect === 'none';
+          // A drop outside the order rows (e.g. on the search input, which
+          // natively accepts the dragged text) can still report a non-none
+          // dropEffect — commit only when an order row's drop handler ran.
+          const cancelled = !dropHandled ||
+            (e.dataTransfer && e.dataTransfer.dropEffect === 'none');
           if (cancelled && dragSnapshot) {
             // Escape (or a drop outside the list) cancels the drag — undo the
             // live DOM row moves so a cancelled drag doesn't quietly reorder.
@@ -1465,6 +1484,11 @@ function buildJoinedCommandText(template, names, joinMode) {
     submitBtn.setAttribute('aria-label', (command.label || 'Run') + ' selected jobs');
     footer.appendChild(submitBtn);
 
+    /**
+     * Refresh footer state after any selection or filter change: selection
+     * count, submit label, Reorder disabled state, order-editor rows, and
+     * the Select All tri-state.
+     */
     function updateFooter() {
       const count = selected.size;
       countSpan.textContent = count + ' selected';
@@ -1706,6 +1730,15 @@ function buildJoinedCommandText(template, names, joinMode) {
 
     // Focus trap: keep keyboard focus within the picker dialog
     addFocusTrap(picker, searchInput);
+
+    // Escape closes the picker from any focused control inside it — the
+    // search input and job list have their own handlers, but footer controls
+    // (Chain picks, Reorder, ↑/↓) bubble here with nowhere else to go.
+    // closePicker() is idempotent, so the second call from an inner
+    // handler's bubbling is harmless.
+    picker.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closePicker();
+    });
 
     picker.appendChild(list);
     picker.appendChild(orderPanel);

@@ -477,6 +477,10 @@ html[data-color-mode="dark"] {
 .ghbcp-job-picker-footer {
   display: flex;
   align-items: center;
+  /* Wrap so Choose mode's extra controls (Chain picks, Reorder) can't push
+     the submit button past the picker's 90vw/overflow-hidden bounds on
+     narrow screens. */
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--ghbcp-border);
