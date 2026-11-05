@@ -689,6 +689,59 @@ test('migrateConfig: v13 keeps the Chain entry when no replacement exists', asyn
     'the Chain entry should survive when the /cherry-pick replacement is absent');
 });
 
+test('migrateConfig: v13 keeps the Chain entry when the replacement picker is disabled', async () => {
+  // The settings editor exposes a "Has job picker" toggle: a user can turn
+  // the /cherry-pick command into a free-text command while keeping it. That
+  // is not a usable replacement for the Chain branch picker, so the Chain
+  // entry must survive (and the free-text command must not be upgraded).
+  const CM = makeContextWithStorage(null);
+  const v13Profile = buildStoredV13Profile(CM);
+  const plain = v13Profile.globalCommands.find(c => c.command === '/cherry-pick');
+  plain.hasJobPicker = false;
+  plain.jobSource = '';
+  const CM2 = makeContextWithStorage({
+    version: 13,
+    profiles: [v13Profile],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  });
+  const config = await CM2.getConfig();
+  const profile = config.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  assert.ok(profile.globalCommands.some(c => c.command === '/cherrypick' && c.hasJobPicker),
+    'the Chain branch picker should survive when the replacement is not a picker');
+  const after = profile.globalCommands.find(c => c.command === '/cherry-pick');
+  assert.equal(after.joinMode, '', 'non-picker replacement should not be upgraded to choose');
+});
+
+test('migrateConfig: v13 keeps a non-picker user-added /cherrypick command', async () => {
+  // Only the legacy Chain entry — a /cherrypick branch picker — is dropped.
+  // A user-added /cherrypick that is not a branch picker (e.g. a free-text
+  // variant) is their own config and must survive the merge.
+  const CM = makeContextWithStorage(null);
+  const v13Profile = buildStoredV13Profile(CM);
+  v13Profile.globalCommands.push({
+    id: 'cmd-my-text-chain', label: 'Quick chain', command: '/cherrypick',
+    description: 'user-added free-text chain', style: 'neutral', requireConfirm: false,
+    hasInput: true, hasJobPicker: false, hasPayloadPicker: false, jobPickerFilter: 'all',
+    jobSource: '', joinMode: '', expandRehearsalJobs: false,
+    inputPlaceholder: 'branches', commandTemplate: '/cherrypick {input}', shortcut: ''
+  });
+  const CM2 = makeContextWithStorage({
+    version: 13,
+    profiles: [v13Profile],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  });
+  const config = await CM2.getConfig();
+  const profile = config.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  assert.ok(profile.globalCommands.some(c => c.id === 'cmd-my-text-chain'),
+    'non-picker user-added /cherrypick should survive the merge');
+  assert.ok(!profile.globalCommands.some(c => c.command === '/cherrypick' && c.hasJobPicker),
+    'the legacy Chain branch picker should still be dropped');
+});
+
 test('migrateConfig: runs migration when stored config has no version field', async () => {
   // A config without a `version` field should be treated as older than any
   // versioned config and have migration run (adding missing built-in profiles).

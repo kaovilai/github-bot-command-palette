@@ -457,20 +457,28 @@ GHBCP.ConfigManager = (() => {
           // Keep the stored profile; merge in only the v14 Cherry-pick
           // change, and only in the universal profile — the one built-in
           // whose v13 default carried the plain picker and the "Cherry-pick
-          // Chain..." entry. The Chain entry is dropped only when the merged
-          // /cherry-pick replacement is present, so a user who deleted the
-          // plain picker keeps their Chain button instead of losing their
-          // only cherry-pick action. Commands in other built-in profiles
-          // (e.g. a user-added /cherrypick) are their own config and stay
-          // untouched. Command ids are per-install random (see cmd()), so
-          // entries are matched by command string.
-          if (p.id === 'profile-tide-prow-universal' &&
-              (p.globalCommands || []).some(c => c.command === '/cherry-pick')) {
-            p.globalCommands = p.globalCommands
-              .filter(c => c.command !== '/cherrypick');
-            for (const c of p.globalCommands) {
-              if (c.command === '/cherry-pick' && !c.joinMode) {
-                c.joinMode = 'choose';
+          // Chain..." entry. The Chain entry is dropped only when a usable
+          // /cherry-pick replacement exists (a branch picker — the settings
+          // editor's "Has job picker" toggle can turn the command into a
+          // free-text one, which is no replacement), and only entries shaped
+          // like the legacy Chain branch picker are dropped: a user-added
+          // /cherrypick that isn't a branch picker is their own config and
+          // stays. Commands in other built-in profiles are untouched, and a
+          // user who deleted the plain picker keeps their Chain button.
+          // Command ids are per-install random (see cmd()), so entries are
+          // matched by command string.
+          if (p.id === 'profile-tide-prow-universal') {
+            const isBranchPicker = c =>
+              !!(c && c.hasJobPicker && c.jobSource === 'branches');
+            const hasUsableReplacement = (p.globalCommands || [])
+              .some(c => c.command === '/cherry-pick' && isBranchPicker(c));
+            if (hasUsableReplacement) {
+              p.globalCommands = p.globalCommands
+                .filter(c => !(c.command === '/cherrypick' && isBranchPicker(c)));
+              for (const c of p.globalCommands) {
+                if (c.command === '/cherry-pick' && isBranchPicker(c) && !c.joinMode) {
+                  c.joinMode = 'choose';
+                }
               }
             }
           }
