@@ -518,6 +518,51 @@ test('migrateConfig: preserves user-set enabled=false on a built-in profile', as
   assert.equal(p.enabled, false, 'user-disabled profile should stay disabled after migration');
 });
 
+test('migrateConfig: v13 config upgrades to the choose-mode Cherry-pick command', async () => {
+  // Schema v14 merged the separate "Cherry-pick Chain..." button into
+  // "Cherry-pick..." with joinMode 'choose' — the picker's Chain picks
+  // toggle now decides parallel vs sequential chain per post. A stored v13
+  // config carrying both old entries must come out with only the merged one.
+  const CM = makeContextWithStorage(null);
+  const v13Profile = JSON.parse(JSON.stringify(
+    CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal')));
+  const plain = v13Profile.globalCommands.find(c => c.label === 'Cherry-pick...');
+  delete plain.joinMode; // v13's plain branch picker had no joinMode
+  v13Profile.globalCommands.push({
+    id: 'cmd-old-chain',
+    label: 'Cherry-pick Chain...',
+    command: '/cherrypick',
+    description: 'Serial cherry-pick chain',
+    style: 'neutral',
+    requireConfirm: false,
+    hasInput: false,
+    hasJobPicker: true,
+    hasPayloadPicker: false,
+    jobPickerFilter: 'all',
+    jobSource: 'branches',
+    joinMode: 'single-command',
+    expandRehearsalJobs: false,
+    inputPlaceholder: 'branch1 branch2',
+    commandTemplate: '/cherrypick {input}',
+    shortcut: ''
+  });
+  const CM2 = makeContextWithStorage({
+    version: 13,
+    profiles: [v13Profile],
+    repoOverrides: [],
+    globalSettings: CM.DEFAULT_CONFIG.globalSettings,
+    pluginConfigSources: []
+  });
+  const config = await CM2.getConfig();
+  assert.equal(config.version, CM.DEFAULT_CONFIG.version, 'version should be bumped past 13');
+  const profile = config.profiles.find(p => p.id === 'profile-tide-prow-universal');
+  const cherryPick = profile.globalCommands.find(c => c.label === 'Cherry-pick...');
+  assert.ok(cherryPick, 'merged Cherry-pick... command should exist after migration');
+  assert.equal(cherryPick.joinMode, 'choose');
+  assert.ok(!profile.globalCommands.some(c => c.label === 'Cherry-pick Chain...'),
+    'old Cherry-pick Chain... entry should be dropped by the built-in profile refresh');
+});
+
 test('migrateConfig: runs migration when stored config has no version field', async () => {
   // A config without a `version` field should be treated as older than any
   // versioned config and have migration run (adding missing built-in profiles).
@@ -1361,6 +1406,10 @@ test('DEFAULT_CONFIG: Cherry-pick command uses the branch picker', () => {
   assert.equal(cherryPick.hasJobPicker, true);
   assert.equal(cherryPick.jobSource, 'branches');
   assert.equal(cherryPick.commandTemplate, '/cherry-pick {input}');
+  // 'choose' = the picker's Chain picks toggle decides per-post between one
+  // command per branch (parallel) and a single space-joined command (Prow's
+  // sequential cherry-pick chain).
+  assert.equal(cherryPick.joinMode, 'choose');
 });
 
 test('DEFAULT_CONFIG: Velero backport profile targets velero-io/velero with the branch picker', () => {
@@ -1384,20 +1433,24 @@ test('DEFAULT_CONFIG: verified and jira commands exist in universal profile', ()
   const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');
   const commands = profile.globalCommands.map(c => c.command);
   for (const expected of ['/verified by', '/verified later', '/verified bypass', '/verified remove',
-                          '/jira refresh', '/jira backport', '/jira cherrypick', '/cherrypick']) {
+                          '/jira refresh', '/jira backport', '/jira cherrypick']) {
     assert.ok(commands.includes(expected), `${expected} should exist in universal profile`);
   }
 });
 
-test('DEFAULT_CONFIG: /jira backport joins branches with commas, /cherrypick with spaces', () => {
+test('DEFAULT_CONFIG: /jira backport joins with commas, /cherry-pick defers to the picker toggle', () => {
   const CM = makeContextWithStorage(null);
   const profile = CM.DEFAULT_CONFIG.profiles.find(p => p.id === 'profile-tide-prow-universal');
   const backport = profile.globalCommands.find(c => c.command === '/jira backport');
   assert.equal(backport.joinMode, 'single-command-comma');
   assert.equal(backport.jobSource, 'branches');
-  const chain = profile.globalCommands.find(c => c.command === '/cherrypick');
-  assert.equal(chain.joinMode, 'single-command');
-  assert.equal(chain.jobSource, 'branches');
+  const cherryPick = profile.globalCommands.find(c => c.command === '/cherry-pick');
+  assert.equal(cherryPick.joinMode, 'choose');
+  assert.equal(cherryPick.jobSource, 'branches');
+  // The old separate "Cherry-pick Chain..." entry is gone — its behavior is
+  // the Chain picks toggle on the single Cherry-pick... command now.
+  assert.ok(!profile.globalCommands.some(c => c.label === 'Cherry-pick Chain...'),
+    'Cherry-pick Chain... should be merged into Cherry-pick...');
 });
 
 test('DEFAULT_CONFIG: payload profile targets openshift/* with all seven commands', () => {

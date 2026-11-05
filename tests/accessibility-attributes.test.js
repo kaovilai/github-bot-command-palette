@@ -6,6 +6,9 @@ const path = require('node:path');
 const contentJsPath = path.resolve(__dirname, '..', 'content.js');
 const contentJs = fs.readFileSync(contentJsPath, 'utf8');
 
+const stylesCssPath = path.resolve(__dirname, '..', 'styles.css');
+const stylesCss = fs.readFileSync(stylesCssPath, 'utf8');
+
 const popupJsPath = path.resolve(__dirname, '..', 'popup.js');
 const popupJs = fs.readFileSync(popupJsPath, 'utf8');
 
@@ -193,6 +196,33 @@ test('job picker close button has type="button" to prevent accidental form submi
   // Without type="button", the default type is "submit" which can accidentally
   // submit any enclosing <form> element when clicked.
   assert.match(contentJs, /closeBtn\.type = 'button'/);
+});
+
+test('job picker chain toggle only renders for joinMode choose and explains itself', () => {
+  // The Chain picks checkbox (parallel vs sequential /cherry-pick chain) must
+  // be gated on joinMode 'choose' so other pickers (/test, /jira backport,
+  // velero /backport) are unaffected. The checkbox is wrapped in its <label>
+  // (implicit labeling for screen readers) and the label carries a title
+  // tooltip explaining both modes.
+  assert.match(contentJs, /command\.joinMode === 'choose'/);
+  assert.match(contentJs, /chainLabel\.className = 'ghbcp-job-picker-chain'/);
+  assert.match(contentJs, /chainLabel\.appendChild\(chainCb\)/);
+  assert.match(contentJs, /chainLabel\.title =/);
+});
+
+test('job picker chain reorder exposes grabbers, labeled arrow buttons, and an ordered list', () => {
+  // Sequential mode offers a Reorder editor: draggable rows with a visual
+  // grabber (aria-hidden — the drag itself is pointer-only) plus ↑/↓ buttons
+  // carrying per-row aria-labels, which are the keyboard and touch path.
+  assert.match(contentJs, /orderList\.setAttribute\('role', 'list'\)/);
+  assert.match(contentJs, /orderList\.setAttribute\('aria-label', 'Cherry-pick chain order'\)/);
+  assert.match(contentJs, /grab\.setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(contentJs, /row\.draggable = true/);
+  assert.match(contentJs, /up\.setAttribute\('aria-label', `Move \$\{name\} up`\)/);
+  assert.match(contentJs, /down\.setAttribute\('aria-label', `Move \$\{name\} down`\)/);
+  // The panel and Reorder button stay hidden until their mode/state allows
+  // them — explicit rules keep the [hidden] attribute effective.
+  assert.match(stylesCss, /\.ghbcp-job-picker-order\[hidden\][\s\S]*\.ghbcp-job-picker-reorder\[hidden\]\s*\{\s*display: none/);
 });
 
 test('command groups have role=group and aria-labelledby for screen reader navigation', () => {

@@ -26,12 +26,13 @@ const snippet = contentJs.slice(startIdx, endIdx);
 
 const ctx = {};
 vm.runInNewContext(snippet, ctx);
-const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch } = ctx;
+const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch, buildJoinedCommandText } = ctx;
 assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds should have been extracted');
 assert.equal(typeof parseRehearsalCheckContext, 'function', 'parseRehearsalCheckContext should have been extracted');
 assert.equal(typeof computePresubmitContextShortName, 'function', 'computePresubmitContextShortName should have been extracted');
 assert.equal(typeof findRehearsalJobMatch, 'function', 'findRehearsalJobMatch should have been extracted');
 assert.equal(typeof matchesJobSearch, 'function', 'matchesJobSearch should have been extracted');
+assert.equal(typeof buildJoinedCommandText, 'function', 'buildJoinedCommandText should have been extracted');
 
 // assert.deepEqual/deepStrictEqual also compares prototypes — an object
 // returned from code run in a *different* vm context has a different
@@ -276,5 +277,56 @@ test('matchesJobSearch: unordered fallback is skipped for 1-2 character terms', 
 test('matchesJobSearch: empty or whitespace-only query matches everything', () => {
   assert.equal(matchesJobSearch('anything', ''), true);
   assert.equal(matchesJobSearch('anything', '   '), true);
+});
+
+// ── buildJoinedCommandText ───────────────────────────────────────────────────
+// Mirrors how Prow's cherrypicker parses a comment
+// (cmd/external-plugins/cherrypicker, parseComment): every line matching
+// `^/cherry-pick\s+(.+)$` becomes one independent target branch, and within a
+// line only the FIRST token is picked — the rest are chain branches carried
+// forward in the new PR's body. So:
+//   one command per line  → parallel cherry-pick PRs
+//   one space-joined line → sequential chain, one branch per merge
+
+test('buildJoinedCommandText: default joinMode posts one command per branch (parallel)', () => {
+  assert.equal(
+    buildJoinedCommandText('/cherry-pick {input}', ['release-1.17', 'release-1.16'], ''),
+    '/cherry-pick release-1.17\n/cherry-pick release-1.16'
+  );
+});
+
+test('buildJoinedCommandText: single-command join space-joins into one chain command', () => {
+  // Prow picks release-1.17 now; release-1.16/1.15 ride in the new PR's body.
+  assert.equal(
+    buildJoinedCommandText('/cherry-pick {input}', ['release-1.17', 'release-1.16', 'release-1.15'], 'single-command'),
+    '/cherry-pick release-1.17 release-1.16 release-1.15'
+  );
+});
+
+test('buildJoinedCommandText: comma join is for /jira backport', () => {
+  assert.equal(
+    buildJoinedCommandText('/jira backport {input}', ['oadp-1.6', 'oadp-1.5'], 'single-command-comma'),
+    '/jira backport oadp-1.6,oadp-1.5'
+  );
+});
+
+test('buildJoinedCommandText: comma join refuses names containing a comma', () => {
+  // A comma inside a name can't be expressed in a comma-joined argument —
+  // null lets the picker keep the dialog open and alert instead of posting
+  // an ambiguous command.
+  assert.equal(
+    buildJoinedCommandText('/jira backport {input}', ['a,b', 'c'], 'single-command-comma'),
+    null
+  );
+});
+
+test('buildJoinedCommandText: empty selection yields null (nothing to post)', () => {
+  assert.equal(buildJoinedCommandText('/cherry-pick {input}', [], ''), null);
+  assert.equal(buildJoinedCommandText('/cherry-pick {input}', undefined, 'single-command'), null);
+});
+
+test('buildJoinedCommandText: single selection is identical in both modes', () => {
+  assert.equal(buildJoinedCommandText('/cherry-pick {input}', ['release-1.17'], ''), '/cherry-pick release-1.17');
+  assert.equal(buildJoinedCommandText('/cherry-pick {input}', ['release-1.17'], 'single-command'), '/cherry-pick release-1.17');
 });
 

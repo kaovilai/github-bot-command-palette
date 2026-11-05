@@ -2,7 +2,7 @@
 node_modules/
 
 # Test artifacts
-.test-profile/
+.test-profile*/
 test-results/
 .playwright-mcp/
 pr-*.png

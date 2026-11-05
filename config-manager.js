@@ -28,7 +28,7 @@ GHBCP.addTapListener = function addTapListener(el, handler) {
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 13;
+  const SCHEMA_VERSION = 14;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -114,7 +114,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Retest Required', '/retest-required', 'primary', { description: 'Retest required tests' }),
           cmd('Test...', '/test', 'primary', { hasJobPicker: true, commandTemplate: '/test {input}', description: 'Trigger a specific CI job', shortcut: 'Alt+T' }),
           cmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override "{input}"', description: 'Override a failed CI check', shortcut: 'Alt+O' }),
-          cmd('Cherry-pick...', '/cherry-pick', 'neutral', { hasJobPicker: true, jobSource: 'branches', commandTemplate: '/cherry-pick {input}', inputPlaceholder: 'target branch', description: 'Cherry-pick this PR to selected branches' }),
+          cmd('Cherry-pick...', '/cherry-pick', 'neutral', { hasJobPicker: true, jobSource: 'branches', joinMode: 'choose', commandTemplate: '/cherry-pick {input}', inputPlaceholder: 'target branch', description: 'Cherry-pick this PR to selected branches. Chain picks toggle: unchecked posts one /cherry-pick per branch (parallel PRs); checked posts a single command — Prow picks the first branch now and carries the rest forward one merge at a time, in click/reorder order (Reorder button edits it)' }),
           cmd('CC User', '/cc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/cc @{input}', description: 'CC a user' }),
           cmd('UnCC User', '/uncc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/uncc @{input}', description: 'Remove CC' }),
           cmd('OK to Test', '/ok-to-test', 'success', { description: 'Allow CI testing for external contributors' }),
@@ -126,8 +126,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Verified Remove', '/verified remove', 'danger', { description: 'Remove verified/verified-later labels' }),
           cmd('Jira Refresh', '/jira refresh', 'neutral', { description: 'Resync Jira validation status on this PR' }),
           cmd('Jira Backport...', '/jira backport', 'primary', { hasJobPicker: true, jobSource: 'branches', joinMode: 'single-command-comma', commandTemplate: '/jira backport {input}', inputPlaceholder: 'branch1,branch2', description: 'Create backport Jira issues + queue cherry-picks (comma-separated branches)' }),
-          cmd('Jira Cherry-pick...', '/jira cherrypick', 'neutral', { hasInput: true, inputPlaceholder: 'OCPBUGS-1234', commandTemplate: '/jira cherrypick {input}', description: 'Clone a Jira bug onto this manually-created cherry-pick PR' }),
-          cmd('Cherry-pick Chain...', '/cherrypick', 'neutral', { hasJobPicker: true, jobSource: 'branches', joinMode: 'single-command', commandTemplate: '/cherrypick {input}', inputPlaceholder: 'branch1 branch2', description: 'Serial cherry-pick chain: first branch now, remaining branches hop after each merge' })
+          cmd('Jira Cherry-pick...', '/jira cherrypick', 'neutral', { hasInput: true, inputPlaceholder: 'OCPBUGS-1234', commandTemplate: '/jira cherrypick {input}', description: 'Clone a Jira bug onto this manually-created cherry-pick PR' })
         ],
         checkCommands: [
           cmd('Retest This', '/retest', 'primary', { description: 'Retest this specific check' })
