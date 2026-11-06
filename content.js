@@ -268,6 +268,48 @@ function matchesJobSearch(name, query) {
   });
 }
 
+/**
+ * Join already-sanitized picker selections into the command text to post,
+ * per the command's joinMode:
+ *   ''                     → one command per entry, newline-joined. For
+ *                            `/cherry-pick` this is PARALLEL: Prow's
+ *                            cherrypicker runs each line as an independent
+ *                            target branch (parseComment keys by first token).
+ *   'single-command'       → one command, entries space-joined. For
+ *                            `/cherry-pick b1 b2 b3` this is a SEQUENTIAL
+ *                            CHAIN: Prow picks only b1 and embeds
+ *                            "/cherrypick b2 b3" in the new PR's body, so
+ *                            each remaining branch hops forward one merge at
+ *                            a time (cmd/external-plugins/cherrypicker).
+ *   'single-command-comma' → one command, entries comma-joined (/jira backport).
+ *
+ * `joinMode: 'choose'` never reaches this function — showTestJobPicker
+ * resolves it to '' or 'single-command' from its Chain-picks toggle first.
+ * @param {string}   template - Command template containing `{input}`.
+ * @param {string[]} names    - Sanitized selected entry names.
+ * @param {string}   joinMode - '' | 'single-command' | 'single-command-comma'.
+ * @returns {string|null} Command text, or null when there is nothing to post
+ *   (no selections, or a comma-mode entry containing a comma — the caller
+ *   alerts on the latter before joining).
+ */
+function buildJoinedCommandText(template, names, joinMode) {
+  if (!Array.isArray(names) || names.length === 0) return null;
+  if (!joinMode) {
+    return names.map(n => template.replace('{input}', n)).join('\n');
+  }
+  if (joinMode === 'single-command') {
+    return template.replace('{input}', names.join(' '));
+  }
+  if (joinMode === 'single-command-comma') {
+    if (names.some(n => String(n).includes(','))) return null;
+    return template.replace('{input}', names.join(','));
+  }
+  // Unrecognized joinMode (e.g. an unresolved 'choose') — refuse rather
+  // than guess: falling back to the parallel newline join would silently
+  // post a different shape of command than the profile configured.
+  return null;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -1165,6 +1207,10 @@ function matchesJobSearch(name, query) {
     }
 
     const selected = new Set();
+    // Chain submission order: insertion order (click order) by default — the
+    // reorder panel in sequential (Chain picks) mode mutates this in place.
+    // Kept in lockstep with `selected` by the change handlers below.
+    const chainOrder = [];
     const template = command.commandTemplate || '/test {input}';
 
     const picker = document.createElement('div');
@@ -1210,6 +1256,227 @@ function matchesJobSearch(name, query) {
     selectAllLabel.appendChild(document.createTextNode(' Select All'));
     footer.appendChild(selectAllLabel);
 
+    // joinMode 'choose' defers the parallel-vs-chain decision to this toggle.
+    // Unchecked (default) keeps the historical parallel behavior: one command
+    // per selected branch. Checked joins every selection into a single
+    // space-separated command — for /cherry-pick that is Prow's sequential
+    // chain: only the first branch is picked now, the remaining branches are
+    // embedded in the new cherry-pick PR's body and hop forward one merge at
+    // a time (see buildJoinedCommandText).
+    let chainCb = null;
+    if (command.joinMode === 'choose') {
+      const chainLabel = document.createElement('label');
+      chainLabel.className = 'ghbcp-job-picker-chain';
+      chainLabel.title =
+        'Unchecked: one command per branch — independent, parallel cherry-pick PRs.\n' +
+        'Checked: a single "/cherry-pick branch1 branch2 …" command — Prow cherry-picks the first branch now and carries the remaining branches forward in each new cherry-pick PR (one branch per merge).';
+      chainCb = document.createElement('input');
+      chainCb.type = 'checkbox';
+      chainLabel.appendChild(chainCb);
+      chainLabel.appendChild(document.createTextNode(' Chain picks'));
+      footer.appendChild(chainLabel);
+    }
+
+    // Sequential-mode chain-order editor, hidden until the user clicks
+    // Reorder. The chain order starts as click order; this panel is where it
+    // gets rearranged — drag grabbers for pointer input, ↑/↓ buttons for
+    // touch screens (HTML5 drag-and-drop doesn't fire there) and keyboard.
+    const orderPanel = document.createElement('div');
+    orderPanel.className = 'ghbcp-job-picker-order';
+    orderPanel.hidden = true;
+
+    const orderHint = document.createElement('div');
+    orderHint.className = 'ghbcp-job-picker-order-hint';
+    orderHint.textContent = 'Chain order — the first branch is cherry-picked now; the rest carry forward in this order. Drag rows or use ↑/↓.';
+    orderPanel.appendChild(orderHint);
+
+    const orderList = document.createElement('div');
+    orderList.className = 'ghbcp-job-picker-order-list';
+    orderList.setAttribute('role', 'list');
+    orderList.setAttribute('aria-label', 'Cherry-pick chain order');
+    orderPanel.appendChild(orderList);
+
+    let dragName = null;
+    let dragSnapshot = null;
+    // Set by an order row's drop handler — only a drop that landed on an
+    // order row may commit the dragged order (see dragend).
+    let dropHandled = false;
+
+    /** Rebuild chainOrder from the panel's row order (after a drag finishes). */
+    function syncChainOrderFromDOM() {
+      chainOrder.length = 0;
+      orderList.querySelectorAll('[data-order-name]').forEach(el => {
+        chainOrder.push(el.dataset.orderName);
+      });
+    }
+
+    /** Move a chain entry one slot up (-1) or down (+1). */
+    function moveChainOrderItem(name, delta) {
+      const idx = chainOrder.indexOf(name);
+      const next = idx + delta;
+      if (idx === -1 || next < 0 || next >= chainOrder.length) return;
+      chainOrder.splice(idx, 1);
+      chainOrder.splice(next, 0, name);
+      renderChainOrder();
+      // The rebuild above replaced the focused button; put focus back on the
+      // moved row's arrow so repeated presses (and the picker's focus trap)
+      // keep working. Fall back to the other arrow when the pressed one is
+      // now disabled at the end of the list.
+      const movedRow = orderList.querySelector(`[data-order-name="${CSS.escape(name)}"]`);
+      if (!movedRow) return;
+      const arrows = movedRow.querySelectorAll('.ghbcp-job-picker-order-move');
+      const preferred = arrows[delta < 0 ? 0 : 1];
+      const target = preferred && !preferred.disabled
+        ? preferred
+        : movedRow.querySelector('.ghbcp-job-picker-order-move:not([disabled])');
+      if (target) target.focus();
+    }
+
+    /**
+     * Rebuild the order-editor rows from `chainOrder`. Never call mid-drag —
+     * it would remove the node the browser is dragging; drag moves DOM nodes
+     * and syncs the array back on dragend.
+     */
+    function renderChainOrder() {
+      orderList.textContent = '';
+      chainOrder.forEach((name, idx) => {
+        const row = document.createElement('div');
+        row.className = 'ghbcp-job-picker-order-item';
+        row.dataset.orderName = name;
+        row.setAttribute('role', 'listitem');
+        row.draggable = true;
+        row.title = 'Drag to reorder';
+
+        const grab = document.createElement('span');
+        grab.className = 'ghbcp-job-picker-grabber';
+        grab.textContent = '⠿';
+        grab.setAttribute('aria-hidden', 'true');
+        row.appendChild(grab);
+
+        const pos = document.createElement('span');
+        pos.className = 'ghbcp-job-picker-order-pos';
+        pos.textContent = String(idx + 1);
+        row.appendChild(pos);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'ghbcp-job-name';
+        nameSpan.textContent = name;
+        row.appendChild(nameSpan);
+
+        const up = document.createElement('button');
+        up.type = 'button';
+        up.className = 'ghbcp-job-picker-order-move';
+        up.textContent = '↑';
+        up.disabled = idx === 0;
+        up.setAttribute('aria-label', `Move ${name} up`);
+        addTapListener(up, () => moveChainOrderItem(name, -1));
+        row.appendChild(up);
+
+        const down = document.createElement('button');
+        down.type = 'button';
+        down.className = 'ghbcp-job-picker-order-move';
+        down.textContent = '↓';
+        down.disabled = idx === chainOrder.length - 1;
+        down.setAttribute('aria-label', `Move ${name} down`);
+        addTapListener(down, () => moveChainOrderItem(name, 1));
+        row.appendChild(down);
+
+        // Pressing an ↑/↓ button must never start a row drag — the couple of
+        // pixels of movement in a normal click would otherwise hijack it.
+        let pressOnButton = false;
+        row.addEventListener('mousedown', (e) => {
+          pressOnButton = !!(e.target.closest &&
+            e.target.closest('.ghbcp-job-picker-order-move'));
+        });
+        row.addEventListener('dragstart', (e) => {
+          if (pressOnButton) {
+            pressOnButton = false;
+            e.preventDefault();
+            return;
+          }
+          dragName = name;
+          dragSnapshot = chainOrder.slice();
+          dropHandled = false;
+          row.classList.add('dragging');
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', name);
+          }
+        });
+        row.addEventListener('dragover', (e) => {
+          if (!dragName) return;
+          // Accept the drop on every row — including the dragged row, which
+          // slides under the pointer as it moves: without preventDefault()
+          // here the browser marks the position invalid, so releasing over
+          // the dragged row itself would cancel the whole drag.
+          e.preventDefault();
+          if (dragName === name) return;
+          const dragRow = orderList.querySelector('.dragging');
+          if (!dragRow) return;
+          // Insert into the slot under the pointer: above the row's midpoint
+          // goes before it, below goes after it.
+          const rect = row.getBoundingClientRect();
+          const after = (e.clientY - rect.top) > rect.height / 2;
+          orderList.insertBefore(dragRow, after ? row.nextSibling : row);
+        });
+        row.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dropHandled = true;
+        });
+        row.addEventListener('dragend', (e) => {
+          row.classList.remove('dragging');
+          // A drop outside the order rows (e.g. on the search input, which
+          // natively accepts the dragged text) can still report a non-none
+          // dropEffect — commit only when an order row's drop handler ran.
+          const cancelled = !dropHandled ||
+            (e.dataTransfer && e.dataTransfer.dropEffect === 'none');
+          if (cancelled && dragSnapshot) {
+            // Escape (or a drop outside the list) cancels the drag — undo the
+            // live DOM row moves so a cancelled drag doesn't quietly reorder.
+            chainOrder.length = 0;
+            chainOrder.push(...dragSnapshot);
+          } else {
+            syncChainOrderFromDOM();
+          }
+          dragName = null;
+          dragSnapshot = null;
+          renderChainOrder();
+        });
+
+        orderList.appendChild(row);
+      });
+    }
+
+    // Sequential mode gets an explicit Reorder affordance: the chain order
+    // starts as click order and can be rearranged before submitting.
+    let reorderBtn = null;
+    if (command.joinMode === 'choose') {
+      reorderBtn = document.createElement('button');
+      reorderBtn.type = 'button';
+      reorderBtn.className = 'ghbcp-btn ghbcp-btn-neutral ghbcp-job-picker-reorder';
+      reorderBtn.textContent = 'Reorder';
+      reorderBtn.title = 'Edit the chain order — the first branch is cherry-picked now; the rest carry forward in this order.';
+      reorderBtn.hidden = true;
+      footer.appendChild(reorderBtn);
+      chainCb.addEventListener('change', () => {
+        reorderBtn.hidden = !chainCb.checked;
+        if (!chainCb.checked) {
+          orderPanel.hidden = true;
+          reorderBtn.textContent = 'Reorder';
+        }
+        updateFooter();
+      });
+      addTapListener(reorderBtn, () => {
+        const opening = orderPanel.hidden;
+        orderPanel.hidden = !opening;
+        reorderBtn.textContent = opening ? 'Done ordering' : 'Reorder';
+        if (opening) renderChainOrder();
+        // Collapsing the panel can change whether the button should be
+        // disabled (its state also depends on the selection count).
+        updateFooter();
+      });
+    }
+
     const countSpan = document.createElement('span');
     countSpan.className = 'ghbcp-job-picker-count';
     countSpan.setAttribute('aria-live', 'polite');
@@ -1223,11 +1490,24 @@ function matchesJobSearch(name, query) {
     submitBtn.setAttribute('aria-label', (command.label || 'Run') + ' selected jobs');
     footer.appendChild(submitBtn);
 
+    /**
+     * Refresh footer state after any selection or filter change: selection
+     * count, submit label, Reorder disabled state, order-editor rows, and
+     * the Select All tri-state.
+     */
     function updateFooter() {
       const count = selected.size;
       countSpan.textContent = count + ' selected';
       submitBtn.textContent = (command.label || 'Run') + ' Selected' + (count > 0 ? ' (' + count + ')' : '');
       submitBtn.disabled = count === 0;
+      // Nothing to reorder with fewer than two branches — but keep the button
+      // live while the panel is open so "Done ordering" can always collapse it.
+      if (reorderBtn) reorderBtn.disabled = count < 2 && orderPanel.hidden;
+      // Keep a visible chain-order editor in lockstep with selection changes
+      // and search filtering — but never rebuild it mid-drag: removing the
+      // row the browser is dragging would cancel the drag without a dragend,
+      // stranding dragName/dragSnapshot.
+      if (!orderPanel.hidden && !dragName) renderChainOrder();
       const visibleItems = list.querySelectorAll('.ghbcp-job-picker-item');
       const visibleNames = Array.from(visibleItems).map(el => el.dataset.jobName);
       const allVisible = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
@@ -1284,9 +1564,12 @@ function matchesJobSearch(name, query) {
         cb.addEventListener('change', () => {
           if (cb.checked) {
             selected.add(job.name);
+            if (!chainOrder.includes(job.name)) chainOrder.push(job.name);
             item.classList.add('selected');
           } else {
             selected.delete(job.name);
+            const orderIdx = chainOrder.indexOf(job.name);
+            if (orderIdx !== -1) chainOrder.splice(orderIdx, 1);
             item.classList.remove('selected');
           }
           updateFooter();
@@ -1311,12 +1594,15 @@ function matchesJobSearch(name, query) {
       if (selectAllCb.checked) {
         visibleItems.forEach(el => {
           selected.add(el.dataset.jobName);
+          if (!chainOrder.includes(el.dataset.jobName)) chainOrder.push(el.dataset.jobName);
           el.classList.add('selected');
           el.querySelector('.ghbcp-job-picker-checkbox').checked = true;
         });
       } else {
         visibleItems.forEach(el => {
           selected.delete(el.dataset.jobName);
+          const orderIdx = chainOrder.indexOf(el.dataset.jobName);
+          if (orderIdx !== -1) chainOrder.splice(orderIdx, 1);
           el.classList.remove('selected');
           el.querySelector('.ghbcp-job-picker-checkbox').checked = false;
         });
@@ -1342,12 +1628,14 @@ function matchesJobSearch(name, query) {
       // no way to fire that call, so fall back to the old behavior (still
       // posted as /test — a harmless no-op for those, same as a single
       // check row's rerun-hint-link fallback).
-      let commentNames = Array.from(selected);
+      // chainOrder, not Set iteration order: the reorder panel may have
+      // rearranged the chain (the first entry is the branch Prow picks now).
+      let commentNames = chainOrder.filter(n => selected.has(n));
       let rerunJobs = [];
       if (isTest && lastGithubToken) {
         const jobsByName = new Map(jobs.map(j => [j.name, j]));
         const prowNames = [];
-        for (const name of selected) {
+        for (const name of commentNames) {
           const job = jobsByName.get(name);
           if (job && job.isProwManaged === false && job.runId && job.jobId) {
             rerunJobs.push(job);
@@ -1360,25 +1648,35 @@ function matchesJobSearch(name, query) {
 
       const names = commentNames.map(n =>
         CM.sanitizeCommand(isOverride ? CM.getOverrideContext(n) : n));
+      // 'choose' commands (the /cherry-pick picker) resolve their join mode
+      // from the Chain-picks toggle at submit time: checked → one
+      // space-separated command (Prow's sequential cherry-pick chain),
+      // unchecked → one command per branch (parallel picks).
+      let joinMode = command.joinMode;
+      if (joinMode === 'choose') {
+        joinMode = (chainCb && chainCb.checked) ? 'single-command' : '';
+      }
       // 'single-command' joins space-separated (/cherrypick a b); the comma
-      // variant exists for /jira backport, whose plugin requires "a,b".
-      let cmdText = null;
-      if (names.length > 0) {
-        if (command.joinMode === 'single-command') {
-          cmdText = template.replace('{input}', names.join(' '));
-        } else if (command.joinMode === 'single-command-comma') {
-          // A comma inside a name can't be expressed in a comma-joined argument
-          // (the /jira backport parser has no escaping) — surface the conflict
-          // and keep the picker open instead of emitting an ambiguous command.
-          const unsafe = names.filter(n => n.includes(','));
-          if (unsafe.length > 0) {
-            alert(`Comma-separated submission cannot include: ${unsafe.join(' ')}`);
-            return;
-          }
-          cmdText = template.replace('{input}', names.join(','));
-        } else {
-          cmdText = names.map(n => template.replace('{input}', n)).join('\n');
+      // variant exists for /jira backport, whose plugin requires "a,b". A
+      // comma inside a name can't be expressed in a comma-joined argument
+      // (the /jira backport parser has no escaping) — surface the conflict
+      // and keep the picker open instead of emitting an ambiguous command.
+      if (joinMode === 'single-command-comma') {
+        const unsafe = names.filter(n => n.includes(','));
+        if (unsafe.length > 0) {
+          alert(`Comma-separated submission cannot include: ${unsafe.join(' ')}`);
+          return;
         }
+      }
+      const cmdText = buildJoinedCommandText(template, names, joinMode);
+      if (!cmdText && names.length > 0) {
+        // Selections exist but the helper refused: an unrecognized joinMode
+        // (e.g. a typo in an imported config). Explain instead of silently
+        // doing nothing — the comma-conflict case above already alerted.
+        // An empty names list is NOT a refusal: every selection was routed
+        // to Actions reruns, and those must still run below.
+        alert(`Unknown join mode "${joinMode}" for ${command.label || command.command} — nothing was posted.`);
+        return;
       }
 
       const confirmMsg = [
@@ -1448,7 +1746,22 @@ function matchesJobSearch(name, query) {
     // Focus trap: keep keyboard focus within the picker dialog
     addFocusTrap(picker, searchInput);
 
+    // Escape closes the picker from any focused control inside it — the
+    // search input and job list have their own handlers, but footer controls
+    // (Chain picks, Reorder, ↑/↓) bubble here with nowhere else to go.
+    // closePicker() is idempotent, so the second call from an inner
+    // handler's bubbling is harmless. stopPropagation keeps the Escape from
+    // also reaching GitHub's own page-level handlers (shortcuts, its own
+    // dialogs) once this dialog has consumed it.
+    picker.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closePicker();
+        e.stopPropagation();
+      }
+    });
+
     picker.appendChild(list);
+    picker.appendChild(orderPanel);
     picker.appendChild(footer);
     renderJobs('');
 

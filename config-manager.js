@@ -28,7 +28,7 @@ GHBCP.addTapListener = function addTapListener(el, handler) {
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 13;
+  const SCHEMA_VERSION = 14;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -114,7 +114,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Retest Required', '/retest-required', 'primary', { description: 'Retest required tests' }),
           cmd('Test...', '/test', 'primary', { hasJobPicker: true, commandTemplate: '/test {input}', description: 'Trigger a specific CI job', shortcut: 'Alt+T' }),
           cmd('Override...', '/override', 'warning', { hasJobPicker: true, jobPickerFilter: 'failed', commandTemplate: '/override "{input}"', description: 'Override a failed CI check', shortcut: 'Alt+O' }),
-          cmd('Cherry-pick...', '/cherry-pick', 'neutral', { hasJobPicker: true, jobSource: 'branches', commandTemplate: '/cherry-pick {input}', inputPlaceholder: 'target branch', description: 'Cherry-pick this PR to selected branches' }),
+          cmd('Cherry-pick...', '/cherry-pick', 'neutral', { hasJobPicker: true, jobSource: 'branches', joinMode: 'choose', commandTemplate: '/cherry-pick {input}', inputPlaceholder: 'target branch', description: 'Cherry-pick this PR to selected branches (picker Chain picks toggle: parallel picks or a sequential chain)' }),
           cmd('CC User', '/cc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/cc @{input}', description: 'CC a user' }),
           cmd('UnCC User', '/uncc', 'neutral', { hasInput: true, inputPlaceholder: 'username', commandTemplate: '/uncc @{input}', description: 'Remove CC' }),
           cmd('OK to Test', '/ok-to-test', 'success', { description: 'Allow CI testing for external contributors' }),
@@ -126,8 +126,7 @@ GHBCP.ConfigManager = (() => {
           cmd('Verified Remove', '/verified remove', 'danger', { description: 'Remove verified/verified-later labels' }),
           cmd('Jira Refresh', '/jira refresh', 'neutral', { description: 'Resync Jira validation status on this PR' }),
           cmd('Jira Backport...', '/jira backport', 'primary', { hasJobPicker: true, jobSource: 'branches', joinMode: 'single-command-comma', commandTemplate: '/jira backport {input}', inputPlaceholder: 'branch1,branch2', description: 'Create backport Jira issues + queue cherry-picks (comma-separated branches)' }),
-          cmd('Jira Cherry-pick...', '/jira cherrypick', 'neutral', { hasInput: true, inputPlaceholder: 'OCPBUGS-1234', commandTemplate: '/jira cherrypick {input}', description: 'Clone a Jira bug onto this manually-created cherry-pick PR' }),
-          cmd('Cherry-pick Chain...', '/cherrypick', 'neutral', { hasJobPicker: true, jobSource: 'branches', joinMode: 'single-command', commandTemplate: '/cherrypick {input}', inputPlaceholder: 'branch1 branch2', description: 'Serial cherry-pick chain: first branch now, remaining branches hop after each merge' })
+          cmd('Jira Cherry-pick...', '/jira cherrypick', 'neutral', { hasInput: true, inputPlaceholder: 'OCPBUGS-1234', commandTemplate: '/jira cherrypick {input}', description: 'Clone a Jira bug onto this manually-created cherry-pick PR' })
         ],
         checkCommands: [
           cmd('Retest This', '/retest', 'primary', { description: 'Retest this specific check' })
@@ -435,7 +434,14 @@ GHBCP.ConfigManager = (() => {
   /**
    * Migrate a stored config object to the current schema version.
    * Refreshes built-in profiles from DEFAULT_CONFIG while preserving user's `enabled` state,
-   * and appends any new built-in profiles not yet in the stored config.
+   * and appends any new built-in profiles not yet in the stored config —
+   * except the v13 → v14 step, which instead keeps each stored built-in
+   * profile's saved edits (the settings editor edits built-ins in place, so
+   * a wholesale refresh would silently revert them) and applies only the
+   * Cherry-pick merge: the removed "Cherry-pick Chain..." entry is dropped
+   * and the `/cherry-pick` branch picker moves to the new 'choose' joinMode
+   * unless the user set a custom one. Older stored shapes keep the
+   * wholesale refresh.
    * @param {Object} config - Stored config object (mutated in place).
    * @returns {Object} The mutated config with `version` bumped and `_migrated: true`.
    */
@@ -443,12 +449,44 @@ GHBCP.ConfigManager = (() => {
     if (config.version >= SCHEMA_VERSION) return config;
     const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     const defaultMap = new Map(defaults.profiles.map(p => [p.id, p]));
+    const surgicalV14 = config.version === 13;
     for (let i = 0; i < config.profiles.length; i++) {
       const p = config.profiles[i];
       if (BUILTIN_PROFILE_IDS.has(p.id) && defaultMap.has(p.id)) {
-        const updated = defaultMap.get(p.id);
-        updated.enabled = p.enabled;
-        config.profiles[i] = updated;
+        if (surgicalV14) {
+          // Keep the stored profile; merge in only the v14 Cherry-pick
+          // change, and only in the universal profile — the one built-in
+          // whose v13 default carried the plain picker and the "Cherry-pick
+          // Chain..." entry. The Chain entry is dropped only when a usable
+          // /cherry-pick replacement exists (a branch picker — the settings
+          // editor's "Has job picker" toggle can turn the command into a
+          // free-text one, which is no replacement), and only entries shaped
+          // like the legacy Chain branch picker are dropped: a user-added
+          // /cherrypick that isn't a branch picker is their own config and
+          // stays. Commands in other built-in profiles are untouched, and a
+          // user who deleted the plain picker keeps their Chain button.
+          // Command ids are per-install random (see cmd()), so entries are
+          // matched by command string.
+          if (p.id === 'profile-tide-prow-universal') {
+            const isBranchPicker = c =>
+              !!(c && c.hasJobPicker && c.jobSource === 'branches');
+            const hasUsableReplacement = (p.globalCommands || [])
+              .some(c => c.command === '/cherry-pick' && isBranchPicker(c));
+            if (hasUsableReplacement) {
+              p.globalCommands = p.globalCommands
+                .filter(c => !(c.command === '/cherrypick' && isBranchPicker(c)));
+              for (const c of p.globalCommands) {
+                if (c.command === '/cherry-pick' && isBranchPicker(c) && !c.joinMode) {
+                  c.joinMode = 'choose';
+                }
+              }
+            }
+          }
+        } else {
+          const updated = defaultMap.get(p.id);
+          updated.enabled = p.enabled;
+          config.profiles[i] = updated;
+        }
       }
     }
     for (const [id, dp] of defaultMap) {

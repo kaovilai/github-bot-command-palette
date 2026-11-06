@@ -477,6 +477,10 @@ html[data-color-mode="dark"] {
 .ghbcp-job-picker-footer {
   display: flex;
   align-items: center;
+  /* Wrap so Choose mode's extra controls (Chain picks, Reorder) can't push
+     the submit button past the picker's 90vw/overflow-hidden bounds on
+     narrow screens. */
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--ghbcp-border);
@@ -530,6 +534,96 @@ html[data-color-mode="dark"] {
   cursor: pointer;
   white-space: nowrap;
   font-size: 12px;
+}
+
+/* Chain-picks toggle (joinMode 'choose'): unchecked = one command per
+   branch (parallel), checked = single space-separated command (Prow's
+   sequential /cherry-pick chain). Same visual weight as Select All. */
+.ghbcp-job-picker-chain {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* Chain-order editor (sequential mode): order starts as click order; the
+   Reorder button opens this list where rows are rearranged by dragging the
+   grabber row or using the ↑/↓ buttons. */
+.ghbcp-job-picker-order {
+  max-height: 180px;
+  overflow-y: auto;
+  border-top: 1px solid var(--ghbcp-border);
+}
+
+.ghbcp-job-picker-order[hidden],
+.ghbcp-job-picker-reorder[hidden] {
+  display: none;
+}
+
+.ghbcp-job-picker-order-hint {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--ghbcp-text-muted);
+}
+
+.ghbcp-job-picker-order-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  border-top: 1px solid var(--ghbcp-border);
+  font-size: 12px;
+  cursor: grab;
+}
+
+.ghbcp-job-picker-order-item.dragging {
+  opacity: 0.5;
+}
+
+.ghbcp-job-picker-grabber {
+  color: var(--ghbcp-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+
+.ghbcp-job-picker-order-pos {
+  min-width: 14px;
+  color: var(--ghbcp-text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ghbcp-job-picker-order-item .ghbcp-job-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghbcp-job-picker-order-move {
+  min-width: 24px;
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid var(--ghbcp-border);
+  border-radius: 6px;
+  background: var(--ghbcp-bg);
+  color: var(--ghbcp-text);
+  cursor: pointer;
+}
+
+.ghbcp-job-picker-order-move:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ghbcp-job-picker-reorder {
+  padding: 3px 10px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .ghbcp-job-picker-count {
@@ -796,9 +890,17 @@ html[data-color-mode="dark"] {
   }
 
   .ghbcp-job-picker-checkbox,
-  .ghbcp-job-picker-select-all input {
+  .ghbcp-job-picker-select-all input,
+  .ghbcp-job-picker-chain input {
     width: 20px;
     height: 20px;
+  }
+
+  /* HTML5 drag-and-drop doesn't fire on touch screens — the ↑/↓ buttons are
+     the reorder path there, so give them proper touch targets. */
+  .ghbcp-job-picker-order-move {
+    min-width: 36px;
+    min-height: 36px;
   }
 
   .ghbcp-payload-row input,
