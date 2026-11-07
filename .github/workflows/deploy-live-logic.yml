@@ -36,18 +36,49 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The version-bump guard below compares against the previous commit.
+          fetch-depth: 2
+          persist-credentials: false
 
       - name: Validate logic.json
         run: |
           node -e '
             const fs = require("fs");
             const logic = JSON.parse(fs.readFileSync("live/logic.json", "utf8"));
-            if (typeof logic.version !== "number") throw new Error("logic.json: numeric version required");
+            if (!Number.isFinite(logic.version)) throw new Error("logic.json: finite numeric version required");
             const pats = logic.errorLinePatterns || [];
             if (!Array.isArray(pats)) throw new Error("logic.json: errorLinePatterns must be an array");
             for (const p of pats) new RegExp(p); // compile check
             console.log("logic.json OK (version " + logic.version + ", " + pats.length + " patterns)");
           '
+
+      - name: Require a version bump when logic changes
+        if: github.event_name == 'push'
+        run: |
+          # The extension only applies a live document when `version` changes,
+          # so pattern/selector edits without a bump would silently never ship.
+          prev=$(git show HEAD^:live/logic.json 2>/dev/null || true)
+          if [ -z "$prev" ]; then
+            echo "No previous live/logic.json (first deploy) — skipping bump check"
+            exit 0
+          fi
+          node -e '
+            const fs = require("fs");
+            const prev = JSON.parse(process.argv[1]);
+            const next = JSON.parse(fs.readFileSync("live/logic.json", "utf8"));
+            const norm = o => JSON.stringify({
+              checksSectionSelector: o.checksSectionSelector,
+              legacyCheckRowSelector: o.legacyCheckRowSelector,
+              errorLinePatterns: o.errorLinePatterns,
+              maxErrorLines: o.maxErrorLines
+            });
+            if (norm(prev) !== norm(next) && prev.version === next.version) {
+              console.error("live/logic.json logic changed without a version bump — the extension would never apply it. Bump `version`.");
+              process.exit(1);
+            }
+            console.log("version-bump check OK (version " + next.version + ")");
+          ' "$prev"
 
       - name: Assemble site
         run: |

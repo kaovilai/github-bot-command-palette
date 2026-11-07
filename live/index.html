@@ -16,8 +16,8 @@
   (<code>live/</code> + <code>.github/workflows/deploy-live-logic.yml</code>).</p>
   <p>The document can override only whitelisted data: the checks-section and legacy
   check-row selectors, failure-log grep patterns, and the error-line cap. It never
-  contains or executes code — changing those values takes effect on the extension's
-  next poll (≤60s) without reloading the extension or the page, when the opt-in
-  "Live updates" setting is enabled.</p>
+  contains or executes code — while the opt-in "Live updates" setting is enabled,
+  changes are picked up by the extension's periodic polling without reloading the
+  extension or the page.</p>
 </body>
 </html>

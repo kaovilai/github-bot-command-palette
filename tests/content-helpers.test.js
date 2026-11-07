@@ -427,6 +427,15 @@ test('sanitizeLiveLogic: clamps maxErrorLines and drops empty/oversized fields',
   assert.equal(clean.checksSectionSelector, undefined);
 });
 
+test('sanitizeLiveLogic: rejects regexes with nested quantifiers (ReDoS guard)', () => {
+  const clean = sanitizeLiveLogic({
+    version: 1,
+    errorLinePatterns: ['(a+)+$', '(\\w*)*', '(x+)+', '\\bERRO\\b']
+  });
+  // Only the safe pattern survives the shape check.
+  assert.deepEqual([...clean.errorLinePatterns], ['\\bERRO\\b']);
+});
+
 test('sanitizeLiveLogic: rejects non-objects and returns null when nothing usable remains', () => {
   assert.equal(sanitizeLiveLogic(null), null);
   assert.equal(sanitizeLiveLogic([1, 2]), null);

@@ -880,6 +880,26 @@ test('findFailedStepLog: an unreadable failing-step build-log falls back instead
   assert.match(result.text, /ERRO the real failure/);
 });
 
+test('findFailedStepLog: never attaches another test directory’s analysis report', async () => {
+  // testA failed but has no analyze step; testB has a report. The report must
+  // NOT be attached to testA's failure.
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/testA', 'p/artifacts/testB'] },
+      'p/artifacts/testA': { prefixes: ['p/artifacts/testA/e2e'] },
+      'p/artifacts/testB': { prefixes: ['p/artifacts/testB/oadp-analyze-e2e-failure'] },
+    },
+    texts: {
+      'p/artifacts/testA/e2e/finished.json': JSON.stringify({ passed: false }),
+      'p/artifacts/testA/e2e/build-log.txt': 'testA failure',
+      'p/artifacts/testB/oadp-analyze-e2e-failure/artifacts/failure-analysis.md': 'testB report',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assertResultEqual(result, { label: 'testA/e2e/build-log.txt', text: 'testA failure' });
+  assert.equal(result.analysis, undefined);
+});
+
 test('findFailedStepLog: returns the analysis alone when no step log is found', async () => {
   ctx.fetch = makeGcsFetch({
     listings: {

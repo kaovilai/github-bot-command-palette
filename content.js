@@ -67,10 +67,18 @@ function extractErrorLines(text, patterns, maxLines) {
   if (regexes.length === 0) return out;
   const limit = Math.max(1, Math.min(2000, typeof maxLines === 'number' ? maxLines : MAX_ERROR_LINES_DEFAULT));
   const lines = text.split('\n');
+  // Bound the work: match against at most the first 500 chars of each line
+  // and stop after ~250ms, so a pathological (live-supplied) pattern or a
+  // giant log can't freeze the tab. Matches are still collected from the
+  // tail of the log because the cap keeps the last `limit` of them.
+  const deadline = Date.now() + 250;
   for (let i = 0; i < lines.length; i++) {
+    if ((i & 1023) === 0 && Date.now() > deadline) break;
     const line = lines[i];
-    if (!line || !regexes.some(re => re.test(line))) continue;
-    out.push({ line: i + 1, text: line.length > 500 ? line.slice(0, 500) + '…' : line });
+    if (!line) continue;
+    const probe = line.length > 500 ? line.slice(0, 500) : line;
+    if (!regexes.some(re => re.test(probe))) continue;
+    out.push({ line: i + 1, text: probe.length < line.length ? probe + '…' : line });
     if (out.length > limit) out.shift();
   }
   return out;
@@ -79,8 +87,9 @@ function extractErrorLines(text, patterns, maxLines) {
 /**
  * Validate and whitelist the opt-in live-logic document fetched from the
  * static site. Only known, data-only fields are accepted; selectors and
- * patterns are length-capped, regexes are compile-checked, and unknown keys
- * are dropped. Returns null when nothing usable remains.
+ * patterns are length-capped, regexes are compile-checked, obvious
+ * catastrophic-backtracking shapes are rejected, and unknown keys are
+ * dropped. Returns null when nothing usable remains.
  * @param {*} raw - Parsed JSON from the live-logic endpoint.
  * @returns {{version?: number, checksSectionSelector?: string, legacyCheckRowSelector?: string, errorLinePatterns?: string[], maxErrorLines?: number, notes?: string}|null}
  */
@@ -97,6 +106,9 @@ function sanitizeLiveLogic(raw) {
     const patterns = [];
     for (const p of raw.errorLinePatterns.slice(0, 50)) {
       if (typeof p !== 'string' || p.length === 0 || p.length > 300) continue;
+      // Cheap ReDoS guard: reject the classic nested-quantifier shapes
+      // (e.g. (a+)+, (a*)*) that blow up on long log lines.
+      if (/\([^()]*[+*][^()]*\)[+*{]/.test(p)) continue;
       try {
         new RegExp(p); // compile check only
         patterns.push(p);
@@ -737,15 +749,24 @@ function buildJoinedCommandText(template, names, joinMode) {
    */
   async function refreshLiveLogic() {
     if (!CM.isContextValid()) return false;
-    const enabled = !!(config && config.globalSettings && config.globalSettings.liveUpdates);
+    const enabled = !!(config && config.globalSettings && config.globalSettings.liveUpdates === true);
     if (!enabled) {
       liveLogic = {};
       appliedLiveLogicVersion = null;
       return false;
     }
     try {
-      const resp = await chrome.runtime.sendMessage({ action: 'getLiveLogic', enabled: true });
+      // Deadline covers the whole round-trip (request + response): a stalled
+      // live-logic fetch must never block rendering the command bar/checks.
+      const resp = await Promise.race([
+        chrome.runtime.sendMessage({ action: 'getLiveLogic', enabled: true }),
+        new Promise(resolve => setTimeout(() => resolve(null), 3000))
+      ]);
       if (!resp || !resp.enabled) return false;
+      // The user may have opted out (or the context invalidated) while the
+      // request was in flight — never apply a late response then.
+      if (!CM.isContextValid()) return false;
+      if (!config || !config.globalSettings || config.globalSettings.liveUpdates !== true) return false;
       const clean = sanitizeLiveLogic(resp.logic);
       if (!clean) return false;
       // Drop selector overrides that don't compile (e.g. "["), so the
@@ -1125,7 +1146,14 @@ function buildJoinedCommandText(template, names, joinMode) {
    * @returns {Promise<{label: string|null, text: string|null, analysis: {label: string, text: string}|null}|null>}
    */
   async function fetchFailedStepLog(prowUrl) {
-    if (failedStepLogCache.has(prowUrl)) return failedStepLogCache.get(prowUrl);
+    const cached = failedStepLogCache.get(prowUrl);
+    if (cached) {
+      // A result fetched before the analyze post-step finished carries no
+      // analysis; retry after a short grace period so the report shows up
+      // without a page reload.
+      const incomplete = !cached.value || !cached.value.analysis;
+      if (!incomplete || Date.now() - cached.fetchedAt < 90 * 1000) return cached.value;
+    }
     if (!CM.isContextValid()) return null;
     let result = null;
     try {
@@ -1140,7 +1168,7 @@ function buildJoinedCommandText(template, names, joinMode) {
     } catch (e) {
       result = null;
     }
-    failedStepLogCache.set(prowUrl, result);
+    failedStepLogCache.set(prowUrl, { value: result, fetchedAt: Date.now() });
     return result;
   }
 
@@ -1202,10 +1230,11 @@ function buildJoinedCommandText(template, names, joinMode) {
    * check row: grep-matched error lines first (the quick skim), with a
    * "Full log" button for the complete text and analysis.
    * @param {{onFullLog: Function, onClose: Function}} handlers
+   * @param {string} [tagName] - 'li' when inserted into a check-row list.
    * @returns {{panel: HTMLElement, title: HTMLElement, body: HTMLElement}}
    */
-  function buildInlineLogPanel(handlers) {
-    const panel = document.createElement('div');
+  function buildInlineLogPanel(handlers, tagName = 'div') {
+    const panel = document.createElement(tagName);
     panel.className = 'ghbcp-log-inline-panel';
     panel.setAttribute('role', 'region');
     panel.setAttribute('aria-label', 'Failure log errors');
@@ -1295,12 +1324,18 @@ function buildJoinedCommandText(template, names, joinMode) {
       if (tooltip) { tooltip.remove(); tooltip = null; }
       icon.classList.add('ghbcp-log-icon-open');
       icon.setAttribute('aria-expanded', 'true');
+      // Insert as a separate full-width row *after* the check row instead of
+      // inside it: check rows are non-wrapping flex rows, so an inline block
+      // would be squeezed next to the controls instead of scrolling below.
       inlinePanel = buildInlineLogPanel({
         onFullLog: () => openFullLogModal(prowUrl),
         onClose: closeInlinePanel
-      });
-      const anchor = row || icon.parentElement || document.body;
-      anchor.appendChild(inlinePanel.panel);
+      }, row && row.tagName === 'LI' ? 'li' : 'div');
+      if (row && row.parentElement) {
+        row.insertAdjacentElement('afterend', inlinePanel.panel);
+      } else {
+        (icon.parentElement || document.body).appendChild(inlinePanel.panel);
+      }
       const result = await fetchFailedStepLog(prowUrl);
       if (!inlinePanel) return; // closed while the fetch was in flight
       renderInlineLogPanel(inlinePanel, result);
@@ -3564,7 +3599,7 @@ function buildJoinedCommandText(template, names, joinMode) {
   // failure-log panel, so unchanged polls must not trigger it.
   setInterval(async () => {
     if (document.visibilityState !== 'visible') return;
-    if (!config || !config.globalSettings.enabled || !config.globalSettings.liveUpdates) return;
+    if (!config || !config.globalSettings.enabled || config.globalSettings.liveUpdates !== true) return;
     if (await refreshLiveLogic()) debouncedInject();
   }, 60 * 1000);
 

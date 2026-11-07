@@ -56,6 +56,32 @@
     document.getElementById('opt-live-updates').checked = gs.liveUpdates === true;
   }
 
+  /**
+   * Live updates fetches github.tig.pw, which is an *optional* host
+   * permission: request it from the user's toggle gesture and leave the
+   * setting off when they decline (or the API rejects the request).
+   */
+  function bindLiveUpdatesPermission() {
+    const toggle = document.getElementById('opt-live-updates');
+    if (!toggle) return;
+    toggle.addEventListener('change', async () => {
+      if (!toggle.checked) return;
+      const origins = ['https://github.tig.pw/*'];
+      let granted = false;
+      try {
+        // Called synchronously from the change event, so the user gesture is
+        // still active; resolves true without a prompt when already granted.
+        granted = await chrome.permissions.request({ origins });
+      } catch (e) {
+        granted = false;
+      }
+      if (!granted) {
+        toggle.checked = false;
+        showStatus('Live updates stay off without access to github.tig.pw', 'warning');
+      }
+    });
+  }
+
   /** Attach change-event listeners to global-settings form fields so each change auto-saves. */
   function bindGlobalSettings() {
     // Serialize saves so overlapping `input`/`change` events can't interleave
@@ -85,7 +111,16 @@
       config.globalSettings.excludedRepos = document.getElementById('opt-excluded-repos').value
         .split('\n').map(s => s.trim()).filter(s => s.length > 0);
       config.globalSettings.prowAutoDetect = document.getElementById('opt-prow-autodetect').checked;
-      config.globalSettings.liveUpdates = document.getElementById('opt-live-updates').checked;
+      let liveUpdates = document.getElementById('opt-live-updates').checked;
+      if (liveUpdates) {
+        try {
+          liveUpdates = await chrome.permissions.contains({ origins: ['https://github.tig.pw/*'] });
+        } catch (e) {
+          liveUpdates = false;
+        }
+        if (!liveUpdates) document.getElementById('opt-live-updates').checked = false;
+      }
+      config.globalSettings.liveUpdates = liveUpdates;
       try {
         await saveConfig();
         showStatus('Settings saved', 'success');
@@ -789,6 +824,7 @@
     return;
   }
   renderGlobalSettings();
+  bindLiveUpdatesPermission();
   bindGlobalSettings();
   await renderGithubToken();
   bindGithubToken();

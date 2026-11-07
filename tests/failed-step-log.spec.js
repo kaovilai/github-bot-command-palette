@@ -78,7 +78,8 @@ async function assertLogViewWorks(page) {
 
   // Click → inline, scrollable panel of grep-matched error lines on the page.
   await icon.click();
-  const panel = page.locator(`li[aria-label="${FAILED_CHECK}"] .ghbcp-log-inline-panel`);
+  // The panel is inserted as its own row directly after the check row.
+  const panel = page.locator(`li[aria-label="${FAILED_CHECK}"] + .ghbcp-log-inline-panel`);
   await expect(panel).toBeVisible({ timeout: 10000 });
   const panelTitle = panel.locator('.ghbcp-log-inline-title');
   await expect(panelTitle).toContainText('Failure log errors (', { timeout: 30000 });
@@ -160,6 +161,62 @@ const LIVE_ENABLED_CONFIG = {
   pluginConfigSources: [],
   globalSettings: { enabled: true, liveUpdates: true, showOnlyFailedTests: true, pluginFilterMode: 'disabled' }
 };
+
+test('live updates opt-in: a cached logic document overrides grep patterns on the page', async () => {
+  // Deterministic proof that refreshLiveLogic() applies overrides: seed the
+  // background's live-logic cache with a controlled document (no network) and
+  // assert the panel reflects it (custom pattern + cap => exactly one match).
+  test.setTimeout(120000);
+  const { context, userDataDir } = await launchWithExtension();
+  try {
+    let sw = context.serviceWorkers()[0];
+    if (!sw) {
+      const trigger = await context.newPage();
+      await trigger.goto('https://github.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await trigger.waitForTimeout(2000);
+      sw = context.serviceWorkers()[0];
+      await trigger.close();
+    }
+    expect(sw).toBeTruthy();
+
+    await sw.evaluate(async cfg => {
+      await chrome.storage.sync.set({ ghbcp_config: cfg });
+      await chrome.storage.local.set({
+        ghbcp_live_logic_cache: {
+          checkedAt: Date.now(),
+          url: 'https://github.tig.pw/github-bot-command-palette/logic.json',
+          etag: null,
+          logic: { version: 4321, errorLinePatterns: ['FAILED'], maxErrorLines: 10 }
+        }
+      });
+    }, LIVE_ENABLED_CONFIG);
+
+    const page = await context.newPage();
+    await page.route(PR_URL, route => route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: FIXTURE_HTML,
+    }));
+    await page.goto(PR_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    const icon = page.locator(`li[aria-label="${FAILED_CHECK}"] .ghbcp-log-icon`).first();
+    await expect(icon).toBeVisible({ timeout: 45000 });
+    await icon.click();
+    const panel = page.locator(`li[aria-label="${FAILED_CHECK}"] + .ghbcp-log-inline-panel`);
+    await expect(panel).toBeVisible({ timeout: 10000 });
+    const title = panel.locator('.ghbcp-log-inline-title');
+    await expect(title).toContainText('Failure log errors (', { timeout: 30000 });
+    const bodyText = await panel.locator('.ghbcp-log-inline-body').textContent();
+    const lines = bodyText.split('\n').filter(Boolean);
+    // The custom pattern list replaced the built-in one: every rendered
+    // error line matches /FAILED/ (defaults would include ERRO/panic/etc.).
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThanOrEqual(10); // custom cap
+    for (const line of lines) expect(line).toMatch(/FAILED/i);
+  } finally {
+    await closeAndCleanup(context, userDataDir);
+  }
+});
 
 test('live updates opt-in: background fetches the static-site logic and degrades cleanly', async () => {
   test.setTimeout(120000);

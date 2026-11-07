@@ -917,7 +917,9 @@ async function findFailedStepLog(bucket, prefix) {
   const testDirs = top.prefixes
     .filter(p => !['build-logs', 'build-resources'].includes(p.split('/').pop()));
 
-  let analysis = null;
+  // Reports are scoped per test dir: the analysis attached to a failure must
+  // come from the same multi-stage test, never from a sibling test's run.
+  let fallbackAnalysis = null;
 
   for (const testDir of testDirs) {
     let stepList;
@@ -926,6 +928,7 @@ async function findFailedStepLog(bucket, prefix) {
     } catch (e) {
       continue;
     }
+    let analysis = null;
     let failedStepDir = null;
     for (const stepDir of stepList.prefixes) {
       const stepName = stepDir.split('/').pop();
@@ -934,6 +937,7 @@ async function findFailedStepLog(bucket, prefix) {
       // report they leave behind is the most useful thing to show.
       if (!analysis && /analyze-e2e-failure$/.test(stepName)) {
         analysis = await findFailureAnalysis(bucket, stepDir);
+        if (analysis && !fallbackAnalysis) fallbackAnalysis = analysis;
       }
       if (failedStepDir) continue;
       try {
@@ -976,7 +980,7 @@ async function findFailedStepLog(bucket, prefix) {
     const erroIdx = rootLog.indexOf('ERRO');
     if (erroIdx !== -1) {
       const result = { label: 'build-log.txt (ci-operator)', text: rootLog.slice(erroIdx, erroIdx + 8000) };
-      if (analysis) result.analysis = analysis;
+      if (fallbackAnalysis) result.analysis = fallbackAnalysis;
       return result;
     }
   } catch (e) {
@@ -993,7 +997,7 @@ async function findFailedStepLog(bucket, prefix) {
       const texts = await Promise.all(files.map(f => gcsFetchText(bucket, f).catch(() => '(failed to load)')));
       const combined = files.map((f, i) => `=== ${f.split('/').pop()} ===\n${texts[i]}`).join('\n\n');
       const result = { label: 'build-logs/*.log', text: combined };
-      if (analysis) result.analysis = analysis;
+      if (fallbackAnalysis) result.analysis = fallbackAnalysis;
       return result;
     }
   }
@@ -1001,7 +1005,7 @@ async function findFailedStepLog(bucket, prefix) {
   // No failing-step log found anywhere — but a Claude analysis alone (e.g.
   // the report is still being written / the step log already rotated) is
   // still worth showing.
-  if (analysis) return { label: null, text: null, analysis };
+  if (fallbackAnalysis) return { label: null, text: null, analysis: fallbackAnalysis };
   return null;
 }
 

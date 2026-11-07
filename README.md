@@ -177,8 +177,9 @@ to unblock a Tide-blocked merge on a check you can't rerun.
 
 ## Live updates (opt-in)
 
-Settings → **Global Settings** → *Live updates*. When enabled, the extension
-polls `https://github.tig.pw/github-bot-command-palette/logic.json` (at most
+Settings → **Global Settings** → *Live updates*. `github.tig.pw` is an **optional**
+host permission: the extension only requests it when you flip this toggle, and the
+setting stays off if you decline. When enabled, the extension polls `https://github.tig.pw/github-bot-command-palette/logic.json` (at most
 once a minute, ETag-revalidated) and applies **data-only** logic changes
 without reloading the extension or the page:
 

@@ -722,6 +722,7 @@ html[data-color-mode="dark"] {
 .ghbcp-log-inline-panel {
   display: block;
   width: 100%;
+  list-style: none;
   box-sizing: border-box;
   margin: 6px 0 2px;
   border: 1px solid var(--ghbcp-border, #d0d7de);
