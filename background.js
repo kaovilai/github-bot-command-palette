@@ -25,6 +25,10 @@ const LIVE_LOGIC_URLS = [
 const LIVE_LOGIC_CACHE_KEY = 'ghbcp_live_logic_cache';
 const LIVE_LOGIC_STATUS_KEY = 'ghbcp_live_logic_status';
 const LIVE_LOGIC_TTL_MS = 60 * 1000;
+// Concurrent getLiveLogic messages (several PR tabs) share one fetch, so a
+// burst can neither multiply requests nor let a late failure overwrite a
+// fresher successful cache write.
+let liveLogicInflight = null;
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getEnabledPlugins') {
@@ -620,7 +624,18 @@ async function handleCheckForUpdate(force) {
  */
 async function handleGetLiveLogic(force, enabled) {
   if (enabled !== true) return { enabled: false, logic: null };
-  const result = await fetchLiveLogic(force);
+  let result;
+  if (!force && liveLogicInflight) {
+    result = await liveLogicInflight;
+  } else {
+    const run = fetchLiveLogic(force);
+    liveLogicInflight = run;
+    try {
+      result = await run;
+    } finally {
+      if (liveLogicInflight === run) liveLogicInflight = null;
+    }
+  }
   // Record the last attempt (success or failure) for settings-page
   // diagnostics — also proves the opt-in path ran without a page reload.
   const status = {
@@ -692,10 +707,14 @@ async function fetchLiveLogic(force) {
  * @returns {Promise<{enabled: boolean, logic: Object|null, checkedAt: number, source: string, error: string}>}
  */
 async function liveLogicFailure(cached, error) {
+  // Merge with the *current* cache, not our start-of-request snapshot: a
+  // concurrent request may have written a fresher success that this failure
+  // must not clobber (its logic/ETag still win over our stale view).
+  const fresh = await storageGet('local', LIVE_LOGIC_CACHE_KEY, null);
   const next = {
-    etag: (cached && cached.etag) || null,
-    url: (cached && cached.url) || null,
-    logic: (cached && cached.logic) || null,
+    etag: (fresh && fresh.etag) || (cached && cached.etag) || null,
+    url: (fresh && fresh.url) || (cached && cached.url) || null,
+    logic: (fresh && fresh.logic) || (cached && cached.logic) || null,
     checkedAt: Date.now(),
     lastError: error
   };

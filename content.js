@@ -3599,7 +3599,26 @@ function buildJoinedCommandText(template, names, joinMode) {
   // failure-log panel, so unchanged polls must not trigger it.
   setInterval(async () => {
     if (document.visibilityState !== 'visible') return;
-    if (!config || !config.globalSettings.enabled || config.globalSettings.liveUpdates !== true) return;
+    // Re-read the stored config: the in-memory copy is from the last inject,
+    // so a Settings change made on an idle tab (enable or disable) would
+    // otherwise never be noticed here.
+    let stored = null;
+    try {
+      stored = await CM.getConfig();
+    } catch (e) {
+      return;
+    }
+    if (!stored || !stored.globalSettings || !stored.globalSettings.enabled) return;
+    config = stored;
+    if (stored.globalSettings.liveUpdates !== true) {
+      // Opted out mid-session: drop any applied overrides and repaint once.
+      if (appliedLiveLogicVersion !== null || Object.keys(liveLogic).length > 0) {
+        liveLogic = {};
+        appliedLiveLogicVersion = null;
+        debouncedInject();
+      }
+      return;
+    }
     if (await refreshLiveLogic()) debouncedInject();
   }, 60 * 1000);
 
@@ -3628,9 +3647,13 @@ function buildJoinedCommandText(template, names, joinMode) {
           if (node.querySelector && (
             node.querySelector('textarea') ||
             node.querySelector('.merge-status-list') ||
-            node.querySelector('section[aria-label="Checks"]') ||
+            // Use the live-logic selector helpers for descendant queries and
+            // direct-node matches too, or an override that only wraps the
+            // checks section would never schedule a re-injection.
+            node.querySelector(checksSectionSelector()) ||
+            node.querySelector(legacyCheckRowSelector()) ||
             node.matches && (
-              node.matches('.merge-status-item, .js-merge-status-check-item') ||
+              node.matches(legacyCheckRowSelector()) ||
               node.matches(checksSectionSelector()) ||
               node.matches('div[role="dialog"]')
             ) ||

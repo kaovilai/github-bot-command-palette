@@ -1006,6 +1006,28 @@ test('handleGetLiveLogic: revalidates with the cached ETag and serves 304 from c
   assert.equal(result.logic.version, 1);
 });
 
+test('handleGetLiveLogic: concurrent callers share one in-flight fetch', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  let calls = 0;
+  ctx.fetch = async () => {
+    calls++;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => 'shared-etag' },
+      text: async () => JSON.stringify({ version: 5 })
+    };
+  };
+  const [first, second] = await Promise.all([
+    ctx.handleGetLiveLogic(false, true),
+    ctx.handleGetLiveLogic(false, true)
+  ]);
+  assert.equal(calls, 1);
+  assert.equal(first.logic.version, 5);
+  assert.equal(second.logic.version, 5);
+});
+
 test('handleGetLiveLogic: failed attempts advance the TTL so outages are not retried on every inject', async () => {
   ctx.chrome = mockChromeStorageFull();
   ctx.fetch = makeLiveLogicFetch([async () => ({
