@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "updatedAt": "2026-11-07T01:55:00Z",
+  "notes": "Data-only live logic for the GitHub Bot Command Palette extension (opt-in). Published to GitHub Pages by .github/workflows/deploy-live-logic.yml. Bump `version` on every change: the extension re-applies (and toasts) when the number changes. Never add executable code here — the extension only reads the whitelisted fields below.",
+  "checksSectionSelector": "section[aria-label=\"Checks\"]",
+  "legacyCheckRowSelector": ".merge-status-list .merge-status-item, .js-merge-status-check-item, .merge-status-list li",
+  "maxErrorLines": 300,
+  "errorLinePatterns": [
+    "\\bERRO\\b",
+    "^E\\d{4} \\d{2}:\\d{2}:\\d{2}",
+    "\\bFATAL\\b",
+    "\\bpanic:",
+    "^\\s*error:",
+    "\\bError from server\\b",
+    "\\[Fail\\]",
+    "\\bFAIL(ED|URE)?\\b",
+    "\\bmake(\\[\\d+\\])?: \\*\\*\\*",
+    "\\btimed out\\b",
+    "\\bcontext deadline exceeded\\b",
+    "\\bexit status [1-9]",
+    "\\bOOMKilled\\b",
+    "\\bCrashLoopBackOff\\b",
+    "\\bImagePullBackOff\\b",
+    "\\bErrImagePull\\b"
+  ]
+}

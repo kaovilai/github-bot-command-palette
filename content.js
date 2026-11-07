@@ -16,6 +16,104 @@ const LEGACY_CHECK_ROW_SELECTOR =
 // "/openshift/velero/actions/runs/31753380458/job/94624504231?pr=562".
 const ACTIONS_RUN_JOB_HREF_RE = /\/actions\/runs\/(\d+)\/job\/(\d+)/;
 
+// ── Failure-log grep patterns ───────────────────────────────────────────────
+// Regex *source* strings (not RegExp objects) for the inline "failure log
+// errors" panel: the defaults below, overridable at runtime by the opt-in
+// live-logic document so new noisy/quiet patterns ship without a release.
+// Deliberately conservative — this is a "what went wrong" skim, not a full
+// log index; every pattern is matched case-insensitively.
+const DEFAULT_ERROR_LINE_PATTERNS = [
+  '\\bERRO\\b',                       // ci-operator / klog error lines
+  '^E\\d{4} \\d{2}:\\d{2}:\\d{2}',    // klog "E1107 01:02:03 ..." errors
+  '\\bFATAL\\b',
+  '\\bpanic:',
+  '^\\s*error:',
+  '\\bError from server\\b',          // kubectl API errors
+  '\\[Fail\\]',                       // ginkgo
+  '\\bFAIL(ED|URE)?\\b',              // go test / make
+  '\\bmake(\\[\\d+\\])?: \\*\\*\\*',
+  '\\btimed out\\b',
+  '\\bcontext deadline exceeded\\b',
+  '\\bexit status [1-9]',
+  '\\bOOMKilled\\b',
+  '\\bCrashLoopBackOff\\b',
+  '\\bImagePullBackOff\\b',
+  '\\bErrImagePull\\b'
+];
+const MAX_ERROR_LINES_DEFAULT = 300;
+
+/**
+ * Grep a log for failure-looking lines. Scans the whole text but keeps only
+ * the last `maxLines` matches (failures cluster at the end of CI logs, and a
+ * 100k-line build log would otherwise flood the panel).
+ * @param {string} text - Full log text.
+ * @param {string[]} [patterns] - Regex source strings; defaults to DEFAULT_ERROR_LINE_PATTERNS.
+ * @param {number} [maxLines] - Cap on returned matches.
+ * @returns {{line: number, text: string}[]} 1-based line numbers + (long lines truncated).
+ */
+function extractErrorLines(text, patterns, maxLines) {
+  const out = [];
+  if (typeof text !== 'string' || !text) return out;
+  const sources = (Array.isArray(patterns) && patterns.length > 0) ? patterns : DEFAULT_ERROR_LINE_PATTERNS;
+  const regexes = [];
+  for (const src of sources) {
+    if (typeof src !== 'string') continue;
+    try {
+      regexes.push(new RegExp(src, 'i'));
+    } catch (e) {
+      // ignore malformed pattern (also guards against a bad live-logic doc)
+    }
+  }
+  if (regexes.length === 0) return out;
+  const limit = Math.max(1, Math.min(2000, typeof maxLines === 'number' ? maxLines : MAX_ERROR_LINES_DEFAULT));
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || !regexes.some(re => re.test(line))) continue;
+    out.push({ line: i + 1, text: line.length > 500 ? line.slice(0, 500) + '…' : line });
+    if (out.length > limit) out.shift();
+  }
+  return out;
+}
+
+/**
+ * Validate and whitelist the opt-in live-logic document fetched from the
+ * static site. Only known, data-only fields are accepted; selectors and
+ * patterns are length-capped, regexes are compile-checked, and unknown keys
+ * are dropped. Returns null when nothing usable remains.
+ * @param {*} raw - Parsed JSON from the live-logic endpoint.
+ * @returns {{version?: number, checksSectionSelector?: string, legacyCheckRowSelector?: string, errorLinePatterns?: string[], maxErrorLines?: number, notes?: string}|null}
+ */
+function sanitizeLiveLogic(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  if (typeof raw.version === 'number' && isFinite(raw.version)) out.version = raw.version;
+  const selector = (v, max) => (typeof v === 'string' && v.length > 0 && v.length <= max ? v : null);
+  const checks = selector(raw.checksSectionSelector, 300);
+  if (checks) out.checksSectionSelector = checks;
+  const legacy = selector(raw.legacyCheckRowSelector, 500);
+  if (legacy) out.legacyCheckRowSelector = legacy;
+  if (Array.isArray(raw.errorLinePatterns)) {
+    const patterns = [];
+    for (const p of raw.errorLinePatterns.slice(0, 50)) {
+      if (typeof p !== 'string' || p.length === 0 || p.length > 300) continue;
+      try {
+        new RegExp(p); // compile check only
+        patterns.push(p);
+      } catch (e) {
+        // drop invalid pattern
+      }
+    }
+    if (patterns.length > 0) out.errorLinePatterns = patterns;
+  }
+  if (typeof raw.maxErrorLines === 'number' && isFinite(raw.maxErrorLines)) {
+    out.maxErrorLines = Math.min(2000, Math.max(10, Math.floor(raw.maxErrorLines)));
+  }
+  const notes = selector(raw.notes, 300);
+  if (notes) out.notes = notes;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 /**
  * Extract the workflow run ID and job ID from a check row's own link. These
  * are the IDs the GitHub Actions rerun REST API needs
@@ -324,6 +422,12 @@ function buildJoinedCommandText(template, names, joinMode) {
   let lastRepoBranchesRepo = null;
   let lastHeadShaKey = null;
   let lastHeadSha = null;
+  // Data-only "live logic" applied from the opt-in static-site document
+  // (selectors / grep patterns / caps). `appliedLiveLogicVersion` tracks the
+  // last version this page rendered with, so a mid-session change can toast
+  // and re-render without a reload.
+  let liveLogic = {};
+  let appliedLiveLogicVersion = null;
   const rehearsalPresubmitCache = new Map(); // `${configRef}:${org}/${repo}#${branch}` -> jobs[]|null
   // Auto-submit combo window: queued command lines (and the buttons that
   // queued them, for the pending/spinner state) waiting to be posted as one
@@ -605,6 +709,50 @@ function buildJoinedCommandText(template, names, joinMode) {
   }
 
   /**
+   * Fetch the opt-in live-logic document (via the background worker, which
+   * caches and revalidates it with an ETag) and apply its sanitized
+   * overrides. Cheap on the common path: when the opt-in is off, the
+   * background worker returns immediately without any network access. When a
+   * new version lands mid-session, the caller's current render pass already
+   * sees it (liveLogic is set before injection) and a toast announces it.
+   */
+  async function refreshLiveLogic() {
+    if (!CM.isContextValid()) return;
+    const enabled = !!(config && config.globalSettings && config.globalSettings.liveUpdates);
+    if (!enabled) {
+      liveLogic = {};
+      appliedLiveLogicVersion = null;
+      return;
+    }
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: 'getLiveLogic', enabled: true });
+      if (!resp || !resp.enabled) return;
+      const clean = sanitizeLiveLogic(resp.logic);
+      if (!clean) return;
+      const version = typeof clean.version === 'number' ? clean.version : null;
+      if (version !== null && version === appliedLiveLogicVersion) return;
+      const isFirstApply = appliedLiveLogicVersion === null;
+      liveLogic = clean;
+      if (version !== null) appliedLiveLogicVersion = version;
+      if (!isFirstApply && version !== null) {
+        showToast(`Live logic update applied (v${version})`, 'success');
+      }
+    } catch (e) {
+      // Keep whatever logic the page already rendered with.
+    }
+  }
+
+  /** @returns {string} Checks-section selector, live-logic overridable. */
+  function checksSectionSelector() {
+    return liveLogic.checksSectionSelector || CHECKS_SECTION_SELECTOR;
+  }
+
+  /** @returns {string} Legacy check-row selector, live-logic overridable. */
+  function legacyCheckRowSelector() {
+    return liveLogic.legacyCheckRowSelector || LEGACY_CHECK_ROW_SELECTOR;
+  }
+
+  /**
    * Scrape CI check names and statuses from the current PR page.
    * Supports both the modern Primer React UI and the legacy merge-status UI.
    * @returns {{name: string, status: 'failed'|'pending'|'passed', isProwManaged: boolean, runId: string|null, jobId: string|null}[]}
@@ -614,7 +762,7 @@ function buildJoinedCommandText(template, names, joinMode) {
     const seen = new Set();
 
     // Modern GitHub Primer React UI: section[aria-label="Checks"] > li[aria-label]
-    const checksSection = document.querySelector(CHECKS_SECTION_SELECTOR);
+    const checksSection = document.querySelector(checksSectionSelector());
     if (checksSection) {
       const items = checksSection.querySelectorAll('li[aria-label]');
       for (const item of items) {
@@ -637,7 +785,7 @@ function buildJoinedCommandText(template, names, joinMode) {
 
     // Legacy GitHub UI fallback
     if (names.length === 0) {
-      const rows = document.querySelectorAll(LEGACY_CHECK_ROW_SELECTOR);
+      const rows = document.querySelectorAll(legacyCheckRowSelector());
       for (const row of rows) {
         const nameEl = row.querySelector('.status-actions a, .merge-status-item a, a.Link--primary, .text-bold');
         if (!nameEl) continue;
@@ -742,14 +890,19 @@ function buildJoinedCommandText(template, names, joinMode) {
     return url;
   }
 
-  // Only GCS artifact links under this prefix, ending in this exact filename,
-  // get an icon + are fetched — must match the background allowlist.
-  const CLAUDE_ANALYSIS_URL_PREFIX = 'https://gcs.ci.openshift.org/gcs/test-platform-results/';
-  const CLAUDE_ANALYSIS_URL_SUFFIX = '/claude-failure-analysis-text.txt';
+  // Only GCS artifact links under these prefixes, ending in one of these exact
+  // filenames, get an icon + are fetched — must match the background allowlist.
+  const CLAUDE_ANALYSIS_URL_PREFIXES = [
+    'https://gcs.ci.openshift.org/gcs/test-platform-results/',
+    'https://gcs.ci.openshift.org/gcs/test-platform-results-public/'
+  ];
+  const CLAUDE_ANALYSIS_URL_SUFFIXES = ['/claude-failure-analysis-text.txt', '/failure-analysis.md'];
   const claudeAnalysisCache = new Map(); // url -> text
 
   function isClaudeAnalysisUrl(href) {
-    return typeof href === 'string' && href.startsWith(CLAUDE_ANALYSIS_URL_PREFIX) && href.endsWith(CLAUDE_ANALYSIS_URL_SUFFIX);
+    return typeof href === 'string' &&
+      CLAUDE_ANALYSIS_URL_PREFIXES.some(p => href.startsWith(p)) &&
+      CLAUDE_ANALYSIS_URL_SUFFIXES.some(s => href.endsWith(s));
   }
 
   /**
@@ -937,9 +1090,10 @@ function buildJoinedCommandText(template, names, joinMode) {
    * Fetch (and cache) the failed-step log for a Prow job, via the background
    * worker (which walks the job's GCS artifact tree to find the actual
    * failing step — a test step's build-log.txt, or the image build logs when
-   * the job never reached a test step).
+   * the job never reached a test step — plus the Claude failure-analysis
+   * report an analyze-e2e-failure post-step may have left behind).
    * @param {string} prowUrl - The check row's Details link.
-   * @returns {Promise<{label: string, text: string}|null>}
+   * @returns {Promise<{label: string|null, text: string|null, analysis: {label: string, text: string}|null}|null>}
    */
   async function fetchFailedStepLog(prowUrl) {
     if (failedStepLogCache.has(prowUrl)) return failedStepLogCache.get(prowUrl);
@@ -947,7 +1101,13 @@ function buildJoinedCommandText(template, names, joinMode) {
     let result = null;
     try {
       const resp = await chrome.runtime.sendMessage({ action: 'getFailedStepLog', url: prowUrl });
-      result = resp && resp.text ? { label: resp.label || 'build-log.txt', text: resp.text } : null;
+      if (resp && (resp.text || (resp.analysis && resp.analysis.text))) {
+        result = {
+          label: resp.label || 'build-log.txt',
+          text: resp.text || null,
+          analysis: resp.analysis || null
+        };
+      }
     } catch (e) {
       result = null;
     }
@@ -956,31 +1116,144 @@ function buildJoinedCommandText(template, names, joinMode) {
   }
 
   /**
-   * Build the small log icon inserted next to a failed check row: hover shows
-   * a truncated preview tooltip, click opens the full failing-step log in a
-   * scrollable modal with an X close button.
+   * Render the fetched failure-log data into the inline panel: grep-matched
+   * error lines (scrollable) when the raw log has any, else the Claude
+   * analysis, else a head of the log. The "Full log" button always opens the
+   * complete text in a modal.
+   * @param {{title: HTMLElement, body: HTMLElement}} panel
+   * @param {{label: string|null, text: string|null, analysis: {label: string, text: string}|null}|null} result
+   */
+  function renderInlineLogPanel(panel, result) {
+    if (!result) {
+      panel.title.textContent = 'Failure log errors';
+      panel.body.textContent = 'Failed to load log.';
+      return;
+    }
+    const matches = result.text
+      ? extractErrorLines(result.text, liveLogic.errorLinePatterns, liveLogic.maxErrorLines)
+      : [];
+    if (matches.length > 0) {
+      panel.title.textContent = `Failure log errors (${matches.length}) · ${result.label || ''}`.trim();
+      panel.body.textContent = matches.map(m => `${m.line}: ${m.text}`).join('\n');
+    } else if (result.analysis) {
+      panel.title.textContent = 'Claude failure analysis — no error lines matched in the step log';
+      panel.body.textContent = result.analysis.text.slice(0, 4000);
+    } else if (result.text) {
+      panel.title.textContent = 'Failure log — no error lines matched';
+      panel.body.textContent = result.text.slice(0, 4000);
+    } else {
+      panel.title.textContent = 'Failure log errors';
+      panel.body.textContent = 'Failed to load log.';
+    }
+  }
+
+  /**
+   * Open the complete failure analysis + step log in the modal viewer.
    * @param {string} prowUrl
+   */
+  async function openFullLogModal(prowUrl) {
+    const modalBody = openTextModal('Failure Analysis / Step Log');
+    const result = await fetchFailedStepLog(prowUrl);
+    if (!result) {
+      modalBody.textContent = 'Failed to load log.';
+      return;
+    }
+    const sections = [];
+    if (result.analysis) {
+      sections.push(`━━━ Claude failure analysis (${result.analysis.label}) ━━━\n\n${result.analysis.text}`);
+    }
+    if (result.text) {
+      sections.push(`━━━ ${result.label} ━━━\n\n${result.text}`);
+    }
+    modalBody.textContent = sections.length > 0 ? sections.join('\n\n\n') : 'Failed to load log.';
+  }
+
+  /**
+   * Build the on-page, scrollable failure-log panel inserted under a failed
+   * check row: grep-matched error lines first (the quick skim), with a
+   * "Full log" button for the complete text and analysis.
+   * @param {{onFullLog: Function, onClose: Function}} handlers
+   * @returns {{panel: HTMLElement, title: HTMLElement, body: HTMLElement}}
+   */
+  function buildInlineLogPanel(handlers) {
+    const panel = document.createElement('div');
+    panel.className = 'ghbcp-log-inline-panel';
+    panel.setAttribute('role', 'region');
+    panel.setAttribute('aria-label', 'Failure log errors');
+
+    const header = document.createElement('div');
+    header.className = 'ghbcp-log-inline-header';
+
+    const title = document.createElement('span');
+    title.className = 'ghbcp-log-inline-title';
+    title.textContent = 'Failure log errors';
+
+    const fullBtn = document.createElement('button');
+    fullBtn.type = 'button';
+    fullBtn.className = 'ghbcp-log-inline-btn';
+    fullBtn.textContent = 'Full log';
+    fullBtn.setAttribute('aria-label', 'Open the full failure analysis and step log');
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'ghbcp-log-inline-btn ghbcp-log-inline-close';
+    closeBtn.textContent = '×';
+    closeBtn.setAttribute('aria-label', 'Close failure log errors');
+
+    const body = document.createElement('pre');
+    body.className = 'ghbcp-log-inline-body';
+    body.textContent = 'Loading…';
+
+    header.appendChild(title);
+    header.appendChild(fullBtn);
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+    panel.appendChild(body);
+
+    addTapListener(fullBtn, () => handlers.onFullLog());
+    addTapListener(closeBtn, () => handlers.onClose());
+    return { panel, title, body };
+  }
+
+  /**
+   * Build the small log icon inserted next to a failed check row: hover shows
+   * a truncated preview tooltip, click toggles an inline, scrollable panel of
+   * grep-matched error lines on the page (with a "Full log" button for the
+   * complete analysis + log in a modal).
+   * @param {string} prowUrl
+   * @param {HTMLElement} [row] - The check row, so the inline panel anchors under it.
    * @returns {HTMLButtonElement}
    */
-  function buildFailedStepLogIcon(prowUrl) {
+  function buildFailedStepLogIcon(prowUrl, row) {
     const icon = document.createElement('button');
     icon.type = 'button';
     icon.className = 'ghbcp-log-icon';
-    icon.setAttribute('aria-label', 'View failed step log');
-    icon.title = 'Failed step log — hover for preview, click for full text';
+    icon.setAttribute('aria-label', 'View failure analysis / failed step log');
+    icon.title = 'Claude failure analysis (when present) + failed step log — hover for preview, click for error lines';
     icon.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0114.25 16H1.75A1.75 1.75 0 010 14.25V1.75zm1.75-.25a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h12.5a.25.25 0 00.25-.25V1.75a.25.25 0 00-.25-.25H1.75zM3.75 4h1.5a.75.75 0 010 1.5h-1.5a.75.75 0 010-1.5zm0 3h5.5a.75.75 0 010 1.5h-5.5a.75.75 0 010-1.5zm0 3h3.5a.75.75 0 010 1.5h-3.5a.75.75 0 010-1.5z"/></svg>';
 
     let tooltip = null;
     let hideTimer = null;
+    let inlinePanel = null;
+
+    function closeInlinePanel() {
+      if (inlinePanel) {
+        inlinePanel.panel.remove();
+        inlinePanel = null;
+      }
+      icon.classList.remove('ghbcp-log-icon-open');
+      icon.setAttribute('aria-expanded', 'false');
+    }
 
     icon.addEventListener('mouseenter', async () => {
       clearTimeout(hideTimer);
-      if (tooltip) return;
+      if (tooltip || inlinePanel) return;
       tooltip = showHoverTooltip(icon, 'Loading…');
       const result = await fetchFailedStepLog(prowUrl);
       if (!tooltip) return;
-      tooltip.textContent = result
-        ? result.text.slice(0, 600) + (result.text.length > 600 ? '…' : '')
+      const preview = result ? (result.analysis ? result.analysis.text : result.text) : null;
+      tooltip.textContent = preview
+        ? preview.slice(0, 600) + (preview.length > 600 ? '…' : '')
         : 'Failed to load log.';
     });
     icon.addEventListener('mouseleave', () => {
@@ -989,10 +1262,19 @@ function buildJoinedCommandText(template, names, joinMode) {
       }, 150);
     });
     addTapListener(icon, async () => {
+      if (inlinePanel) { closeInlinePanel(); return; }
       if (tooltip) { tooltip.remove(); tooltip = null; }
-      const modalBody = openTextModal('Failed Step Log');
+      icon.classList.add('ghbcp-log-icon-open');
+      icon.setAttribute('aria-expanded', 'true');
+      inlinePanel = buildInlineLogPanel({
+        onFullLog: () => openFullLogModal(prowUrl),
+        onClose: closeInlinePanel
+      });
+      const anchor = row || icon.parentElement || document.body;
+      anchor.appendChild(inlinePanel.panel);
       const result = await fetchFailedStepLog(prowUrl);
-      modalBody.textContent = result ? `${result.label}\n\n${result.text}` : 'Failed to load log.';
+      if (!inlinePanel) return; // closed while the fetch was in flight
+      renderInlineLogPanel(inlinePanel, result);
     });
 
     return icon;
@@ -1785,7 +2067,7 @@ function buildJoinedCommandText(template, names, joinMode) {
         }
         if (changed) renderJobs(searchInput.value);
       };
-      const watchTarget = document.querySelector(CHECKS_SECTION_SELECTOR) ||
+      const watchTarget = document.querySelector(checksSectionSelector()) ||
                            document.querySelector('.merge-status-list');
       if (watchTarget) {
         liveStatusObserver = new MutationObserver(() => {
@@ -2866,6 +3148,7 @@ function buildJoinedCommandText(template, names, joinMode) {
     // Clear any previously injected check buttons so that a plugin refresh or
     // re-inject picks up the latest command set instead of skipping processed rows.
     document.querySelectorAll('.ghbcp-check-btns').forEach(el => el.remove());
+    document.querySelectorAll('.ghbcp-log-inline-panel').forEach(el => el.remove());
     document.querySelectorAll('[data-ghbcp-injected]').forEach(el => {
       delete el.dataset.ghbcpInjected;
     });
@@ -2873,14 +3156,14 @@ function buildJoinedCommandText(template, names, joinMode) {
     let checkRowEls = [];
 
     // Modern GitHub UI
-    const checksSection = document.querySelector(CHECKS_SECTION_SELECTOR);
+    const checksSection = document.querySelector(checksSectionSelector());
     if (checksSection) {
       checkRowEls = checksSection.querySelectorAll('li[aria-label]');
     }
 
     // Legacy fallback
     if (checkRowEls.length === 0) {
-      checkRowEls = document.querySelectorAll(LEGACY_CHECK_ROW_SELECTOR);
+      checkRowEls = document.querySelectorAll(legacyCheckRowSelector());
     }
 
     // Single pass: derive checkName once per row, and collect distinct
@@ -2949,7 +3232,7 @@ function buildJoinedCommandText(template, names, joinMode) {
       btnContainer.className = 'ghbcp-check-btns';
 
       if (status === 'failed' && isProwViewUrl(detailsHref)) {
-        btnContainer.appendChild(buildFailedStepLogIcon(detailsHref));
+        btnContainer.appendChild(buildFailedStepLogIcon(detailsHref, row));
       }
 
       const context = {
@@ -3173,6 +3456,11 @@ function buildJoinedCommandText(template, names, joinMode) {
       }
       if (!config.globalSettings.enabled) return;
 
+      // Opt-in live logic (data only): selectors / grep patterns / caps from
+      // the static site. Applied before the first render so a change is
+      // consumed without reloading the extension or the page.
+      await refreshLiveLogic();
+
       injectClaudeAnalysisIcons();
 
       currentRepo = detectRepo();
@@ -3241,6 +3529,14 @@ function buildJoinedCommandText(template, names, joinMode) {
   // Initial injection
   inject();
 
+  // Opt-in live logic: re-run injection periodically while the tab is
+  // visible so a pushed logic.json lands without a page reload. The
+  // background worker enforces its own TTL, so this costs one conditional
+  // request per minute at most (and none when the opt-in is off).
+  setInterval(() => {
+    if (document.visibilityState === 'visible') debouncedInject();
+  }, 60 * 1000);
+
   // SPA navigation listeners
   document.addEventListener('turbo:load', debouncedInject);
   document.addEventListener('pjax:end', debouncedInject);
@@ -3269,7 +3565,7 @@ function buildJoinedCommandText(template, names, joinMode) {
             node.querySelector('section[aria-label="Checks"]') ||
             node.matches && (
               node.matches('.merge-status-item, .js-merge-status-check-item') ||
-              node.matches(CHECKS_SECTION_SELECTOR) ||
+              node.matches(checksSectionSelector()) ||
               node.matches('div[role="dialog"]')
             ) ||
             node.querySelector('div[role="dialog"]')

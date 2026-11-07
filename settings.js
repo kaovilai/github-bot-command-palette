@@ -53,6 +53,7 @@
     document.getElementById('opt-pluginfilter').value = gs.pluginFilterMode || 'disabled';
     document.getElementById('opt-excluded-repos').value = (gs.excludedRepos || []).join('\n');
     document.getElementById('opt-prow-autodetect').checked = gs.prowAutoDetect !== false;
+    document.getElementById('opt-live-updates').checked = gs.liveUpdates === true;
   }
 
   /** Attach change-event listeners to global-settings form fields so each change auto-saves. */
@@ -84,6 +85,7 @@
       config.globalSettings.excludedRepos = document.getElementById('opt-excluded-repos').value
         .split('\n').map(s => s.trim()).filter(s => s.length > 0);
       config.globalSettings.prowAutoDetect = document.getElementById('opt-prow-autodetect').checked;
+      config.globalSettings.liveUpdates = document.getElementById('opt-live-updates').checked;
       try {
         await saveConfig();
         showStatus('Settings saved', 'success');
@@ -92,7 +94,7 @@
       }
     }
 
-    const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-prow-autodetect', 'opt-theme', 'opt-position', 'opt-pluginfilter', 'opt-excluded-repos'];
+    const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-prow-autodetect', 'opt-live-updates', 'opt-theme', 'opt-position', 'opt-pluginfilter', 'opt-excluded-repos'];
     for (const id of fields) {
       const field = document.getElementById(id);
       // Touch browsers can defer `change` on custom-looking checkboxes until

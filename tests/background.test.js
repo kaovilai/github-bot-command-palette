@@ -753,3 +753,240 @@ test('findFailedStepLog: returns null when nothing failed anywhere', async () =>
   const result = await ctx.findFailedStepLog('bucket', 'p');
   assert.equal(result, null);
 });
+
+// ── parseProwViewUrl / handleGetFailedStepLog ───────────────────────────────
+
+test('parseProwViewUrl: accepts both the private and public results buckets', () => {
+  for (const bucket of ['test-platform-results', 'test-platform-results-public']) {
+    const parsed = ctx.parseProwViewUrl(`https://prow.ci.openshift.org/view/gs/${bucket}/pr-logs/pull/org_repo/1/job/2`);
+    assert.equal(parsed.bucket, bucket);
+    assert.equal(parsed.prefix, 'pr-logs/pull/org_repo/1/job/2');
+  }
+});
+
+test('parseProwViewUrl: rejects unknown buckets, other hosts, and malformed prefixes', () => {
+  assert.equal(ctx.parseProwViewUrl('https://prow.ci.openshift.org/view/gs/origin-ci-test/logs/x'), null);
+  assert.equal(ctx.parseProwViewUrl('https://evil.example/view/gs/test-platform-results/x'), null);
+  assert.equal(ctx.parseProwViewUrl('https://prow.ci.openshift.org/view/gs/test-platform-results/..%2Fescape'), null);
+  assert.equal(ctx.parseProwViewUrl('https://prow.ci.openshift.org/view/gs/test-platform-results/'), null);
+});
+
+test('handleGetFailedStepLog: walks the public bucket even when the view URL names the private one', async () => {
+  // The private test-platform-results bucket 401s on the public JSON List
+  // API — only its -public mirror is readable without auth.
+  const seenBuckets = [];
+  ctx.fetch = async (url) => {
+    if (url.includes('/storage/v1/b/')) {
+      seenBuckets.push(url.match(/\/storage\/v1\/b\/([^/]+)\/o/)[1]);
+      return { ok: true, json: async () => ({ prefixes: [], items: [] }) };
+    }
+    return { ok: false, status: 404 };
+  };
+  const result = await ctx.handleGetFailedStepLog('https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/org_repo/1/job/2');
+  assertResultEqual(result, { text: null });
+  assert.ok(seenBuckets.length > 0 && seenBuckets.every(b => b === 'test-platform-results-public'),
+    `expected only test-platform-results-public fetches, saw ${seenBuckets}`);
+});
+
+test('handleGetFailedStepLog: resolves the failing step log from a public-bucket view URL', async () => {
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'pr-logs/pull/org_repo/1/job/2/artifacts': { prefixes: ['pr-logs/pull/org_repo/1/job/2/artifacts/testA'] },
+      'pr-logs/pull/org_repo/1/job/2/artifacts/testA': { prefixes: ['pr-logs/pull/org_repo/1/job/2/artifacts/testA/step1'] },
+    },
+    texts: {
+      'pr-logs/pull/org_repo/1/job/2/artifacts/testA/step1/finished.json': JSON.stringify({ passed: false }),
+      'pr-logs/pull/org_repo/1/job/2/artifacts/testA/step1/build-log.txt': 'boom',
+    },
+  });
+  const result = await ctx.handleGetFailedStepLog('https://prow.ci.openshift.org/view/gs/test-platform-results-public/pr-logs/pull/org_repo/1/job/2');
+  assertResultEqual(result, { label: 'testA/step1/build-log.txt', text: 'boom' });
+});
+
+// ── failure-analysis report (oadp-analyze-e2e-failure post-step) ────────────
+
+test('findFailedStepLog: attaches the analyze-e2e-failure report found beside the failing step', async () => {
+  // Real oadp layout: the analyze step uploads its ARTIFACT_DIR as an
+  // "artifacts/" subdirectory of its step dir in GCS.
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/e2e-test-aws'] },
+      'p/artifacts/e2e-test-aws': { prefixes: ['p/artifacts/e2e-test-aws/e2e', 'p/artifacts/e2e-test-aws/oadp-analyze-e2e-failure'] },
+    },
+    texts: {
+      'p/artifacts/e2e-test-aws/e2e/finished.json': JSON.stringify({ passed: false }),
+      'p/artifacts/e2e-test-aws/e2e/build-log.txt': 'ginkgo failure output',
+      'p/artifacts/e2e-test-aws/oadp-analyze-e2e-failure/finished.json': JSON.stringify({ passed: true }),
+      'p/artifacts/e2e-test-aws/oadp-analyze-e2e-failure/artifacts/failure-analysis.md': '# Analysis\ninfra flake',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assertResultEqual(result, { label: 'e2e-test-aws/e2e/build-log.txt', text: 'ginkgo failure output' });
+  assertResultEqual(result.analysis, { label: 'oadp-analyze-e2e-failure/failure-analysis.md', text: '# Analysis\ninfra flake' });
+});
+
+test('findFailedStepLog: falls back to claude-failure-analysis-text.txt when failure-analysis.md is absent', async () => {
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/testA'] },
+      'p/artifacts/testA': { prefixes: ['p/artifacts/testA/e2e', 'p/artifacts/testA/medik8s-analyze-e2e-failure'] },
+    },
+    texts: {
+      'p/artifacts/testA/e2e/finished.json': JSON.stringify({ passed: false }),
+      'p/artifacts/testA/e2e/build-log.txt': 'raw log',
+      'p/artifacts/testA/medik8s-analyze-e2e-failure/artifacts/claude-failure-analysis-text.txt': 'plain-text analysis',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assertResultEqual(result.analysis, { label: 'medik8s-analyze-e2e-failure/claude-failure-analysis-text.txt', text: 'plain-text analysis' });
+});
+
+test('findFailedStepLog: scans past ten inner steps for both the failure and the analyze report', async () => {
+  // oadp e2e jobs have ~19 inner steps; the old .slice(0, 10) caps could
+  // miss a late-sorting failing step or the analyze post-step entirely.
+  const steps = Array.from({ length: 12 }, (_, i) => `p/artifacts/testA/step${String(i).padStart(2, '0')}`);
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/testA'] },
+      'p/artifacts/testA': { prefixes: [...steps, 'p/artifacts/testA/oadp-analyze-e2e-failure'] },
+    },
+    texts: {
+      'p/artifacts/testA/step10/finished.json': JSON.stringify({ passed: false }),
+      'p/artifacts/testA/step10/build-log.txt': 'late failure',
+      'p/artifacts/testA/oadp-analyze-e2e-failure/artifacts/failure-analysis.md': 'the report',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assertResultEqual(result, { label: 'testA/step10/build-log.txt', text: 'late failure' });
+  assertResultEqual(result.analysis, { label: 'oadp-analyze-e2e-failure/failure-analysis.md', text: 'the report' });
+});
+
+test('findFailedStepLog: returns the analysis alone when no step log is found', async () => {
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/testA'] },
+      'p/artifacts/testA': { prefixes: ['p/artifacts/testA/oadp-analyze-e2e-failure'] },
+    },
+    texts: {
+      'p/artifacts/testA/oadp-analyze-e2e-failure/artifacts/failure-analysis.md': 'only the report exists',
+      'p/build-log.txt': null,
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assert.equal(result.label, null);
+  assert.equal(result.text, null);
+  assertResultEqual(result.analysis, { label: 'oadp-analyze-e2e-failure/failure-analysis.md', text: 'only the report exists' });
+});
+
+// ── isAllowedClaudeAnalysisUrl ───────────────────────────────────────────────
+
+test('isAllowedClaudeAnalysisUrl: allowlists both buckets and both report filenames', () => {
+  assert.ok(ctx.isAllowedClaudeAnalysisUrl('https://gcs.ci.openshift.org/gcs/test-platform-results/pr-logs/x/artifacts/claude-failure-analysis-text.txt'));
+  assert.ok(ctx.isAllowedClaudeAnalysisUrl('https://gcs.ci.openshift.org/gcs/test-platform-results-public/pr-logs/x/artifacts/failure-analysis.md'));
+  assert.ok(!ctx.isAllowedClaudeAnalysisUrl('https://evil.example/gcs/test-platform-results/x/failure-analysis.md'));
+  assert.ok(!ctx.isAllowedClaudeAnalysisUrl('https://gcs.ci.openshift.org/gcs/test-platform-results-public/pr-logs/x/other.txt'));
+});
+
+// ── handleGetLiveLogic (opt-in data-only live updates) ──────────────────────
+
+function makeLiveLogicFetch(sequence) {
+  const calls = [];
+  const fn = async (url, opts) => {
+    calls.push({ url, opts });
+    const next = sequence[Math.min(calls.length - 1, sequence.length - 1)];
+    return next(url, opts, calls.length);
+  };
+  fn.calls = calls;
+  return fn;
+}
+
+test('handleGetLiveLogic: no-op without the opt-in (no network access)', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  ctx.fetch = () => { throw new Error('should not fetch when live updates are off'); };
+  const result = await ctx.handleGetLiveLogic(false, false);
+  assertResultEqual(result, { enabled: false, logic: null });
+});
+
+test('handleGetLiveLogic: fetches once, then serves from the local cache within the TTL', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  ctx.fetch = makeLiveLogicFetch([async (url) => {
+    assert.equal(url, 'https://github.tig.pw/github-bot-command-palette/logic.json');
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => 'etag-1' },
+      text: async () => JSON.stringify({ version: 7, maxErrorLines: 50 })
+    };
+  }]);
+  const first = await ctx.handleGetLiveLogic(false, true);
+  assertResultEqual(first, { enabled: true, source: 'network' });
+  assert.equal(first.logic.version, 7);
+  const second = await ctx.handleGetLiveLogic(false, true);
+  assertResultEqual(second, { enabled: true, source: 'cache' });
+  assert.equal(second.logic.version, 7);
+  assert.equal(ctx.fetch.calls.length, 1);
+});
+
+test('handleGetLiveLogic: falls back to the root Pages URL when the project path 404s', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  ctx.fetch = makeLiveLogicFetch([async (url) => {
+    if (url.endsWith('/github-bot-command-palette/logic.json')) {
+      return { ok: false, status: 404, headers: { get: () => null }, text: async () => '' };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => 'e' },
+      text: async () => JSON.stringify({ version: 9 })
+    };
+  }]);
+  const result = await ctx.handleGetLiveLogic(false, true);
+  assertResultEqual(result, { enabled: true, source: 'network' });
+  assert.equal(result.logic.version, 9);
+  assert.equal(ctx.fetch.calls.length, 2);
+  assert.ok(ctx.fetch.calls[1].url.endsWith('github.tig.pw/logic.json'));
+});
+
+test('handleGetLiveLogic: revalidates with the cached ETag and serves 304 from cache', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  ctx.fetch = makeLiveLogicFetch([
+    async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'etag-1' },
+      text: async () => JSON.stringify({ version: 1 })
+    }),
+    async (url, opts) => {
+      assert.equal(opts.headers['If-None-Match'], 'etag-1');
+      return { ok: false, status: 304, headers: { get: () => null }, text: async () => '' };
+    }
+  ]);
+  await ctx.handleGetLiveLogic(false, true);
+  const result = await ctx.handleGetLiveLogic(true, true); // force skips the TTL
+  assertResultEqual(result, { enabled: true, source: 'not-modified' });
+  assert.equal(result.logic.version, 1);
+});
+
+test('handleGetLiveLogic: keeps the last good logic on parse and network failures', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  let mode = 'ok';
+  ctx.fetch = async () => {
+    if (mode === 'ok') {
+      return { ok: true, status: 200, headers: { get: () => 'e' }, text: async () => JSON.stringify({ version: 2 }) };
+    }
+    if (mode === 'bad-json') {
+      return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{not json' };
+    }
+    throw new Error('network down');
+  };
+  await ctx.handleGetLiveLogic(false, true);
+  mode = 'bad-json';
+  let result = await ctx.handleGetLiveLogic(true, true);
+  assertResultEqual(result, { enabled: true, source: 'error', error: 'invalid-json' });
+  assert.equal(result.logic.version, 2);
+  mode = 'down';
+  result = await ctx.handleGetLiveLogic(true, true);
+  assertResultEqual(result, { enabled: true, source: 'error', error: 'network-error' });
+  assert.equal(result.logic.version, 2);
+});
+

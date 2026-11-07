@@ -1,0 +1,64 @@
+name: Deploy live logic
+
+# Publishes live/ (logic.json + its index page) to GitHub Pages so opt-in
+# extensions can consume data-only logic updates without a release.
+#
+# Prerequisite (repo settings): Pages -> Source = "GitHub Actions", and the
+# site is served under the parent Pages domain. With github.tig.pw configured
+# as the CNAME for kaovilai.github.io, this project's artifact is reachable at
+#   https://github.tig.pw/github-bot-command-palette/logic.json
+# (project pages are served under /<repo-name>/ even when the domain is set on
+# the user site).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "live/**"
+      - ".github/workflows/deploy-live-logic.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate logic.json
+        run: |
+          node -e '
+            const fs = require("fs");
+            const logic = JSON.parse(fs.readFileSync("live/logic.json", "utf8"));
+            if (typeof logic.version !== "number") throw new Error("logic.json: numeric version required");
+            const pats = logic.errorLinePatterns || [];
+            if (!Array.isArray(pats)) throw new Error("logic.json: errorLinePatterns must be an array");
+            for (const p of pats) new RegExp(p); // compile check
+            console.log("logic.json OK (version " + logic.version + ", " + pats.length + " patterns)");
+          '
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp live/logic.json live/index.html _site/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

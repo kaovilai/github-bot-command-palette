@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<!--
+  Minimal stand-in for GitHub's logged-in PR conversation page, used by
+  tests/failed-step-log.spec.js. The extension's content script is injected
+  by URL match, so the spec serves this body for the real PR URL via
+  page.route(); everything below reproduces the DOM the scraper targets:
+    - section[aria-label="Checks"] + li[aria-label] check rows (modern UI)
+    - h4 a span for the check name, href = Prow "Details" link
+    - .octicon-x-circle-fill for a failed conclusion
+  The hrefs point at a real failed oadp-operator run so the hover/click fetch
+  exercises the real background worker + GCS artifact walk.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>fixture: PR with failed check</title>
+</head>
+<body>
+  <main class="container-xl">
+    <section aria-label="Checks">
+      <ul class="list-style-none">
+        <li aria-label="ci/prow/5.0-virt-kdm-e2e-test-aws">
+          <div class="d-flex flex-items-center">
+            <svg class="octicon octicon-x-circle-fill color-fg-danger" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"></svg>
+            <h4 class="f5">
+              <a href="https://prow.ci.openshift.org/view/gs/test-platform-results-public/pr-logs/pull/openshift_oadp-operator/2493/pull-ci-openshift-oadp-operator-oadp-dev-5.0-virt-kdm-e2e-test-aws/2118058375735414784"><span>ci/prow/5.0-virt-kdm-e2e-test-aws</span></a>
+            </h4>
+            <span class="text-small color-fg-muted">Details</span>
+          </div>
+        </li>
+        <li aria-label="ci/prow/5.0-e2e-test-aws">
+          <div class="d-flex flex-items-center">
+            <svg class="octicon octicon-check color-fg-success" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"></svg>
+            <h4 class="f5">
+              <a href="https://prow.ci.openshift.org/view/gs/test-platform-results-public/pr-logs/pull/openshift_oadp-operator/2493/pull-ci-openshift-oadp-operator-oadp-dev-5.0-e2e-test-aws/2118058375735414000"><span>ci/prow/5.0-e2e-test-aws</span></a>
+            </h4>
+            <span class="text-small color-fg-muted">Details</span>
+          </div>
+        </li>
+      </ul>
+    </section>
+    <div class="js-discussion" id="discussion_bucket"></div>
+  </main>
+</body>
+</html>

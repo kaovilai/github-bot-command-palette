@@ -714,6 +714,73 @@ html[data-color-mode="dark"] {
   background: var(--ghbcp-btn-hover);
 }
 
+.ghbcp-log-icon-open {
+  background: var(--ghbcp-btn-hover);
+}
+
+/* On-page, scrollable "failure log errors" panel under a failed check row. */
+.ghbcp-log-inline-panel {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 6px 0 2px;
+  border: 1px solid var(--ghbcp-border, #d0d7de);
+  border-radius: 6px;
+  background: var(--ghbcp-bg-subtle, rgba(127, 127, 127, 0.06));
+}
+
+.ghbcp-log-inline-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ghbcp-log-inline-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghbcp-log-inline-btn {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 1px 8px;
+  border: 1px solid var(--ghbcp-border, #d0d7de);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ghbcp-log-inline-btn:hover,
+.ghbcp-log-inline-btn:focus-visible {
+  background: var(--ghbcp-btn-hover);
+}
+
+.ghbcp-log-inline-close {
+  font-size: 14px;
+  line-height: 14px;
+  padding: 0 6px;
+}
+
+.ghbcp-log-inline-body {
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px 8px;
+  border-top: 1px solid var(--ghbcp-border, #d0d7de);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .ghbcp-hover-tooltip {
   position: absolute;
   z-index: 10000;
@@ -882,6 +949,16 @@ html[data-color-mode="dark"] {
   .ghbcp-log-icon {
     width: 44px;
     height: 44px;
+  }
+
+  .ghbcp-log-inline-body {
+    max-height: 200px;
+  }
+
+  .ghbcp-log-inline-btn {
+    min-width: 44px;
+    min-height: 32px;
+    font-size: 12px;
   }
 
   .ghbcp-job-picker-item {
