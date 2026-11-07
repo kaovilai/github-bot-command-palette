@@ -32,12 +32,15 @@ const FIXTURE_HTML = fs.readFileSync(
   'utf8'
 );
 
-async function launchWithExtension() {
-  // Fresh throwaway profile per test: a reused persistent profile can keep
-  // serving a stale cached copy of background.js (missing newly added
-  // listeners) and would leak config written by other tests. No GitHub login
-  // is needed — the Checks DOM comes from the fixture.
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ghbcp-log-view-'));
+async function launchWithExtension({ persistent = false } = {}) {
+  // Fixture tests get a fresh throwaway profile: a reused persistent profile
+  // can keep serving a stale cached copy of background.js (missing newly
+  // added listeners) and would leak config written by other tests. The live
+  // PR test passes `persistent: true` to reuse the logged-in `.test-profile`
+  // (its Checks DOM only renders for authenticated users).
+  const userDataDir = persistent
+    ? path.join(__dirname, '..', '.test-profile')
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'ghbcp-log-view-'));
   // Headed when a display exists; otherwise Playwright's new-headless
   // "chromium" channel, which (unlike old headless) still loads extensions.
   const headed = !!process.env.DISPLAY;
@@ -49,12 +52,13 @@ async function launchWithExtension() {
       `--load-extension=${EXTENSION_PATH}`,
     ],
   });
-  return { context, userDataDir };
+  return { context, userDataDir, persistent };
 }
 
-async function closeAndCleanup(context, userDataDir) {
+async function closeAndCleanup(context, userDataDir, persistent = false) {
   await context.close();
-  fs.rmSync(userDataDir, { recursive: true, force: true });
+  // Never delete the shared logged-in profile.
+  if (!persistent) fs.rmSync(userDataDir, { recursive: true, force: true });
 }
 
 async function assertLogViewWorks(page) {
@@ -128,13 +132,13 @@ test('failed check row: hover previews analysis, click opens analysis + step log
 test('live PR page (needs GHBCP_LIVE_PR=1 and a logged-in profile)', async () => {
   test.skip(!process.env.GHBCP_LIVE_PR, 'set GHBCP_LIVE_PR=1 with a logged-in .test-profile');
   test.setTimeout(180000);
-  const { context, userDataDir } = await launchWithExtension();
+  const { context, userDataDir, persistent } = await launchWithExtension({ persistent: true });
   try {
     const page = await context.newPage();
     await page.goto(PR_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await assertLogViewWorks(page);
   } finally {
-    await closeAndCleanup(context, userDataDir);
+    await closeAndCleanup(context, userDataDir, persistent);
   }
 });
 
@@ -196,8 +200,9 @@ test('live updates opt-in: background fetches the static-site logic and degrades
 
     // Exercise the real network path through the real message router: the
     // request to the Pages-hosted logic.json must be permitted by
-    // host_permissions and return a well-formed (graceful) failure while the
-    // site is undeployed.
+    // host_permissions. The site may be deployed (success) or not yet
+    // deployed (graceful error) — both must be well-formed. Deterministic
+    // assertion for the failure path lives in the mocked unit tests.
     const extensionId = sw.url().split('/')[2];
     const extPage = await context.newPage();
     await extPage.goto(`chrome-extension://${extensionId}/settings.html`);
@@ -205,8 +210,13 @@ test('live updates opt-in: background fetches the static-site logic and degrades
       chrome.runtime.sendMessage({ action: 'getLiveLogic', force: true, enabled: true })
     );
     expect(live.enabled).toBe(true);
-    expect(live.source).toBe('error');
-    expect(typeof live.error).toBe('string');
+    if (live.source === 'network' || live.source === 'not-modified' || live.source === 'cache') {
+      expect(live.logic && typeof live.logic === 'object').toBe(true);
+      expect(typeof live.logic.version).toBe('number');
+    } else {
+      expect(live.source).toBe('error');
+      expect(typeof live.error).toBe('string');
+    }
   } finally {
     await closeAndCleanup(context, userDataDir);
   }

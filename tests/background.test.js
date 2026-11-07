@@ -861,6 +861,25 @@ test('findFailedStepLog: scans past ten inner steps for both the failure and the
   assertResultEqual(result.analysis, { label: 'oadp-analyze-e2e-failure/failure-analysis.md', text: 'the report' });
 });
 
+test('findFailedStepLog: an unreadable failing-step build-log falls back instead of aborting the walk', async () => {
+  // finished.json says failed, but build-log.txt 404s — the walk must keep
+  // going and let the ci-operator / image build-log fallbacks win.
+  ctx.fetch = makeGcsFetch({
+    listings: {
+      'p/artifacts': { prefixes: ['p/artifacts/testA'] },
+      'p/artifacts/testA': { prefixes: ['p/artifacts/testA/e2e'] },
+    },
+    texts: {
+      'p/artifacts/testA/e2e/finished.json': JSON.stringify({ passed: false }),
+      'p/artifacts/testA/e2e/build-log.txt': null,
+      'p/build-log.txt': 'INFO setup\nERRO the real failure',
+    },
+  });
+  const result = await ctx.findFailedStepLog('bucket', 'p');
+  assert.equal(result.label, 'build-log.txt (ci-operator)');
+  assert.match(result.text, /ERRO the real failure/);
+});
+
 test('findFailedStepLog: returns the analysis alone when no step log is found', async () => {
   ctx.fetch = makeGcsFetch({
     listings: {
@@ -965,6 +984,21 @@ test('handleGetLiveLogic: revalidates with the cached ETag and serves 304 from c
   const result = await ctx.handleGetLiveLogic(true, true); // force skips the TTL
   assertResultEqual(result, { enabled: true, source: 'not-modified' });
   assert.equal(result.logic.version, 1);
+});
+
+test('handleGetLiveLogic: failed attempts advance the TTL so outages are not retried on every inject', async () => {
+  ctx.chrome = mockChromeStorageFull();
+  ctx.fetch = makeLiveLogicFetch([async () => ({
+    ok: false,
+    status: 500,
+    headers: { get: () => null },
+    text: async () => ''
+  })]);
+  const first = await ctx.handleGetLiveLogic(false, true);
+  assertResultEqual(first, { enabled: true, source: 'error', error: 'HTTP 500' });
+  const second = await ctx.handleGetLiveLogic(false, true); // not forced
+  assertResultEqual(second, { enabled: true, source: 'cache' });
+  assert.equal(ctx.fetch.calls.length, 1);
 });
 
 test('handleGetLiveLogic: keeps the last good logic on parse and network failures', async () => {

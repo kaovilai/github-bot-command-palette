@@ -682,12 +682,28 @@ async function fetchLiveLogic(force) {
   return liveLogicFailure(cached, lastError);
 }
 
-/** Last-known-good response shape for a failed live-logic fetch. */
-function liveLogicFailure(cached, error) {
+/**
+ * Last-known-good response shape for a failed live-logic fetch. Also records
+ * the failed attempt (advancing checkedAt) so a missing deployment / outage
+ * is retried at most once per TTL instead of on every page injection, while
+ * the last good document + ETag are preserved for revalidation.
+ * @param {Object|null} cached - Previous cache entry (may be null).
+ * @param {string} error
+ * @returns {Promise<{enabled: boolean, logic: Object|null, checkedAt: number, source: string, error: string}>}
+ */
+async function liveLogicFailure(cached, error) {
+  const next = {
+    etag: (cached && cached.etag) || null,
+    url: (cached && cached.url) || null,
+    logic: (cached && cached.logic) || null,
+    checkedAt: Date.now(),
+    lastError: error
+  };
+  await storageSet('local', LIVE_LOGIC_CACHE_KEY, next).catch(() => {});
   return {
     enabled: true,
-    logic: (cached && cached.logic) || null,
-    checkedAt: (cached && cached.checkedAt) || 0,
+    logic: next.logic,
+    checkedAt: next.checkedAt,
     source: 'error',
     error
   };
@@ -931,12 +947,19 @@ async function findFailedStepLog(bucket, prefix) {
       }
     }
     if (failedStepDir) {
-      const testName = testDir.split('/').pop();
-      const stepName = failedStepDir.split('/').pop();
-      const text = await gcsFetchText(bucket, `${failedStepDir}/build-log.txt`);
-      const result = { label: `${testName}/${stepName}/build-log.txt`, text };
-      if (analysis) result.analysis = analysis;
-      return result;
+      try {
+        const testName = testDir.split('/').pop();
+        const stepName = failedStepDir.split('/').pop();
+        const text = await gcsFetchText(bucket, `${failedStepDir}/build-log.txt`);
+        const result = { label: `${testName}/${stepName}/build-log.txt`, text };
+        if (analysis) result.analysis = analysis;
+        return result;
+      } catch (e) {
+        // finished.json says failed but its build-log.txt is missing or
+        // unreadable — keep walking rather than rejecting the whole walk, so
+        // the ci-operator / image build-log fallbacks (and any analysis
+        // already found) still win.
+      }
     }
   }
 

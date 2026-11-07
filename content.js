@@ -709,36 +709,65 @@ function buildJoinedCommandText(template, names, joinMode) {
   }
 
   /**
+   * Return `selector` when it parses as a CSS selector, else null. Live logic
+   * selectors are length-checked by sanitizeLiveLogic (a DOM-free pure
+   * function), but only compiling them here — where `document` exists — can
+   * guarantee a bad document never makes querySelector()/matches() throw.
+   * @param {string|undefined} selector
+   * @returns {string|null}
+   */
+  function validSelectorOrNull(selector) {
+    if (typeof selector !== 'string' || selector.length === 0) return null;
+    try {
+      document.querySelector(selector);
+      return selector;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
    * Fetch the opt-in live-logic document (via the background worker, which
    * caches and revalidates it with an ETag) and apply its sanitized
    * overrides. Cheap on the common path: when the opt-in is off, the
-   * background worker returns immediately without any network access. When a
-   * new version lands mid-session, the caller's current render pass already
-   * sees it (liveLogic is set before injection) and a toast announces it.
+   * background worker returns immediately without any network access.
+   * @returns {Promise<boolean>} True when a *new versioned* logic document was
+   *   applied — callers use this to avoid destructive re-renders on polls
+   *   where nothing changed.
    */
   async function refreshLiveLogic() {
-    if (!CM.isContextValid()) return;
+    if (!CM.isContextValid()) return false;
     const enabled = !!(config && config.globalSettings && config.globalSettings.liveUpdates);
     if (!enabled) {
       liveLogic = {};
       appliedLiveLogicVersion = null;
-      return;
+      return false;
     }
     try {
       const resp = await chrome.runtime.sendMessage({ action: 'getLiveLogic', enabled: true });
-      if (!resp || !resp.enabled) return;
+      if (!resp || !resp.enabled) return false;
       const clean = sanitizeLiveLogic(resp.logic);
-      if (!clean) return;
+      if (!clean) return false;
+      // Drop selector overrides that don't compile (e.g. "["), so the
+      // built-in selectors keep being used instead of breaking injection.
+      for (const key of ['checksSectionSelector', 'legacyCheckRowSelector']) {
+        if (!clean[key]) continue;
+        const valid = validSelectorOrNull(clean[key]);
+        if (valid) clean[key] = valid;
+        else delete clean[key];
+      }
       const version = typeof clean.version === 'number' ? clean.version : null;
-      if (version !== null && version === appliedLiveLogicVersion) return;
+      if (version !== null && version === appliedLiveLogicVersion) return false;
       const isFirstApply = appliedLiveLogicVersion === null;
       liveLogic = clean;
       if (version !== null) appliedLiveLogicVersion = version;
       if (!isFirstApply && version !== null) {
         showToast(`Live logic update applied (v${version})`, 'success');
       }
+      return version !== null;
     } catch (e) {
       // Keep whatever logic the page already rendered with.
+      return false;
     }
   }
 
@@ -3529,12 +3558,14 @@ function buildJoinedCommandText(template, names, joinMode) {
   // Initial injection
   inject();
 
-  // Opt-in live logic: re-run injection periodically while the tab is
-  // visible so a pushed logic.json lands without a page reload. The
-  // background worker enforces its own TTL, so this costs one conditional
-  // request per minute at most (and none when the opt-in is off).
-  setInterval(() => {
-    if (document.visibilityState === 'visible') debouncedInject();
+  // Opt-in live logic: poll at most once a minute, only when the opt-in is on
+  // and the tab is visible. Re-render only when a new logic version actually
+  // lands — a full inject() rebuilds check buttons and closes any open
+  // failure-log panel, so unchanged polls must not trigger it.
+  setInterval(async () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!config || !config.globalSettings.enabled || !config.globalSettings.liveUpdates) return;
+    if (await refreshLiveLogic()) debouncedInject();
   }, 60 * 1000);
 
   // SPA navigation listeners
