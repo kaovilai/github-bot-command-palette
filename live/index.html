@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>GitHub Bot Command Palette — live logic</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    code { background: rgba(127,127,127,.15); padding: .1em .35em; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>GitHub Bot Command Palette — live logic</h1>
+  <p>This site hosts the opt-in, data-only <a href="./logic.json">logic.json</a> consumed by the
+  GitHub Bot Command Palette browser extension. Source and deployment live in
+  <a href="https://github.com/kaovilai/github-bot-command-palette">kaovilai/github-bot-command-palette</a>
+  (<code>live/</code> + <code>.github/workflows/deploy-live-logic.yml</code>).</p>
+  <p>The document can override only whitelisted data: the checks-section and legacy
+  check-row selectors, failure-log grep patterns, and the error-line cap. It never
+  contains or executes code — while the opt-in "Live updates" setting is enabled,
+  changes are picked up by the extension's periodic polling without reloading the
+  extension or the page.</p>
+</body>
+</html>

@@ -26,13 +26,15 @@ const snippet = contentJs.slice(startIdx, endIdx);
 
 const ctx = {};
 vm.runInNewContext(snippet, ctx);
-const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch, buildJoinedCommandText } = ctx;
+const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch, buildJoinedCommandText, extractErrorLines, sanitizeLiveLogic } = ctx;
 assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds should have been extracted');
 assert.equal(typeof parseRehearsalCheckContext, 'function', 'parseRehearsalCheckContext should have been extracted');
 assert.equal(typeof computePresubmitContextShortName, 'function', 'computePresubmitContextShortName should have been extracted');
 assert.equal(typeof findRehearsalJobMatch, 'function', 'findRehearsalJobMatch should have been extracted');
 assert.equal(typeof matchesJobSearch, 'function', 'matchesJobSearch should have been extracted');
 assert.equal(typeof buildJoinedCommandText, 'function', 'buildJoinedCommandText should have been extracted');
+assert.equal(typeof extractErrorLines, 'function', 'extractErrorLines should have been extracted');
+assert.equal(typeof sanitizeLiveLogic, 'function', 'sanitizeLiveLogic should have been extracted');
 
 // assert.deepEqual/deepStrictEqual also compares prototypes — an object
 // returned from code run in a *different* vm context has a different
@@ -348,3 +350,96 @@ test('picker submit treats a null join result as refusal only when comment selec
   assert.match(contentJs, /if \(!cmdText && names\.length > 0\) \{/);
 });
 
+
+// ── extractErrorLines (inline failure-log grep panel) ───────────────────────
+
+test('extractErrorLines: matches failure-looking lines with 1-based line numbers', () => {
+  const log = [
+    'INFO starting build',
+    'INFO pulling image',
+    'ERRO build failed: exit status 1',
+    'some context line',
+    'panic: runtime error: invalid memory address'
+  ].join('\n');
+  const matches = extractErrorLines(log);
+  assert.deepEqual([...matches.map(m => m.line)], [3, 5]);
+  assert.match(matches[0].text, /ERRO build failed/);
+  assert.match(matches[1].text, /panic:/);
+});
+
+test('extractErrorLines: is case-insensitive and covers ginkgo/go/make/k8s markers', () => {
+  const log = [
+    '[Fail] OADP backup [It] should restore',
+    'make: *** [Makefile:42: test-e2e] Error 1',
+    'Error from server (NotFound): configmaps "config" not found',
+    'context deadline exceeded',
+    'E1107 01:02:03.123456 1 controller.go:123] failed to sync'
+  ].join('\n');
+  const matches = extractErrorLines(log);
+  assert.equal(matches.length, 5);
+});
+
+test('extractErrorLines: keeps the last N matches (failures cluster at the log tail)', () => {
+  const lines = [];
+  for (let i = 1; i <= 10; i++) lines.push(`error: boom ${i}`);
+  const matches = extractErrorLines(lines.join('\n'), null, 3);
+  assert.deepEqual([...matches.map(m => m.text)], ['error: boom 8', 'error: boom 9', 'error: boom 10']);
+});
+
+test('extractErrorLines: ignores malformed patterns, empty input, and non-matching text', () => {
+  assert.deepEqual([...extractErrorLines('', null, 10)], []);
+  assert.deepEqual([...extractErrorLines(null, null, 10)], []);
+  assert.deepEqual([...extractErrorLines('all good\nnothing wrong', ['[unclosed'], 10)], []);
+  assert.deepEqual([...extractErrorLines('FAIL hard', ['\\bFAIL\\b'], 10).map(m => m.line)], [1]);
+});
+
+test('extractErrorLines: truncates very long matching lines', () => {
+  const long = 'error: ' + 'x'.repeat(1000);
+  const matches = extractErrorLines(long);
+  assert.equal(matches.length, 1);
+  assert.ok(matches[0].text.length <= 501);
+});
+
+// ── sanitizeLiveLogic (opt-in live-logic document) ──────────────────────────
+
+test('sanitizeLiveLogic: keeps only whitelisted, well-formed fields', () => {
+  const clean = sanitizeLiveLogic({
+    version: 3,
+    checksSectionSelector: 'section[aria-label="Checks"]',
+    legacyCheckRowSelector: '.merge-status-list li',
+    errorLinePatterns: ['\\bERRO\\b', '[unclosed', 42],
+    maxErrorLines: 150,
+    notes: 'tuned for ginkgo',
+    evil: '<script>'
+  });
+  assert.equal(clean.version, 3);
+  assert.equal(clean.checksSectionSelector, 'section[aria-label="Checks"]');
+  assert.equal(clean.legacyCheckRowSelector, '.merge-status-list li');
+  assert.deepEqual([...clean.errorLinePatterns], ['\\bERRO\\b']); // invalid + non-string dropped
+  assert.equal(clean.maxErrorLines, 150);
+  assert.equal(clean.notes, 'tuned for ginkgo');
+  assert.equal(clean.evil, undefined);
+});
+
+test('sanitizeLiveLogic: clamps maxErrorLines and drops empty/oversized fields', () => {
+  const clean = sanitizeLiveLogic({ version: 1, maxErrorLines: 999999, checksSectionSelector: 'x'.repeat(400) });
+  assert.equal(clean.maxErrorLines, 2000);
+  assert.equal(clean.checksSectionSelector, undefined);
+});
+
+test('sanitizeLiveLogic: rejects regexes with nested quantifiers (ReDoS guard)', () => {
+  const clean = sanitizeLiveLogic({
+    version: 1,
+    errorLinePatterns: ['(a+)+$', '(\\w*)*', '(x+)+', '\\bERRO\\b']
+  });
+  // Only the safe pattern survives the shape check.
+  assert.deepEqual([...clean.errorLinePatterns], ['\\bERRO\\b']);
+});
+
+test('sanitizeLiveLogic: rejects non-objects and returns null when nothing usable remains', () => {
+  assert.equal(sanitizeLiveLogic(null), null);
+  assert.equal(sanitizeLiveLogic([1, 2]), null);
+  assert.equal(sanitizeLiveLogic('nope'), null);
+  assert.equal(sanitizeLiveLogic({ evil: 1 }), null);
+  assert.equal(sanitizeLiveLogic({ errorLinePatterns: [] }), null);
+});

@@ -11,6 +11,25 @@ const UPDATE_CACHE_KEY = 'ghbcp_update_cache';
 const UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/manifest.json';
 const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 
+// Opt-in "live updates": data-only logic (selectors, grep patterns,
+// thresholds) served from the GitHub Pages site built from this repo's
+// live/ directory. Only JSON is fetched — never code — so this stays within
+// MV3's no-remote-code rule and applies without reloading the extension.
+// Two candidate URLs because GitHub Pages serves a project site under
+// /<repo>/ when the custom domain is attached to the user site, but at the
+// root when the domain is attached to this repo itself.
+const LIVE_LOGIC_URLS = [
+  'https://github.tig.pw/github-bot-command-palette/logic.json',
+  'https://github.tig.pw/logic.json'
+];
+const LIVE_LOGIC_CACHE_KEY = 'ghbcp_live_logic_cache';
+const LIVE_LOGIC_STATUS_KEY = 'ghbcp_live_logic_status';
+const LIVE_LOGIC_TTL_MS = 60 * 1000;
+// Concurrent getLiveLogic messages (several PR tabs) share one fetch, so a
+// burst can neither multiply requests nor let a late failure overwrite a
+// fresher successful cache write.
+let liveLogicInflight = null;
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'getEnabledPlugins') {
     handleGetEnabledPlugins(msg.repo, false).then(sendResponse);
@@ -62,6 +81,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.action === 'checkForUpdate') {
     handleCheckForUpdate(msg.force).then(sendResponse);
+    return true;
+  }
+  if (msg.action === 'getLiveLogic') {
+    handleGetLiveLogic(msg.force, msg.enabled).then(sendResponse);
     return true;
   }
 });
@@ -590,6 +613,122 @@ async function handleCheckForUpdate(force) {
 }
 
 /**
+ * Fetch the opt-in live-logic document (data only) from the GitHub Pages site
+ * built from this repo's live/ directory. Serves the last good copy on
+ * network/HTTP/parse failures and revalidates with ETag so a 60s poll is
+ * cheap. Never executes anything from this document — content.js sanitizes
+ * and whitelists the fields it reads (see sanitizeLiveLogic there).
+ * @param {boolean} force - Skip the TTL and revalidate now.
+ * @param {boolean} enabled - The user's liveUpdates opt-in (from config).
+ * @returns {Promise<{enabled: boolean, logic: Object|null, checkedAt?: number, source?: string, error?: string}>}
+ */
+async function handleGetLiveLogic(force, enabled) {
+  if (enabled !== true) return { enabled: false, logic: null };
+  let result;
+  if (!force && liveLogicInflight) {
+    result = await liveLogicInflight;
+  } else {
+    const run = fetchLiveLogic(force);
+    liveLogicInflight = run;
+    try {
+      result = await run;
+    } finally {
+      if (liveLogicInflight === run) liveLogicInflight = null;
+    }
+  }
+  // Record the last attempt (success or failure) for settings-page
+  // diagnostics — also proves the opt-in path ran without a page reload.
+  const status = {
+    requestedAt: Date.now(),
+    source: result.source || null,
+    error: result.error || null,
+    version: result.logic && typeof result.logic.version === 'number' ? result.logic.version : null
+  };
+  await storageSet('local', LIVE_LOGIC_STATUS_KEY, status).catch(() => {});
+  return result;
+}
+
+/**
+ * Fetch/revalidate the live-logic document with local caching and ETag
+ * revalidation. Split from handleGetLiveLogic so the status record above
+ * covers every return path.
+ * @param {boolean} force
+ * @returns {Promise<{enabled: boolean, logic: Object|null, checkedAt?: number, source?: string, error?: string}>}
+ */
+async function fetchLiveLogic(force) {
+  const cached = await storageGet('local', LIVE_LOGIC_CACHE_KEY, null);
+  const now = Date.now();
+  if (!force && cached && now - (cached.checkedAt || 0) < LIVE_LOGIC_TTL_MS) {
+    return { enabled: true, logic: cached.logic || null, checkedAt: cached.checkedAt || 0, source: 'cache' };
+  }
+  let lastError = 'HTTP 404';
+  for (const url of LIVE_LOGIC_URLS) {
+    const headers = {};
+    // Only revalidate against the URL the cached copy actually came from.
+    if (cached && cached.etag && cached.url === url) headers['If-None-Match'] = cached.etag;
+    try {
+      const resp = await fetch(url, { cache: 'no-store', headers });
+      if (resp.status === 304 && cached) {
+        const next = { etag: cached.etag || null, url, logic: cached.logic || null, checkedAt: now };
+        await storageSet('local', LIVE_LOGIC_CACHE_KEY, next).catch(() => {});
+        return { enabled: true, logic: next.logic, checkedAt: now, source: 'not-modified' };
+      }
+      if (resp.status === 404) {
+        lastError = 'HTTP 404';
+        continue; // try the other Pages layout
+      }
+      if (!resp.ok) return liveLogicFailure(cached, `HTTP ${resp.status}`);
+      const text = await resp.text();
+      if (text.length > 256 * 1024) return liveLogicFailure(cached, 'too-large');
+      let logic;
+      try {
+        logic = JSON.parse(text);
+      } catch (e) {
+        return liveLogicFailure(cached, 'invalid-json');
+      }
+      if (!logic || typeof logic !== 'object' || Array.isArray(logic)) return liveLogicFailure(cached, 'invalid-shape');
+      const next = { etag: resp.headers.get('etag') || null, url, logic, checkedAt: now };
+      await storageSet('local', LIVE_LOGIC_CACHE_KEY, next).catch(() => {});
+      return { enabled: true, logic, checkedAt: now, source: 'network' };
+    } catch (e) {
+      return liveLogicFailure(cached, 'network-error');
+    }
+  }
+  return liveLogicFailure(cached, lastError);
+}
+
+/**
+ * Last-known-good response shape for a failed live-logic fetch. Also records
+ * the failed attempt (advancing checkedAt) so a missing deployment / outage
+ * is retried at most once per TTL instead of on every page injection, while
+ * the last good document + ETag are preserved for revalidation.
+ * @param {Object|null} cached - Previous cache entry (may be null).
+ * @param {string} error
+ * @returns {Promise<{enabled: boolean, logic: Object|null, checkedAt: number, source: string, error: string}>}
+ */
+async function liveLogicFailure(cached, error) {
+  // Merge with the *current* cache, not our start-of-request snapshot: a
+  // concurrent request may have written a fresher success that this failure
+  // must not clobber (its logic/ETag still win over our stale view).
+  const fresh = await storageGet('local', LIVE_LOGIC_CACHE_KEY, null);
+  const next = {
+    etag: (fresh && fresh.etag) || (cached && cached.etag) || null,
+    url: (fresh && fresh.url) || (cached && cached.url) || null,
+    logic: (fresh && fresh.logic) || (cached && cached.logic) || null,
+    checkedAt: Date.now(),
+    lastError: error
+  };
+  await storageSet('local', LIVE_LOGIC_CACHE_KEY, next).catch(() => {});
+  return {
+    enabled: true,
+    logic: next.logic,
+    checkedAt: next.checkedAt,
+    source: 'error',
+    error
+  };
+}
+
+/**
  * Rerun a single GitHub Actions job via the documented REST API, for checks
  * Prow doesn't own (posting `/test <name>` for those gets bounced by Prow as
  * "target not found" — see content.js's `isKnownProwContext`). Requires a
@@ -660,14 +799,19 @@ async function handleRerunFailedActionsJobs(repo, runId) {
   }
 }
 
-// Only URLs under this prefix, ending in this exact filename, are fetched —
-// the URL comes from page DOM, so it must be allowlisted here, not trusted.
-// Must match the CLAUDE_ANALYSIS_URL_* constants in content.js.
-const CLAUDE_ANALYSIS_URL_PREFIX = 'https://gcs.ci.openshift.org/gcs/test-platform-results/';
-const CLAUDE_ANALYSIS_URL_SUFFIX = '/claude-failure-analysis-text.txt';
+// Only URLs under these prefixes, ending in one of these exact filenames, are
+// fetched — the URL comes from page DOM, so it must be allowlisted here, not
+// trusted. Must match the CLAUDE_ANALYSIS_URL_* constants in content.js.
+const CLAUDE_ANALYSIS_URL_PREFIXES = [
+  'https://gcs.ci.openshift.org/gcs/test-platform-results/',
+  'https://gcs.ci.openshift.org/gcs/test-platform-results-public/'
+];
+const CLAUDE_ANALYSIS_URL_SUFFIXES = ['/claude-failure-analysis-text.txt', '/failure-analysis.md'];
 
 function isAllowedClaudeAnalysisUrl(url) {
-  return typeof url === 'string' && url.startsWith(CLAUDE_ANALYSIS_URL_PREFIX) && url.endsWith(CLAUDE_ANALYSIS_URL_SUFFIX);
+  if (typeof url !== 'string') return false;
+  return CLAUDE_ANALYSIS_URL_PREFIXES.some(p => url.startsWith(p)) &&
+    CLAUDE_ANALYSIS_URL_SUFFIXES.some(s => url.endsWith(s));
 }
 
 /**
@@ -689,14 +833,19 @@ async function handleGetClaudeFailureAnalysis(url) {
 }
 
 // A check row's Details link, for a Prow-owned job, points at Prow's own log
-// viewer over the public GCS results bucket: https://prow.ci.openshift.org/view/gs/<bucket>/<path>.
-// Only that bucket is ever fetched — the URL comes from page DOM, not trusted input.
+// viewer over the CI results buckets: https://prow.ci.openshift.org/view/gs/<bucket>/<path>.
+// View URLs name either the private "test-platform-results" bucket or its
+// public mirror "test-platform-results-public" — only the public one is
+// readable without auth (the private one 401s on the JSON List API and 403s
+// on object GETs), so both are accepted here but the walk below always reads
+// from the public bucket. The URL comes from page DOM, not trusted input.
 const PROW_VIEW_URL_PREFIX = 'https://prow.ci.openshift.org/view/gs/';
-const GCS_RESULTS_BUCKET = 'test-platform-results';
+const GCS_RESULTS_BUCKETS = ['test-platform-results', 'test-platform-results-public'];
+const GCS_PUBLIC_BUCKET = 'test-platform-results-public';
 
 /**
  * Parse a Prow "Details" link into the GCS bucket + object-prefix it views,
- * rejecting anything outside the known results bucket or containing
+ * rejecting anything outside the known results buckets or containing
  * unexpected characters.
  * @param {string} url
  * @returns {{bucket: string, prefix: string}|null}
@@ -708,7 +857,7 @@ function parseProwViewUrl(url) {
   if (slash === -1) return null;
   const bucket = rest.slice(0, slash);
   const prefix = rest.slice(slash + 1).replace(/\/+$/, '');
-  if (bucket !== GCS_RESULTS_BUCKET) return null;
+  if (!GCS_RESULTS_BUCKETS.includes(bucket)) return null;
   if (!prefix || !/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(prefix)) return null;
   return { bucket, prefix };
 }
@@ -745,21 +894,51 @@ async function gcsFetchText(bucket, objectPath) {
 }
 
 /**
+ * Fetch the Claude failure-analysis report an "analyze-e2e-failure" post-step
+ * (oadp/medik8s/hypershift/… step-registry ref) left next to the test steps,
+ * if any. The report lands at <stepDir>/artifacts/failure-analysis.md (the
+ * step writes to its container's /logs/artifacts, which ci-operator uploads
+ * as an "artifacts/" subdirectory of the step's GCS dir); the plain-text
+ * claude-failure-analysis-text.txt is the fallback. Bare (non-artifacts/)
+ * paths are tried too, for layouts that upload ARTIFACT_DIR directly.
+ * @param {string} bucket
+ * @param {string} stepDir - GCS prefix of the analyze step.
+ * @returns {Promise<{label: string, text: string}|null>}
+ */
+async function findFailureAnalysis(bucket, stepDir) {
+  const stepName = stepDir.split('/').pop();
+  for (const rel of ['artifacts/failure-analysis.md', 'failure-analysis.md', 'artifacts/claude-failure-analysis-text.txt', 'claude-failure-analysis-text.txt']) {
+    try {
+      const text = await gcsFetchText(bucket, `${stepDir}/${rel}`);
+      if (text) return { label: `${stepName}/${rel.split('/').pop()}`, text };
+    } catch (e) {
+      // not there — try the next location
+    }
+  }
+  return null;
+}
+
+/**
  * Walk a Prow job's GCS artifact tree to find whichever step actually failed:
  * a multi-stage test step's build-log.txt (its finished.json says
  * {"passed":false}); the job's own top-level build-log.txt (ci-operator's
  * own log) when no step reported one; or — as a last resort — the image
- * build-logs/*.log files instead.
+ * build-logs/*.log files instead. While walking, also picks up the Claude
+ * failure-analysis report an analyze-e2e-failure post-step may have left
+ * (attached as `analysis` on the result when present).
  * @param {string} bucket
  * @param {string} prefix - Job root prefix (no trailing slash), e.g.
  *   "pr-logs/pull/<org>_<repo>/<pr>/<job>/<build-id>".
- * @returns {Promise<{label: string, text: string}|null>}
+ * @returns {Promise<{label: string, text: string, analysis?: {label: string, text: string}}|null>}
  */
 async function findFailedStepLog(bucket, prefix) {
   const top = await gcsListDir(bucket, `${prefix}/artifacts`);
   const testDirs = top.prefixes
-    .filter(p => !['build-logs', 'build-resources'].includes(p.split('/').pop()))
-    .slice(0, 10);
+    .filter(p => !['build-logs', 'build-resources'].includes(p.split('/').pop()));
+
+  // Reports are scoped per test dir: the analysis attached to a failure must
+  // come from the same multi-stage test, never from a sibling test's run.
+  let fallbackAnalysis = null;
 
   for (const testDir of testDirs) {
     let stepList;
@@ -768,18 +947,41 @@ async function findFailedStepLog(bucket, prefix) {
     } catch (e) {
       continue;
     }
-    for (const stepDir of stepList.prefixes.slice(0, 10)) {
+    let analysis = null;
+    let failedStepDir = null;
+    for (const stepDir of stepList.prefixes) {
+      const stepName = stepDir.split('/').pop();
+      // Analyze post-steps (e.g. oadp-analyze-e2e-failure) never carry the
+      // failure themselves — their finished.json says passed:true — but the
+      // report they leave behind is the most useful thing to show.
+      if (!analysis && /analyze-e2e-failure$/.test(stepName)) {
+        analysis = await findFailureAnalysis(bucket, stepDir);
+        if (analysis && !fallbackAnalysis) fallbackAnalysis = analysis;
+      }
+      if (failedStepDir) continue;
       try {
         const finishedText = await gcsFetchText(bucket, `${stepDir}/finished.json`);
         const finished = JSON.parse(finishedText);
         if (finished && finished.passed === false) {
-          const testName = testDir.split('/').pop();
-          const stepName = stepDir.split('/').pop();
-          const text = await gcsFetchText(bucket, `${stepDir}/build-log.txt`);
-          return { label: `${testName}/${stepName}/build-log.txt`, text };
+          failedStepDir = stepDir;
         }
       } catch (e) {
         // no finished.json yet (still running) or unparseable — not the failure
+      }
+    }
+    if (failedStepDir) {
+      try {
+        const testName = testDir.split('/').pop();
+        const stepName = failedStepDir.split('/').pop();
+        const text = await gcsFetchText(bucket, `${failedStepDir}/build-log.txt`);
+        const result = { label: `${testName}/${stepName}/build-log.txt`, text };
+        if (analysis) result.analysis = analysis;
+        return result;
+      } catch (e) {
+        // finished.json says failed but its build-log.txt is missing or
+        // unreadable — keep walking rather than rejecting the whole walk, so
+        // the ci-operator / image build-log fallbacks (and any analysis
+        // already found) still win.
       }
     }
   }
@@ -796,7 +998,9 @@ async function findFailedStepLog(bucket, prefix) {
     const rootLog = await gcsFetchText(bucket, `${prefix}/build-log.txt`);
     const erroIdx = rootLog.indexOf('ERRO');
     if (erroIdx !== -1) {
-      return { label: 'build-log.txt (ci-operator)', text: rootLog.slice(erroIdx, erroIdx + 8000) };
+      const result = { label: 'build-log.txt (ci-operator)', text: rootLog.slice(erroIdx, erroIdx + 8000) };
+      if (fallbackAnalysis) result.analysis = fallbackAnalysis;
+      return result;
     }
   } catch (e) {
     // fall through to the image build-logs dump below
@@ -811,25 +1015,33 @@ async function findFailedStepLog(bucket, prefix) {
     if (files.length > 0) {
       const texts = await Promise.all(files.map(f => gcsFetchText(bucket, f).catch(() => '(failed to load)')));
       const combined = files.map((f, i) => `=== ${f.split('/').pop()} ===\n${texts[i]}`).join('\n\n');
-      return { label: 'build-logs/*.log', text: combined };
+      const result = { label: 'build-logs/*.log', text: combined };
+      if (fallbackAnalysis) result.analysis = fallbackAnalysis;
+      return result;
     }
   }
 
+  // No failing-step log found anywhere — but a Claude analysis alone (e.g.
+  // the report is still being written / the step log already rotated) is
+  // still worth showing.
+  if (fallbackAnalysis) return { label: null, text: null, analysis: fallbackAnalysis };
   return null;
 }
 
 /**
  * Resolve the log for a failed check's actual failing step, from its Prow
  * "Details" link (a prow.ci.openshift.org/view/gs/... URL scraped from the
- * check row).
+ * check row). The walk always reads from the public results bucket — view
+ * URLs naming the private bucket point at the same paths, which are only
+ * publicly readable from the mirror.
  * @param {string} url
- * @returns {Promise<{label: string, text: string}|{text: null}>}
+ * @returns {Promise<{label: string, text: string, analysis?: {label: string, text: string}}|{text: null}>}
  */
 async function handleGetFailedStepLog(url) {
   const parsed = parseProwViewUrl(url);
   if (!parsed) return { text: null };
   try {
-    const result = await findFailedStepLog(parsed.bucket, parsed.prefix);
+    const result = await findFailedStepLog(GCS_PUBLIC_BUCKET, parsed.prefix);
     return result || { text: null };
   } catch (e) {
     return { text: null };

@@ -149,6 +149,7 @@
     "showOnlyFailedTests": true,
     "autoSubmit": false,
     "excludedRepos": [],
-    "prowAutoDetect": true
+    "prowAutoDetect": true,
+    "liveUpdates": false
   }
 }

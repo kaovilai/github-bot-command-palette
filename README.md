@@ -112,6 +112,7 @@ Releases are cut automatically when the `version` in `manifest.json` changes on 
 - **Profile system** — configure commands per bot system (Prow, Mergify, Changesets, etc.)
 - **Repo pattern matching** — glob patterns like `openshift/*` to scope profiles
 - **Inline check buttons** — retest buttons next to failed CI checks
+- **Failure log view** — the log icon on a failed Prow check opens a scrollable, grep-filtered list of error lines from the job's actual failing step (falling back to image build logs / the ci-operator log), plus the Claude failure-analysis report when the job's `analyze-e2e-failure` post-step produced one; "Full log" opens everything in a modal
 - **GitHub Actions rerun (optional)** — one-click rerun for checks Prow doesn't own, via a self-supplied token — see [below](#github-actions-rerun-optional)
 - **Dynamic commands** — auto-generate buttons from failed check names (e.g., `/pj-rehearse <job-name>`)
 - **Keyboard shortcuts** — Alt+L for LGTM, Alt+A for Approve, Alt+R for Retest, Alt+T for Test picker, Alt+O for Override picker
@@ -173,6 +174,30 @@ background service worker only when you click Rerun, to call GitHub's
 documented `POST /repos/{owner}/{repo}/actions/jobs/{job_id}/rerun` API;
 `/override` (which works with or without a token — see above) remains the way
 to unblock a Tide-blocked merge on a check you can't rerun.
+
+## Live updates (opt-in)
+
+Settings → **Global Settings** → *Live updates*. `github.tig.pw` is an **optional**
+host permission: the extension only requests it when you flip this toggle, and the
+setting stays off if you decline. When enabled, the extension polls `https://github.tig.pw/github-bot-command-palette/logic.json` (at most
+once a minute, ETag-revalidated) and applies **data-only** logic changes
+without reloading the extension or the page:
+
+- the checks-section and legacy check-row selectors (so a GitHub DOM change
+  can be fixed by pushing `live/logic.json`, no release needed),
+- the failure-log grep patterns and error-line cap,
+- a `version` number — bump it and the page re-renders with a toast.
+
+`live/logic.json` in this repo is the source; every push to `main` touching
+`live/**` is validated and deployed to GitHub Pages by
+`.github/workflows/deploy-live-logic.yml`.
+
+Only whitelisted JSON fields are read — the extension never fetches or
+executes remote code (Manifest V3 forbids it). Real code changes in
+`content.js`/`background.js` still require reloading the unpacked extension.
+Prerequisite: this repo's Pages source must be **GitHub Actions**, with the
+site reachable under the `github.tig.pw` Pages domain
+(`https://github.tig.pw/github-bot-command-palette/` for project pages).
 
 ## Import / Export
 

@@ -53,6 +53,43 @@
     document.getElementById('opt-pluginfilter').value = gs.pluginFilterMode || 'disabled';
     document.getElementById('opt-excluded-repos').value = (gs.excludedRepos || []).join('\n');
     document.getElementById('opt-prow-autodetect').checked = gs.prowAutoDetect !== false;
+    document.getElementById('opt-live-updates').checked = gs.liveUpdates === true;
+  }
+
+  /**
+   * Pending chrome.permissions.request() for live updates. The toggle's own
+   * autosave handler awaits this before persisting, otherwise `contains()`
+   * runs while the prompt is still open and saves the field as disabled.
+   * @type {Promise<boolean>|null}
+   */
+  let liveUpdatesPermissionPromise = null;
+
+  /**
+   * Live updates fetches github.tig.pw, which is an *optional* host
+   * permission: request it from the user's toggle gesture and leave the
+   * setting off when they decline (or the API rejects the request).
+   */
+  function bindLiveUpdatesPermission() {
+    const toggle = document.getElementById('opt-live-updates');
+    if (!toggle) return;
+    toggle.addEventListener('change', () => {
+      if (!toggle.checked) {
+        liveUpdatesPermissionPromise = null;
+        return;
+      }
+      const origins = ['https://github.tig.pw/*'];
+      // Called synchronously from the change event, so the user gesture is
+      // still active; resolves true without a prompt when already granted.
+      liveUpdatesPermissionPromise = chrome.permissions.request({ origins })
+        .catch(() => false)
+        .then(granted => {
+          if (!granted) {
+            toggle.checked = false;
+            showStatus('Live updates stay off without access to github.tig.pw', 'warning');
+          }
+          return granted;
+        });
+    });
   }
 
   /** Attach change-event listeners to global-settings form fields so each change auto-saves. */
@@ -84,6 +121,25 @@
       config.globalSettings.excludedRepos = document.getElementById('opt-excluded-repos').value
         .split('\n').map(s => s.trim()).filter(s => s.length > 0);
       config.globalSettings.prowAutoDetect = document.getElementById('opt-prow-autodetect').checked;
+      let liveUpdates = document.getElementById('opt-live-updates').checked;
+      if (liveUpdates) {
+        // Wait for any in-flight permission prompt before deciding; otherwise
+        // contains() runs while the dialog is still open and saves "off".
+        if (liveUpdatesPermissionPromise) {
+          await liveUpdatesPermissionPromise;
+          liveUpdatesPermissionPromise = null;
+          liveUpdates = document.getElementById('opt-live-updates').checked;
+        }
+        if (liveUpdates) {
+          try {
+            liveUpdates = await chrome.permissions.contains({ origins: ['https://github.tig.pw/*'] });
+          } catch (e) {
+            liveUpdates = false;
+          }
+        }
+        if (!liveUpdates) document.getElementById('opt-live-updates').checked = false;
+      }
+      config.globalSettings.liveUpdates = liveUpdates;
       try {
         await saveConfig();
         showStatus('Settings saved', 'success');
@@ -92,7 +148,7 @@
       }
     }
 
-    const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-prow-autodetect', 'opt-theme', 'opt-position', 'opt-pluginfilter', 'opt-excluded-repos'];
+    const fields = ['opt-enabled', 'opt-confirm', 'opt-autosubmit', 'opt-failtests', 'opt-prow-autodetect', 'opt-live-updates', 'opt-theme', 'opt-position', 'opt-pluginfilter', 'opt-excluded-repos'];
     for (const id of fields) {
       const field = document.getElementById(id);
       // Touch browsers can defer `change` on custom-looking checkboxes until
@@ -787,6 +843,7 @@
     return;
   }
   renderGlobalSettings();
+  bindLiveUpdatesPermission();
   bindGlobalSettings();
   await renderGithubToken();
   bindGithubToken();

@@ -317,7 +317,11 @@ GHBCP.ConfigManager = (() => {
       autoSubmit: false,
       pluginFilterMode: 'filter',
       excludedRepos: [],
-      prowAutoDetect: true
+      prowAutoDetect: true,
+      // Opt-in: consume data-only logic updates (selectors, grep patterns,
+      // caps) from the static site built from this repo's live/ directory.
+      // Off by default; see background.js's getLiveLogic handler.
+      liveUpdates: false
     }
   };
 
