@@ -55,12 +55,25 @@ jobs:
 
       - name: Require a version bump when logic changes
         if: github.event_name == 'push'
+        env:
+          BASELINE: ${{ github.event.before }}
         run: |
           # The extension only applies a live document when `version` changes,
           # so pattern/selector edits without a bump would silently never ship.
-          prev=$(git show HEAD^:live/logic.json 2>/dev/null || true)
+          # Compare against the pre-push tip (github.event.before), not HEAD^:
+          # on a multi-commit push HEAD^ is just the previous commit of the
+          # same push, which can already contain the unversioned change.
+          if [ -z "$BASELINE" ] || [ "$BASELINE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No baseline commit (branch creation) — skipping bump check"
+            exit 0
+          fi
+          if ! git fetch --no-tags --depth=1 origin "$BASELINE"; then
+            echo "Could not fetch baseline commit $BASELINE — refusing to deploy without a comparison"
+            exit 1
+          fi
+          prev=$(git show "$BASELINE:live/logic.json" 2>/dev/null || true)
           if [ -z "$prev" ]; then
-            echo "No previous live/logic.json (first deploy) — skipping bump check"
+            echo "No live/logic.json at baseline (first deploy) — skipping bump check"
             exit 0
           fi
           node -e '

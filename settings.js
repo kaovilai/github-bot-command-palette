@@ -57,6 +57,14 @@
   }
 
   /**
+   * Pending chrome.permissions.request() for live updates. The toggle's own
+   * autosave handler awaits this before persisting, otherwise `contains()`
+   * runs while the prompt is still open and saves the field as disabled.
+   * @type {Promise<boolean>|null}
+   */
+  let liveUpdatesPermissionPromise = null;
+
+  /**
    * Live updates fetches github.tig.pw, which is an *optional* host
    * permission: request it from the user's toggle gesture and leave the
    * setting off when they decline (or the API rejects the request).
@@ -64,21 +72,23 @@
   function bindLiveUpdatesPermission() {
     const toggle = document.getElementById('opt-live-updates');
     if (!toggle) return;
-    toggle.addEventListener('change', async () => {
-      if (!toggle.checked) return;
+    toggle.addEventListener('change', () => {
+      if (!toggle.checked) {
+        liveUpdatesPermissionPromise = null;
+        return;
+      }
       const origins = ['https://github.tig.pw/*'];
-      let granted = false;
-      try {
-        // Called synchronously from the change event, so the user gesture is
-        // still active; resolves true without a prompt when already granted.
-        granted = await chrome.permissions.request({ origins });
-      } catch (e) {
-        granted = false;
-      }
-      if (!granted) {
-        toggle.checked = false;
-        showStatus('Live updates stay off without access to github.tig.pw', 'warning');
-      }
+      // Called synchronously from the change event, so the user gesture is
+      // still active; resolves true without a prompt when already granted.
+      liveUpdatesPermissionPromise = chrome.permissions.request({ origins })
+        .catch(() => false)
+        .then(granted => {
+          if (!granted) {
+            toggle.checked = false;
+            showStatus('Live updates stay off without access to github.tig.pw', 'warning');
+          }
+          return granted;
+        });
     });
   }
 
@@ -113,10 +123,19 @@
       config.globalSettings.prowAutoDetect = document.getElementById('opt-prow-autodetect').checked;
       let liveUpdates = document.getElementById('opt-live-updates').checked;
       if (liveUpdates) {
-        try {
-          liveUpdates = await chrome.permissions.contains({ origins: ['https://github.tig.pw/*'] });
-        } catch (e) {
-          liveUpdates = false;
+        // Wait for any in-flight permission prompt before deciding; otherwise
+        // contains() runs while the dialog is still open and saves "off".
+        if (liveUpdatesPermissionPromise) {
+          await liveUpdatesPermissionPromise;
+          liveUpdatesPermissionPromise = null;
+          liveUpdates = document.getElementById('opt-live-updates').checked;
+        }
+        if (liveUpdates) {
+          try {
+            liveUpdates = await chrome.permissions.contains({ origins: ['https://github.tig.pw/*'] });
+          } catch (e) {
+            liveUpdates = false;
+          }
         }
         if (!liveUpdates) document.getElementById('opt-live-updates').checked = false;
       }
