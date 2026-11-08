@@ -1040,7 +1040,10 @@ test('handleGetLiveLogic: failed attempts advance the TTL so outages are not ret
   assertResultEqual(first, { enabled: true, source: 'error', error: 'HTTP 500' });
   const second = await ctx.handleGetLiveLogic(false, true); // not forced
   assertResultEqual(second, { enabled: true, source: 'cache' });
-  assert.equal(ctx.fetch.calls.length, 1);
+  // Both LIVE_LOGIC_URLS are tried per attempt now (failover), and the stub
+  // repeats its single 500 response — so one attempt = two fetches, and the
+  // unforced second attempt is still served from the TTL cache.
+  assert.equal(ctx.fetch.calls.length, 2);
 });
 
 test('handleGetLiveLogic: keeps the last good logic on parse and network failures', async () => {
@@ -1066,3 +1069,81 @@ test('handleGetLiveLogic: keeps the last good logic on parse and network failure
   assert.equal(result.logic.version, 2);
 });
 
+
+// ── fetchLiveLogic URL failover ───────────────────────────────────────────────
+// The live-logic document is served from two candidate Pages URLs. A failure
+// on the first (network error, HTTP error) must fall through to the second
+// before the fetch is declared failed — the first URL bailing out early
+// meant a transient DNS/TLS failure on one layout disabled live updates
+// even though the other URL was never tried.
+
+function liveLogicHarness({ responses, stored }) {
+  // The stripped background.js above ran in `ctx` without fetch/chrome;
+  // globals are looked up dynamically at call time, so stubs can be attached
+  // to the same context object now.
+  let call = 0;
+  const writes = [];
+  ctx.fetch = async () => {
+    const r = responses[Math.min(call, responses.length - 1)];
+    call++;
+    if (typeof r === 'string') throw new Error(r);
+    return r;
+  };
+  ctx.chrome = {
+    runtime: {},
+    storage: {
+      local: {
+        get: (keys, cb) => cb(stored || {}),
+        set: (items, cb) => { writes.push(items); cb && cb(); }
+      }
+    }
+  };
+  return ctx.fetchLiveLogic(false).then(result => ({ result, writes, fetches: call }));
+}
+
+test('fetchLiveLogic: a network error on the first URL falls through to the second', async () => {
+  const { result, fetches } = await liveLogicHarness({
+    responses: [
+      'dns failure',
+      { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"version":2,"notes":"hi"}' }
+    ]
+  });
+  assert.equal(fetches, 2, 'both LIVE_LOGIC_URLS should have been tried');
+  assert.equal(result.enabled, true);
+  assert.equal(result.source, 'network');
+  assert.equal(result.logic.version, 2);
+});
+
+test('fetchLiveLogic: an HTTP error on the first URL falls through to the second', async () => {
+  const { result, fetches } = await liveLogicHarness({
+    responses: [
+      { ok: false, status: 503, headers: { get: () => null }, text: async () => '' },
+      { ok: true, status: 200, headers: { get: () => '"etag-1"' }, text: async () => '{"version":3}' }
+    ]
+  });
+  assert.equal(fetches, 2);
+  assert.equal(result.source, 'network');
+  assert.equal(result.logic.version, 3);
+});
+
+test('fetchLiveLogic: every URL failing reports the last error and serves no logic', async () => {
+  const { result, fetches } = await liveLogicHarness({
+    responses: ['timeout', 'dns failure']
+  });
+  assert.equal(fetches, 2);
+  assert.equal(result.source, 'error');
+  assert.equal(result.error, 'network-error');
+  assert.equal(result.logic, null);
+});
+
+test('fetchLiveLogic: an unparseable (but HTTP-200) response on the first URL falls through to the second', async () => {
+  const { result, fetches } = await liveLogicHarness({
+    responses: [
+      { ok: true, status: 200, headers: { get: () => null }, text: async () => '{not json' },
+      { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"version":4}' }
+    ]
+  });
+  assert.equal(fetches, 2);
+  assert.equal(result.source, 'network');
+  assert.equal(result.logic.version, 4);
+});

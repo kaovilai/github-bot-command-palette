@@ -28,36 +28,3 @@ This is a Manifest V3 Chrome extension with no bundler — every JS file is load
 **Testing without a browser**: the unit tests don't `require()` the source files as CommonJS modules (they aren't — these are browser globals scripts with no `module.exports`). Instead each test file `fs.readFileSync`s the source and runs it inside a `vm.createContext` with hand-stubbed `chrome`/`document`/`window` globals. When a function needs to be unit-tested, prefer keeping it a pure, dependency-free top-level function (like the `parse*`/`compute*` helpers in `content.js`) so it stays trivial to exercise this way.
 
 **Debugging the extension live**: when using chrome-devtools MCP to drive a browser, that's for debugging the extension's own injected UI/behavior on a GitHub PR page — not for investigating CI/Prow test failures on the repos the PR pages happen to belong to.
-
-## Backlog task history
-
-`backlog/tasks/` holds this repo's implementation history as Backlog.md tasks (e.g. content.js splitting, dedup cleanups, rehearsal-picker fixes) — worth checking before assuming a piece of functionality hasn't been considered yet.
-
-<!-- BACKLOG.MD MCP GUIDELINES START -->
-
-<CRITICAL_INSTRUCTION>
-
-## BACKLOG WORKFLOW INSTRUCTIONS
-
-This project uses Backlog.md MCP for all task and project management activities.
-
-**CRITICAL GUIDANCE**
-
-- If your client supports MCP resources, read `backlog://workflow/overview` to understand when and how to use Backlog for this project.
-- If your client only supports tools or the above request fails, call `backlog.get_backlog_instructions()` to load the tool-oriented overview. Use the `instruction` selector when you need `task-creation`, `task-execution`, or `task-finalization`.
-
-- **First time working here?** Read the overview resource IMMEDIATELY to learn the workflow
-- **Already familiar?** You should have the overview cached ("## Backlog.md Overview (MCP)")
-- **When to read it**: BEFORE creating tasks, or when you're unsure whether to track work
-
-These guides cover:
-- Decision framework for when to create tasks
-- Search-first workflow to avoid duplicates
-- Links to detailed guides for task creation, execution, and finalization
-- MCP tools reference
-
-You MUST read the overview resource to understand the complete workflow. The information is NOT summarized here.
-
-</CRITICAL_INSTRUCTION>
-
-<!-- BACKLOG.MD MCP GUIDELINES END -->

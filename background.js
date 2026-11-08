@@ -677,21 +677,39 @@ async function fetchLiveLogic(force) {
         lastError = 'HTTP 404';
         continue; // try the other Pages layout
       }
-      if (!resp.ok) return liveLogicFailure(cached, `HTTP ${resp.status}`);
+      // Any other fetch failure (HTTP error, network error) also falls
+      // through to the other Pages layout before giving up — the two URLs
+      // exist precisely because the document may live at either one.
+      if (!resp.ok) {
+        lastError = `HTTP ${resp.status}`;
+        continue;
+      }
       const text = await resp.text();
-      if (text.length > 256 * 1024) return liveLogicFailure(cached, 'too-large');
+      // Content-level failures (too large, unparseable, wrong shape) fall
+      // through to the other Pages layout too — a garbage-but-200 response
+      // from one layout (e.g. a bad deploy) must not disable live updates
+      // while the other URL is healthy.
+      if (text.length > 256 * 1024) {
+        lastError = 'too-large';
+        continue;
+      }
       let logic;
       try {
         logic = JSON.parse(text);
       } catch (e) {
-        return liveLogicFailure(cached, 'invalid-json');
+        lastError = 'invalid-json';
+        continue;
       }
-      if (!logic || typeof logic !== 'object' || Array.isArray(logic)) return liveLogicFailure(cached, 'invalid-shape');
+      if (!logic || typeof logic !== 'object' || Array.isArray(logic)) {
+        lastError = 'invalid-shape';
+        continue;
+      }
       const next = { etag: resp.headers.get('etag') || null, url, logic, checkedAt: now };
       await storageSet('local', LIVE_LOGIC_CACHE_KEY, next).catch(() => {});
       return { enabled: true, logic, checkedAt: now, source: 'network' };
     } catch (e) {
-      return liveLogicFailure(cached, 'network-error');
+      lastError = 'network-error';
+      continue;
     }
   }
   return liveLogicFailure(cached, lastError);

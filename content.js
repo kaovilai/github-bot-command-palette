@@ -420,6 +420,28 @@ function buildJoinedCommandText(template, names, joinMode) {
   return null;
 }
 
+// GHBCP's own focusable overlays. While any of these is open, keyboard
+// shortcuts must not fire: the text modal (failure log / Claude analysis)
+// puts focus on its close button — a plain <button>, so the editable-target
+// guard alone doesn't help — and pressing e.g. Alt+L while reading a failure
+// log would post /lgtm to the PR mid-read.
+const GHBCP_OVERLAY_SELECTOR = '.ghbcp-popover, .ghbcp-job-picker, .ghbcp-text-modal-overlay';
+
+/**
+ * Decide whether a keyboard shortcut should be handled for `e`. False when
+ * the event targets editable page UI (GitHub's inputs/textareas/content
+ * editables) or when any GHBCP dialog/modal is open (see
+ * GHBCP_OVERLAY_SELECTOR). Pure function, no chrome/DOM globals touched.
+ * @param {KeyboardEvent} e
+ * @param {boolean} overlayOpen - Whether an element matching GHBCP_OVERLAY_SELECTOR exists.
+ * @returns {boolean}
+ */
+function shouldHandleShortcutKey(e, overlayOpen) {
+  const t = e && e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return false;
+  return !overlayOpen;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -1009,11 +1031,14 @@ function buildJoinedCommandText(template, names, joinMode) {
 
   /**
    * Open a full-text modal (scrollable body, X to close) titled `title`.
-   * Dismisses on Escape, backdrop click, or the close button.
+   * Dismisses on Escape, backdrop click, or the close button. Focus returns
+   * to the element that had it when the modal opened (same guard as
+   * createDialogCloser: only when focus hasn't moved elsewhere on purpose).
    * @param {string} title
    * @returns {HTMLElement} The modal's body element — caller sets .textContent as data arrives.
    */
   function openTextModal(title) {
+    const opener = document.activeElement;
     const overlay = document.createElement('div');
     overlay.className = 'ghbcp-text-modal-overlay';
 
@@ -1045,8 +1070,17 @@ function buildJoinedCommandText(template, names, joinMode) {
     document.body.appendChild(overlay);
 
     function close() {
+      // Capture focus before detaching — after remove() it reports <body>.
+      const active = document.activeElement;
       overlay.remove();
       document.removeEventListener('keydown', onKeydown);
+      // Restore focus only when it still sits in the modal (or nowhere):
+      // the user clicking/backdrop-ing elsewhere has already chosen where
+      // to go. Mirrors createDialogCloser()'s guard.
+      if (opener && opener.isConnected &&
+          (!active || active === document.body || overlay.contains(active))) {
+        opener.focus();
+      }
     }
     function onKeydown(e) {
       if (e.key === 'Escape') close();
@@ -1880,9 +1914,14 @@ function buildJoinedCommandText(template, names, joinMode) {
       }
 
       const order = { failed: 0, pending: 1, passed: 2 };
-      filtered.sort((a, b) => order[a.status] - order[b.status]);
+      // Sort a copy: `filtered` aliases the shared `jobs` array when the
+      // search box is empty, and an in-place sort would scramble the order
+      // the live-status observer and the submit handler's jobsByName map
+      // were built against (and re-sort an already-sorted list on every
+      // keystroke).
+      const sorted = filtered.slice().sort((a, b) => order[a.status] - order[b.status]);
 
-      for (const job of filtered) {
+      for (const job of sorted) {
         const item = document.createElement('div');
         item.className = 'ghbcp-job-picker-item' + (selected.has(job.name) ? ' selected' : '');
         item.dataset.jobName = job.name;
@@ -3014,10 +3053,14 @@ function buildJoinedCommandText(template, names, joinMode) {
 
     requestAnimationFrame(() => toast.classList.add('ghbcp-toast-show'));
 
+    // Pending toasts carry actionable instructions ("Sending X in 2s… click
+    // another to combo it in") tied to a 2s window — at the default 2.5s
+    // they vanish before they can be read, so give them a longer stay.
+    const duration = type === 'pending' ? 4000 : 2500;
     setTimeout(() => {
       toast.classList.remove('ghbcp-toast-show');
       setTimeout(() => toast.remove(), 300);
-    }, 2500);
+    }, duration);
   }
 
   /**
@@ -3095,7 +3138,9 @@ function buildJoinedCommandText(template, names, joinMode) {
 
     if (pluginData) {
       if (pluginData.cachedAt) {
-        const ago = Math.round((Date.now() - pluginData.cachedAt) / 60000);
+        // Clamped at 0: clock skew (or a cache written by a machine ahead of
+        // this one) would otherwise render "cached -3 min ago".
+        const ago = Math.max(0, Math.round((Date.now() - pluginData.cachedAt) / 60000));
         const refreshBtn = document.createElement('button');
         refreshBtn.type = 'button';
         refreshBtn.className = 'ghbcp-refresh-btn';
@@ -3151,10 +3196,12 @@ function buildJoinedCommandText(template, names, joinMode) {
   }
 
   /**
-   * Inject (or replace) the global command bar above the PR comment textarea.
-   * The bar contains one button group per matching profile plus an optional
-   * "Repo Overrides" group.  Falls back to the discussion timeline or `<body>`
-   * when the comment form container is not found.
+   * Inject (or replace) the global command bar next to the PR comment textarea,
+   * above it by default or below it when globalSettings.buttonPosition is
+   * 'below-comment-box'. The bar contains one button group per matching
+   * profile plus an optional "Repo Overrides" group. Falls back to the
+   * discussion timeline or `<body>` when the comment form container is not
+   * found.
    * @param {Object[]} profiles      - Matched, enabled profile objects.
    * @param {Object[]} extraCommands - Additional commands from repo overrides.
    */
@@ -3182,7 +3229,14 @@ function buildJoinedCommandText(template, names, joinMode) {
                         textarea.closest('form') ||
                         textarea.parentElement;
       if (container) {
-        container.insertBefore(bar, container.firstChild);
+        if (config.globalSettings.buttonPosition === 'below-comment-box') {
+          // A sibling *after* the form keeps the bar out of the form's own
+          // layout (its action row, flex wrappers) while still visually
+          // attached to the comment box.
+          container.parentElement.insertBefore(bar, container.nextSibling);
+        } else {
+          container.insertBefore(bar, container.firstChild);
+        }
         return;
       }
     }
@@ -3479,14 +3533,13 @@ function buildJoinedCommandText(template, names, joinMode) {
 
   /**
    * Handle a keyboard shortcut event. Ignores events targeting text inputs or
-   * any active GHBCP overlay (job picker / input popover) to prevent accidental
-   * command posting while the user is interacting with the extension's own UI.
+   * any active GHBCP overlay (job picker / input popover / text modal) to
+   * prevent accidental command posting while the user is interacting with the
+   * extension's own UI. See shouldHandleShortcutKey().
    * @param {KeyboardEvent} e
    */
   function handleShortcut(e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
-    // Suppress shortcuts when a GHBCP overlay is open to prevent accidental posts
-    if (document.querySelector('.ghbcp-popover, .ghbcp-job-picker')) return;
+    if (!shouldHandleShortcutKey(e, !!document.querySelector(GHBCP_OVERLAY_SELECTOR))) return;
 
     const parts = [];
     if (e.altKey) parts.push('alt');
