@@ -1031,11 +1031,14 @@ function shouldHandleShortcutKey(e, overlayOpen) {
 
   /**
    * Open a full-text modal (scrollable body, X to close) titled `title`.
-   * Dismisses on Escape, backdrop click, or the close button.
+   * Dismisses on Escape, backdrop click, or the close button. Focus returns
+   * to the element that had it when the modal opened (same guard as
+   * createDialogCloser: only when focus hasn't moved elsewhere on purpose).
    * @param {string} title
    * @returns {HTMLElement} The modal's body element — caller sets .textContent as data arrives.
    */
   function openTextModal(title) {
+    const opener = document.activeElement;
     const overlay = document.createElement('div');
     overlay.className = 'ghbcp-text-modal-overlay';
 
@@ -1067,8 +1070,17 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     document.body.appendChild(overlay);
 
     function close() {
+      // Capture focus before detaching — after remove() it reports <body>.
+      const active = document.activeElement;
       overlay.remove();
       document.removeEventListener('keydown', onKeydown);
+      // Restore focus only when it still sits in the modal (or nowhere):
+      // the user clicking/backdrop-ing elsewhere has already chosen where
+      // to go. Mirrors createDialogCloser()'s guard.
+      if (opener && opener.isConnected &&
+          (!active || active === document.body || overlay.contains(active))) {
+        opener.focus();
+      }
     }
     function onKeydown(e) {
       if (e.key === 'Escape') close();

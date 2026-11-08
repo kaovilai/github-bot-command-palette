@@ -267,9 +267,11 @@ test('SPA navigation event listeners are registered for GitHub turbo, pjax, pops
 
 test('handleShortcut suppresses keyboard shortcuts when a GHBCP overlay is open', () => {
   // Prevents accidental slash-command posting while the user interacts with the
-  // job-picker dialog or input popover that the extension itself rendered.
-  assert.match(contentJs, /document\.querySelector\('.ghbcp-popover, .ghbcp-job-picker'\)/);
-  assert.match(contentJs, /if.*document\.querySelector\('.ghbcp-popover, .ghbcp-job-picker'\).*return/s);
+  // job-picker dialog, input popover, or text modal that the extension itself
+  // rendered. The overlay check is centralized in GHBCP_OVERLAY_SELECTOR (see
+  // content-helpers.test.js for its coverage) and consumed via
+  // shouldHandleShortcutKey().
+  assert.match(contentJs, /if \(!shouldHandleShortcutKey\(e, !!document\.querySelector\(GHBCP_OVERLAY_SELECTOR\)\)\) return;/);
 });
 
 test('bar header robot icon has aria-hidden so screen readers skip it', () => {
@@ -372,4 +374,13 @@ test('settings command editor defaults description to command text when left emp
   const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'settings.js'), 'utf8');
   assert.match(settingsJs,
     /getElementById\('cmd-description'\)\.value\.trim\(\) \|\| document\.getElementById\('cmd-command'\)\.value\.trim\(\)/);
+});
+
+test('text modal returns focus to the element that opened it on close', () => {
+  // openTextModal() steals focus to its close button; closing (Escape, X, or
+  // backdrop) must hand it back to the invoking element — otherwise keyboard
+  // users lose their place on the page. Same guard shape as
+  // createDialogCloser(): only when focus never left the modal/body.
+  assert.match(contentJs, /function openTextModal\(title\) \{\s*\n\s*const opener = document\.activeElement;/);
+  assert.match(contentJs, /if \(opener && opener\.isConnected &&\s*\n\s*\(!active \|\| active === document\.body \|\| overlay\.contains\(active\)\)\) \{\s*\n\s*opener\.focus\(\);/);
 });
