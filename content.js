@@ -3185,10 +3185,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }
 
   /**
-   * Inject (or replace) the global command bar above the PR comment textarea.
-   * The bar contains one button group per matching profile plus an optional
-   * "Repo Overrides" group.  Falls back to the discussion timeline or `<body>`
-   * when the comment form container is not found.
+   * Inject (or replace) the global command bar next to the PR comment textarea,
+   * above it by default or below it when globalSettings.buttonPosition is
+   * 'below-comment-box'. The bar contains one button group per matching
+   * profile plus an optional "Repo Overrides" group. Falls back to the
+   * discussion timeline or `<body>` when the comment form container is not
+   * found.
    * @param {Object[]} profiles      - Matched, enabled profile objects.
    * @param {Object[]} extraCommands - Additional commands from repo overrides.
    */
@@ -3216,7 +3218,14 @@ function shouldHandleShortcutKey(e, overlayOpen) {
                         textarea.closest('form') ||
                         textarea.parentElement;
       if (container) {
-        container.insertBefore(bar, container.firstChild);
+        if (config.globalSettings.buttonPosition === 'below-comment-box') {
+          // A sibling *after* the form keeps the bar out of the form's own
+          // layout (its action row, flex wrappers) while still visually
+          // attached to the comment box.
+          container.parentElement.insertBefore(bar, container.nextSibling);
+        } else {
+          container.insertBefore(bar, container.firstChild);
+        }
         return;
       }
     }

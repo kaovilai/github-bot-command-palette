@@ -49,7 +49,12 @@
     document.getElementById('opt-autosubmit').checked = gs.autoSubmit || false;
     document.getElementById('opt-failtests').checked = gs.showOnlyFailedTests;
     document.getElementById('opt-theme').value = gs.theme;
-    document.getElementById('opt-position').value = gs.buttonPosition;
+    // 'floating' and 'inline-with-checks' were never implemented (the bar was
+    // always injected above the comment box); map any unimplemented stored
+    // value to the default so the select never sits blank — a blank select
+    // would save '' back on the next unrelated settings change.
+    document.getElementById('opt-position').value =
+      gs.buttonPosition === 'below-comment-box' ? 'below-comment-box' : 'above-comment-box';
     document.getElementById('opt-pluginfilter').value = gs.pluginFilterMode || 'disabled';
     document.getElementById('opt-excluded-repos').value = (gs.excludedRepos || []).join('\n');
     document.getElementById('opt-prow-autodetect').checked = gs.prowAutoDetect !== false;
