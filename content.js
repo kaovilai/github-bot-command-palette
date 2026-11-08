@@ -1914,9 +1914,14 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       }
 
       const order = { failed: 0, pending: 1, passed: 2 };
-      filtered.sort((a, b) => order[a.status] - order[b.status]);
+      // Sort a copy: `filtered` aliases the shared `jobs` array when the
+      // search box is empty, and an in-place sort would scramble the order
+      // the live-status observer and the submit handler's jobsByName map
+      // were built against (and re-sort an already-sorted list on every
+      // keystroke).
+      const sorted = filtered.slice().sort((a, b) => order[a.status] - order[b.status]);
 
-      for (const job of filtered) {
+      for (const job of sorted) {
         const item = document.createElement('div');
         item.className = 'ghbcp-job-picker-item' + (selected.has(job.name) ? ' selected' : '');
         item.dataset.jobName = job.name;

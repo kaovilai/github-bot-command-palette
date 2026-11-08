@@ -384,3 +384,13 @@ test('text modal returns focus to the element that opened it on close', () => {
   assert.match(contentJs, /function openTextModal\(title\) \{\s*\n\s*const opener = document\.activeElement;/);
   assert.match(contentJs, /if \(opener && opener\.isConnected &&\s*\n\s*\(!active \|\| active === document\.body \|\| overlay\.contains\(active\)\)\) \{\s*\n\s*opener\.focus\(\);/);
 });
+
+test('job picker renders from a sorted copy, never mutating the shared jobs array', () => {
+  // renderJobs()'s `filtered` aliases the shared `jobs` array whenever the
+  // search box is empty; an in-place .sort() would scramble the list the
+  // live-status observer and the submit handler's jobsByName map were built
+  // against.
+  assert.match(contentJs, /const sorted = filtered\.slice\(\)\.sort\(/);
+  assert.match(contentJs, /for \(const job of sorted\) \{/);
+  assert.doesNotMatch(contentJs, /for \(const job of filtered\) \{/);
+});
