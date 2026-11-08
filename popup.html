@@ -15,6 +15,17 @@
         --text-muted: #8b949e; --primary: #58a6ff; --success: #3fb950;
       }
     }
+    /* The Theme setting ('auto' | 'light' | 'dark') sets data-theme on <html>
+       from popup.js (settings.html carries the same blocks). An explicit
+       choice outranks the OS preference; 'auto' removes the attribute. */
+    html[data-theme='light'] {
+      --bg: #ffffff; --bg2: #f6f8fa; --border: #d0d7de; --text: #1f2328;
+      --text-muted: #656d76; --primary: #0969da; --success: #1a7f37;
+    }
+    html[data-theme='dark'] {
+      --bg: #0d1117; --bg2: #161b22; --border: #30363d; --text: #e6edf3;
+      --text-muted: #8b949e; --primary: #58a6ff; --success: #3fb950;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;

@@ -20,6 +20,15 @@
   }
 
   const config = await CM.getConfig();
+  // Follow the Theme setting ('auto' | 'light' | 'dark'): popup.html's
+  // html[data-theme=…] CSS blocks rank above its prefers-color-scheme media
+  // query, so an explicit choice wins; 'auto'/unknown clears the attribute.
+  {
+    const theme = config && config.globalSettings && config.globalSettings.theme;
+    const value = theme === 'light' || theme === 'dark' ? theme : '';
+    if (value) document.documentElement.dataset.theme = value;
+    else delete document.documentElement.dataset.theme;
+  }
   if (!config) {
     contentDiv.innerHTML = '<div class="repo-info"><span class="no-pr">No configuration found. Open settings to initialize.</span></div>';
     addTapListener(document.getElementById('open-settings'), () => {

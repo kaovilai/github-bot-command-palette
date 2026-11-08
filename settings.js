@@ -41,6 +41,19 @@
     if (type !== 'error') _statusTimer = setTimeout(() => { el.className = 'status'; }, 3000);
   }
 
+  /**
+   * Apply the Theme setting to this extension page: 'light'/'dark' set
+   * data-theme on <html>, which the page's `html[data-theme=…]` CSS blocks
+   * rank above the prefers-color-scheme media query; 'auto' (or any unknown
+   * value) removes the attribute so the OS preference applies.
+   * @param {string} theme - Stored globalSettings.theme value.
+   */
+  function applyThemeSetting(theme) {
+    const value = theme === 'light' || theme === 'dark' ? theme : '';
+    if (value) document.documentElement.dataset.theme = value;
+    else delete document.documentElement.dataset.theme;
+  }
+
   /** Populate the global-settings form fields from the current config. */
   function renderGlobalSettings() {
     const gs = config.globalSettings;
@@ -49,6 +62,7 @@
     document.getElementById('opt-autosubmit').checked = gs.autoSubmit || false;
     document.getElementById('opt-failtests').checked = gs.showOnlyFailedTests;
     document.getElementById('opt-theme').value = gs.theme;
+    applyThemeSetting(gs.theme);
     // 'floating' and 'inline-with-checks' were never implemented (the bar was
     // always injected above the comment box); map any unimplemented stored
     // value to the default so the select never sits blank — a blank select
@@ -121,6 +135,8 @@
       config.globalSettings.autoSubmit = document.getElementById('opt-autosubmit').checked;
       config.globalSettings.showOnlyFailedTests = document.getElementById('opt-failtests').checked;
       config.globalSettings.theme = document.getElementById('opt-theme').value;
+      // Live-apply: the settings page itself follows its own Theme setting.
+      applyThemeSetting(config.globalSettings.theme);
       config.globalSettings.buttonPosition = document.getElementById('opt-position').value;
       config.globalSettings.pluginFilterMode = document.getElementById('opt-pluginfilter').value;
       config.globalSettings.excludedRepos = document.getElementById('opt-excluded-repos').value
