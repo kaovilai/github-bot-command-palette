@@ -677,7 +677,13 @@ async function fetchLiveLogic(force) {
         lastError = 'HTTP 404';
         continue; // try the other Pages layout
       }
-      if (!resp.ok) return liveLogicFailure(cached, `HTTP ${resp.status}`);
+      // Any other fetch failure (HTTP error, network error) also falls
+      // through to the other Pages layout before giving up — the two URLs
+      // exist precisely because the document may live at either one.
+      if (!resp.ok) {
+        lastError = `HTTP ${resp.status}`;
+        continue;
+      }
       const text = await resp.text();
       if (text.length > 256 * 1024) return liveLogicFailure(cached, 'too-large');
       let logic;
@@ -691,7 +697,8 @@ async function fetchLiveLogic(force) {
       await storageSet('local', LIVE_LOGIC_CACHE_KEY, next).catch(() => {});
       return { enabled: true, logic, checkedAt: now, source: 'network' };
     } catch (e) {
-      return liveLogicFailure(cached, 'network-error');
+      lastError = 'network-error';
+      continue;
     }
   }
   return liveLogicFailure(cached, lastError);
