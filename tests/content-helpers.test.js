@@ -26,7 +26,7 @@ const snippet = contentJs.slice(startIdx, endIdx);
 
 const ctx = {};
 vm.runInNewContext(snippet, ctx);
-const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch, buildJoinedCommandText, extractErrorLines, sanitizeLiveLogic } = ctx;
+const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch, buildJoinedCommandText, extractErrorLines, sanitizeLiveLogic, shouldHandleShortcutKey } = ctx;
 assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds should have been extracted');
 assert.equal(typeof parseRehearsalCheckContext, 'function', 'parseRehearsalCheckContext should have been extracted');
 assert.equal(typeof computePresubmitContextShortName, 'function', 'computePresubmitContextShortName should have been extracted');
@@ -35,6 +35,7 @@ assert.equal(typeof matchesJobSearch, 'function', 'matchesJobSearch should have 
 assert.equal(typeof buildJoinedCommandText, 'function', 'buildJoinedCommandText should have been extracted');
 assert.equal(typeof extractErrorLines, 'function', 'extractErrorLines should have been extracted');
 assert.equal(typeof sanitizeLiveLogic, 'function', 'sanitizeLiveLogic should have been extracted');
+assert.equal(typeof shouldHandleShortcutKey, 'function', 'shouldHandleShortcutKey should have been extracted');
 
 // assert.deepEqual/deepStrictEqual also compares prototypes — an object
 // returned from code run in a *different* vm context has a different
@@ -442,4 +443,38 @@ test('sanitizeLiveLogic: rejects non-objects and returns null when nothing usabl
   assert.equal(sanitizeLiveLogic('nope'), null);
   assert.equal(sanitizeLiveLogic({ evil: 1 }), null);
   assert.equal(sanitizeLiveLogic({ errorLinePatterns: [] }), null);
+});
+
+// ── shouldHandleShortcutKey ──────────────────────────────────────────────────
+
+test('shouldHandleShortcutKey: false while focus is in editable page UI', () => {
+  assert.equal(shouldHandleShortcutKey({ target: { tagName: 'INPUT' } }, false), false);
+  assert.equal(shouldHandleShortcutKey({ target: { tagName: 'TEXTAREA' } }, false), false);
+  assert.equal(shouldHandleShortcutKey({ target: { tagName: 'DIV', isContentEditable: true } }, false), false);
+});
+
+test('shouldHandleShortcutKey: false while any GHBCP overlay is open, even from a non-editable target', () => {
+  // The text modal's close button is a plain <button> with focus — without
+  // the overlay check, Alt+L while reading a failure log would post /lgtm.
+  assert.equal(shouldHandleShortcutKey({ target: { tagName: 'BUTTON' } }, true), false);
+  assert.equal(shouldHandleShortcutKey({ target: { tagName: 'BODY' } }, true), false);
+});
+
+test('shouldHandleShortcutKey: true for a normal page target with no overlay open', () => {
+  assert.equal(shouldHandleShortcutKey({ target: { tagName: 'BUTTON' } }, false), true);
+  assert.equal(shouldHandleShortcutKey({ target: { tagName: 'BODY' } }, false), true);
+});
+
+test('GHBCP_OVERLAY_SELECTOR covers every focusable GHBCP dialog, including the text modal', () => {
+  // Top-level consts don't attach to the vm context object (only function
+  // declarations do), so assert the selector's shape against the source.
+  const m = contentJs.match(/const GHBCP_OVERLAY_SELECTOR = '([^']+)';/);
+  assert.ok(m, 'GHBCP_OVERLAY_SELECTOR should be defined as a string constant');
+  assert.ok(m[1].includes('.ghbcp-popover'));
+  assert.ok(m[1].includes('.ghbcp-job-picker')); // also covers the payload picker
+  assert.ok(m[1].includes('.ghbcp-text-modal-overlay'));
+});
+
+test('handleShortcut routes through shouldHandleShortcutKey with the overlay selector', () => {
+  assert.match(contentJs, /shouldHandleShortcutKey\(e, !!document\.querySelector\(GHBCP_OVERLAY_SELECTOR\)\)/);
 });

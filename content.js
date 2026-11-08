@@ -420,6 +420,28 @@ function buildJoinedCommandText(template, names, joinMode) {
   return null;
 }
 
+// GHBCP's own focusable overlays. While any of these is open, keyboard
+// shortcuts must not fire: the text modal (failure log / Claude analysis)
+// puts focus on its close button — a plain <button>, so the editable-target
+// guard alone doesn't help — and pressing e.g. Alt+L while reading a failure
+// log would post /lgtm to the PR mid-read.
+const GHBCP_OVERLAY_SELECTOR = '.ghbcp-popover, .ghbcp-job-picker, .ghbcp-text-modal-overlay';
+
+/**
+ * Decide whether a keyboard shortcut should be handled for `e`. False when
+ * the event targets editable page UI (GitHub's inputs/textareas/content
+ * editables) or when any GHBCP dialog/modal is open (see
+ * GHBCP_OVERLAY_SELECTOR). Pure function, no chrome/DOM globals touched.
+ * @param {KeyboardEvent} e
+ * @param {boolean} overlayOpen - Whether an element matching GHBCP_OVERLAY_SELECTOR exists.
+ * @returns {boolean}
+ */
+function shouldHandleShortcutKey(e, overlayOpen) {
+  const t = e && e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return false;
+  return !overlayOpen;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -3479,14 +3501,13 @@ function buildJoinedCommandText(template, names, joinMode) {
 
   /**
    * Handle a keyboard shortcut event. Ignores events targeting text inputs or
-   * any active GHBCP overlay (job picker / input popover) to prevent accidental
-   * command posting while the user is interacting with the extension's own UI.
+   * any active GHBCP overlay (job picker / input popover / text modal) to
+   * prevent accidental command posting while the user is interacting with the
+   * extension's own UI. See shouldHandleShortcutKey().
    * @param {KeyboardEvent} e
    */
   function handleShortcut(e) {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
-    // Suppress shortcuts when a GHBCP overlay is open to prevent accidental posts
-    if (document.querySelector('.ghbcp-popover, .ghbcp-job-picker')) return;
+    if (!shouldHandleShortcutKey(e, !!document.querySelector(GHBCP_OVERLAY_SELECTOR))) return;
 
     const parts = [];
     if (e.altKey) parts.push('alt');
