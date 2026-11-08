@@ -3053,10 +3053,14 @@ function shouldHandleShortcutKey(e, overlayOpen) {
 
     requestAnimationFrame(() => toast.classList.add('ghbcp-toast-show'));
 
+    // Pending toasts carry actionable instructions ("Sending X in 2s… click
+    // another to combo it in") tied to a 2s window — at the default 2.5s
+    // they vanish before they can be read, so give them a longer stay.
+    const duration = type === 'pending' ? 4000 : 2500;
     setTimeout(() => {
       toast.classList.remove('ghbcp-toast-show');
       setTimeout(() => toast.remove(), 300);
-    }, 2500);
+    }, duration);
   }
 
   /**
@@ -3134,7 +3138,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
 
     if (pluginData) {
       if (pluginData.cachedAt) {
-        const ago = Math.round((Date.now() - pluginData.cachedAt) / 60000);
+        // Clamped at 0: clock skew (or a cache written by a machine ahead of
+        // this one) would otherwise render "cached -3 min ago".
+        const ago = Math.max(0, Math.round((Date.now() - pluginData.cachedAt) / 60000));
         const refreshBtn = document.createElement('button');
         refreshBtn.type = 'button';
         refreshBtn.className = 'ghbcp-refresh-btn';

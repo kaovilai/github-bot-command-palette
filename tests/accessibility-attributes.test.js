@@ -394,3 +394,19 @@ test('job picker renders from a sorted copy, never mutating the shared jobs arra
   assert.match(contentJs, /for \(const job of sorted\) \{/);
   assert.doesNotMatch(contentJs, /for \(const job of filtered\) \{/);
 });
+
+test('pending-combo toasts outlive the combo window they describe', () => {
+  // The pending toast says "Sending X in 2s… click another to combo it in" —
+  // at the default 2.5s it disappears almost as the window closes. It must
+  // use a longer duration than the other toast types.
+  assert.match(contentJs, /const duration = type === 'pending' \? 4000 : 2500;/);
+  assert.match(contentJs, /\}, duration\);/);
+});
+
+test('cached-plugin ages are clamped at zero in both the bar header and the popup', () => {
+  // Clock skew between the machine that wrote the cache and this one would
+  // otherwise render "cached -3 min ago".
+  assert.match(contentJs, /Math\.max\(0, Math\.round\(\(Date\.now\(\) - pluginData\.cachedAt\) \/ 60000\)\)/);
+  const popupJs = fs.readFileSync(path.resolve(__dirname, '..', 'popup.js'), 'utf8');
+  assert.match(popupJs, /Math\.max\(0, Math\.round\(\(Date\.now\(\) - pluginResp\.cachedAt\) \/ 60000\)\)/);
+});

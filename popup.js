@@ -106,7 +106,7 @@
       try {
         const pluginResp = await chrome.runtime.sendMessage({ action: 'getEnabledPlugins', repo: repoName });
         if (pluginResp && pluginResp.plugins) {
-          const ago = pluginResp.cachedAt ? Math.round((Date.now() - pluginResp.cachedAt) / 60000) : '?';
+          const ago = pluginResp.cachedAt ? Math.max(0, Math.round((Date.now() - pluginResp.cachedAt) / 60000)) : '?';
           html += `<div class="plugin-status">
             Plugin config: ${pluginResp.plugins.length} plugins enabled (cached ${ago}m ago)
             ${pluginResp.configFileUrl ? ` · <a href="${esc(pluginResp.configFileUrl)}" target="_blank" rel="noopener noreferrer" class="plugin-link" aria-label="Edit plugin config on GitHub">Edit</a>` : ''}
