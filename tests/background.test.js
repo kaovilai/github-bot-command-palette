@@ -1135,3 +1135,15 @@ test('fetchLiveLogic: every URL failing reports the last error and serves no log
   assert.equal(result.error, 'network-error');
   assert.equal(result.logic, null);
 });
+
+test('fetchLiveLogic: an unparseable (but HTTP-200) response on the first URL falls through to the second', async () => {
+  const { result, fetches } = await liveLogicHarness({
+    responses: [
+      { ok: true, status: 200, headers: { get: () => null }, text: async () => '{not json' },
+      { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"version":4}' }
+    ]
+  });
+  assert.equal(fetches, 2);
+  assert.equal(result.source, 'network');
+  assert.equal(result.logic.version, 4);
+});
