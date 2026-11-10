@@ -2904,6 +2904,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         waitForPostToClear(textarea, finalButtons, 20);
       } else {
         showToast(`Filled: ${finalText} (submit manually)`, 'warning');
+        // The post didn't go through, so the text still in the box is the
+        // user's draft again — not an uncleared post. Drop the guard so a
+        // follow-up click snapshots it as a draft instead of wiping it.
+        lastSubmittedText = '';
         clearPendingButtons(finalButtons);
       }
     };
@@ -2924,7 +2928,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    */
   function waitForPostToClear(textarea, buttons, attemptsLeft) {
     if (!textarea.isConnected || textarea.value === '' || attemptsLeft <= 0) {
-      if (!textarea.isConnected || textarea.value === '') lastSubmittedText = '';
+      // Stop watching: either the post landed (box emptied / dialog gone) or
+      // we gave up with text still in the box — which means the post never
+      // went through and that text is a draft again. Either way the
+      // lastSubmittedText guard must not outlive the watch, or a follow-up
+      // click would misread a stranded draft as an uncleared post and wipe it.
+      lastSubmittedText = '';
       clearPendingButtons(buttons);
       return;
     }
