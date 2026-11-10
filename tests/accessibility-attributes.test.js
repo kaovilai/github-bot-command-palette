@@ -16,7 +16,10 @@ test('content script adds accessibility attributes for injected picker and popov
   assert.match(contentJs, /picker\.setAttribute\('role', 'dialog'\)/);
   assert.match(contentJs, /picker\.setAttribute\('aria-label', 'Select CI jobs to run'\)/);
   assert.match(contentJs, /searchInput\.setAttribute\('aria-label', 'Search CI jobs'\)/);
-  assert.match(contentJs, /cb\.setAttribute\('aria-label', `\$\{job\.name\} \(\$\{job\.status \|\| 'unknown'\}\)`\)/);
+  assert.match(contentJs, /cb\.setAttribute\('aria-label', `\$\{job\.name\} \(\$\{job\.status \|\| 'unknown'\}`/);
+  // Overridden jobs announce why they look green, so a screen reader user can
+  // tell them apart from a genuine pass.
+  assert.match(contentJs, /overridden by \$\{job\.overriddenBy\}/);
   assert.match(contentJs, /dot\.setAttribute\('aria-hidden', 'true'\)/);
   assert.match(contentJs, /popover\.setAttribute\('role', 'dialog'\)/);
   assert.match(contentJs, /popover\.setAttribute\('aria-label', command\.label \|\| command\.command \|\| 'Command input'\)/);
@@ -254,6 +257,41 @@ test('getCheckStatus maps cancelled and stale conclusions to pending (not passed
   assert.match(contentJs, /\[data-conclusion="stale"\]/);
   // Both must appear in the pending selector (same querySelector call as [data-conclusion="pending"])
   assert.match(contentJs, /\[data-conclusion="pending"\].*\[data-conclusion="cancelled"\].*\[data-conclusion="stale"\]|isPending.*cancelled.*stale/s);
+});
+
+test('overridden checks stay actionable despite showOnlyFailedTests', () => {
+  // Prow's override plugin marks the context green, so the default
+  // failed/pending-only filter would hide exactly the row a user wants to
+  // retrigger once base carries the known CI fix.
+  assert.match(contentJs, /showOnlyFailedTests && status === 'passed' && !overriddenBy/);
+  assert.match(contentJs, /const overriddenBy = getCheckOverriddenBy\(row\)/);
+  // Detection falls back across textContent, the link title and aria-label —
+  // any one of them may be the only place a UI revision renders the marker.
+  assert.match(contentJs, /parseOverrideDescription\(element\.getAttribute\('aria-label'\)\)/);
+  // The inline button says Retest on such a row, and no second Override
+  // button is offered (the context is already overridden).
+  assert.match(contentJs, /label: overriddenBy \? 'Retest' : 'Test'/);
+  assert.match(contentJs, /if \(!overriddenBy\) \{/);
+});
+
+test('job picker highlights and badges previously overridden jobs', () => {
+  assert.match(contentJs, /ghbcp-job-picker-item-overridden/);
+  assert.match(contentJs, /ghbcp-job-badge-overridden/);
+  assert.match(contentJs, /sortRank = job => \(job\.overriddenBy \? 1\.5 : order\[job\.status\]\)/);
+  assert.match(stylesCss, /\.ghbcp-job-picker-item-overridden/);
+  assert.match(stylesCss, /\.ghbcp-job-badge-overridden/);
+});
+
+test('inline check controls repaint on in-place override/status changes', () => {
+  // The checks-section observer must watch the same inputs detection reads
+  // (characterData + title/aria-label), and repaint only the rows — a full
+  // inject() would rebuild the command bar and close an open job picker.
+  assert.match(contentJs, /function observeCheckRowStates\(target\)/);
+  assert.match(contentJs, /characterData: true/);
+  assert.match(contentJs, /attributeFilter: \['class', 'data-conclusion', 'title', 'aria-label'\]/);
+  assert.match(contentJs, /debouncedCheckButtonsRefresh/);
+  assert.match(contentJs, /row\.dataset\.ghbcpOverridden = overriddenBy \|\| ''/);
+  assert.doesNotMatch(contentJs, /debouncedCheckButtonsRefresh[\s\S]{0,400}debouncedInject\(\)/);
 });
 
 test('SPA navigation event listeners are registered for GitHub turbo, pjax, popstate and hashchange', () => {

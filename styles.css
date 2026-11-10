@@ -430,6 +430,26 @@ html[data-color-mode="dark"] {
   background: var(--ghbcp-btn-hover);
 }
 
+/* A check that only shows green because of Prow's /override: the job itself
+   failed, so keep it visible for a later /test once base carries the fix. */
+.ghbcp-job-picker-item-overridden {
+  box-shadow: inset 2px 0 0 var(--ghbcp-warning);
+}
+
+.ghbcp-job-badge-overridden {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--ghbcp-warning);
+  border-radius: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--ghbcp-warning);
+  background: var(--ghbcp-warning-bg);
+  white-space: nowrap;
+}
+
 .ghbcp-job-dot {
   width: 8px;
   height: 8px;
