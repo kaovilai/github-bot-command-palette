@@ -91,6 +91,25 @@ test('overridden check: inline Retest fills /test and the picker badges it', asy
     const overriddenBox = await overriddenItem.boundingBox();
     const passedBox = await passedItem.boundingBox();
     expect(overriddenBox.y).toBeLessThan(passedBox.y);
+
+    // ── 3. Live refresh while the picker is open ───────────────────────────
+    // Prow re-renders check rows in place. A re-run that replaces the
+    // override description must drop the badge without reopening the picker;
+    // clearing both the description and the aria-label makes the row a clean
+    // pass, so only the observer can notice.
+    const setOverrideMarker = (marker) => page.evaluate((text) => {
+      const row = document.querySelector('li[aria-label^="ci/prow/5.0-virt-kdm-e2e-test-aws"]');
+      const desc = row.querySelector('span[class*="titleDescription"]');
+      desc.textContent = text;
+      row.setAttribute('aria-label',
+        'ci/prow/5.0-virt-kdm-e2e-test-aws' + (text.includes('Overridden') ? ' Overridden by kaovilai' : ''));
+    }, marker);
+
+    await setOverrideMarker(' — Job succeeded.');
+    await expect(badge).toHaveCount(0, { timeout: 5000 });
+
+    await setOverrideMarker(' — Overridden by kaovilai');
+    await expect(badge).toBeVisible({ timeout: 5000 });
   } finally {
     await context.close();
     fs.rmSync(userDataDir, { recursive: true, force: true });
