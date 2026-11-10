@@ -265,6 +265,9 @@ test('overridden checks stay actionable despite showOnlyFailedTests', () => {
   // retrigger once base carries the known CI fix.
   assert.match(contentJs, /showOnlyFailedTests && status === 'passed' && !overriddenBy/);
   assert.match(contentJs, /const overriddenBy = getCheckOverriddenBy\(row\)/);
+  // Detection falls back across textContent, the link title and aria-label —
+  // any one of them may be the only place a UI revision renders the marker.
+  assert.match(contentJs, /parseOverrideDescription\(element\.getAttribute\('aria-label'\)\)/);
   // The inline button says Retest on such a row, and no second Override
   // button is offered (the context is already overridden).
   assert.match(contentJs, /label: overriddenBy \? 'Retest' : 'Test'/);

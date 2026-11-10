@@ -747,9 +747,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * Read Prow's override marker off a check row. GitHub renders an overridden
    * context as green (Prow sets it to success), so status alone can't tell it
    * apart from a real pass; the description text ("Overridden by <login>")
-   * is the only reliable signal. Checked in both the visible description and
-   * the name link's `title` attribute, since GitHub puts the same description
-   * in both and either may be the one present in a given UI revision.
+   * is the only reliable signal. Checked in the visible description, the name
+   * link's `title` attribute, and the row's `aria-label`, since GitHub puts
+   * the same description in several places and any of them may be the one
+   * present in a given UI revision.
    * @param {Element} element - A check row or list item element.
    * @returns {string|null} The overriding login, or null when not overridden.
    */
@@ -757,6 +758,7 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     const link = element.querySelector('h4 a, .status-actions a, .merge-status-item a, a.Link--primary');
     return parseOverrideDescription(element.textContent || '') ||
       parseOverrideDescription(link ? link.getAttribute('title') : '') ||
+      parseOverrideDescription(element.getAttribute('aria-label')) ||
       null;
   }
 
