@@ -2760,11 +2760,15 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     // existing lines and append the command below them (once — clicking the
     // same button again just re-fills, it doesn't duplicate the line). A box
     // still holding the last submitted combo is a post GitHub hasn't cleared
-    // yet, not a draft — replace that as before.
+    // yet, not a draft — replace that as before. `cmdText` can itself be
+    // multi-line (multi-job pickers join with newlines), so dedupe per
+    // incoming line, not on the whole string.
     const current = (textarea.value || '').replace(/\s+$/, '');
     const existing = current && current !== lastSubmittedText ? current : '';
     const lines = existing ? existing.split('\n') : [];
-    if (!lines.includes(cmdText)) lines.push(cmdText);
+    for (const cmdLine of cmdText.split('\n')) {
+      if (!lines.includes(cmdLine)) lines.push(cmdLine);
+    }
     setCommentTextareaValue(textarea, lines.join('\n'));
     showToast(`Filled: ${cmdText}`, 'success');
   }
@@ -2893,7 +2897,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         // bail when the submit is visibly underway.
         setTimeout(() => {
           if (textarea.isConnected && textarea.value === finalText && !isSubmitInFlight(textarea, submitBtn)) {
-            submitCommentForm(textarea);
+            // If even the direct form submit fails, the text still in the
+            // box is an unposted draft — drop the guard right away rather
+            // than waiting out waitForPostToClear's poll budget, or a click
+            // in that window would treat the draft as an uncleared post.
+            if (!submitCommentForm(textarea)) lastSubmittedText = '';
           }
         }, SUBMIT_FALLBACK_DELAY_MS);
         waitForPostToClear(textarea, finalButtons, 20);
