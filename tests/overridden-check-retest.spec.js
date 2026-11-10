@@ -97,15 +97,17 @@ test('overridden check: inline Retest fills /test and the picker badges it', asy
     // change independently, so the observer must cover childList (textContent
     // replacement), characterData (text node rewritten in place) and the
     // title/aria-label attributes. Each step below changes exactly one input
-    // that the picker's badge depends on.
+    // that the picker's badge depends on, and confirms the expected state
+    // *before* asserting the new one so a stale badge can't pass the check.
     const setRow = (description, ariaLabel) => page.evaluate(([text, label]) => {
       const row = document.querySelector('li[aria-label^="ci/prow/5.0-virt-kdm-e2e-test-aws"]');
       row.querySelector('span[class*="titleDescription"]').textContent = text;
       row.setAttribute('aria-label', label);
     }, [description, ariaLabel]);
+    const CLEAN = 'ci/prow/5.0-virt-kdm-e2e-test-aws';
 
     // Override removed → badge and highlight disappear.
-    await setRow(' — Job succeeded.', 'ci/prow/5.0-virt-kdm-e2e-test-aws');
+    await setRow(' — Job succeeded.', CLEAN);
     await expect(badge).toHaveCount(0, { timeout: 5000 });
 
     // Description text node rewritten in place (characterData only, no
@@ -116,10 +118,32 @@ test('overridden check: inline Retest fills /test and the picker badges it', asy
     });
     await expect(badge).toBeVisible({ timeout: 5000 });
 
-    // Description no longer carries the marker; only the row's aria-label
-    // does (the third detection fallback) → badge stays correct.
-    await setRow(' — Job succeeded.', 'ci/prow/5.0-virt-kdm-e2e-test-aws Overridden by kaovilai');
+    // Confirm the badge is gone again before the attribute-only step, so the
+    // following assertion cannot be satisfied by the previous badge.
+    await setRow(' — Job succeeded.', CLEAN);
+    await expect(badge).toHaveCount(0, { timeout: 5000 });
+
+    // Only aria-label changes now (third detection fallback) → badge returns.
+    await page.evaluate((label) => {
+      document.querySelector('li[aria-label^="ci/prow/5.0-virt-kdm-e2e-test-aws"]')
+        .setAttribute('aria-label', label);
+    }, `${CLEAN} Overridden by kaovilai`);
     await expect(badge).toBeVisible({ timeout: 5000 });
+    expect((await overriddenItem.boundingBox()).y)
+      .toBeLessThan((await passedItem.boundingBox()).y);
+
+    // ── 4. Ordering refreshes too ──────────────────────────────────────────
+    // Wipe the override marker and make the clean pass fail instead: it now
+    // ranks above the still-overridden job, proving the live refresh re-sorts
+    // rather than only repainting badges.
+    await setRow(' — Job succeeded.', CLEAN);
+    await page.evaluate(() => {
+      document.querySelector('li[aria-label="ci/prow/5.0-e2e-test-aws"] .octicon-check')
+        .setAttribute('class', 'octicon octicon-x-circle-fill color-fg-danger');
+    });
+    await expect(passedItem.locator('.ghbcp-job-dot-failed')).toBeVisible({ timeout: 5000 });
+    expect((await passedItem.boundingBox()).y)
+      .toBeLessThan((await overriddenItem.boundingBox()).y);
   } finally {
     await context.close();
     fs.rmSync(userDataDir, { recursive: true, force: true });
