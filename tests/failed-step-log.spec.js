@@ -87,6 +87,11 @@ async function assertLogViewWorks(page) {
   // Matched lines are rendered as "<line>: <text>".
   await expect(panelBody).toContainText(/^\d+: /m, { timeout: 30000 });
   await expect(panelBody).toContainText(/FAILED|failed|error|Error/);
+  // The Claude report renders in its own block alongside the matched error
+  // lines — it must not be dropped just because the log had matches.
+  const inlineAnalysis = panel.locator('.ghbcp-log-inline-analysis');
+  await expect(inlineAnalysis).toBeVisible({ timeout: 30000 });
+  await expect(inlineAnalysis).toContainText('Claude failure analysis');
   // The matched-lines view is capped and scrollable rather than pushing the
   // page down with the full 100 KB+ log.
   const box = await panelBody.evaluate(el => ({
