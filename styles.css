@@ -98,21 +98,16 @@ html[data-color-mode="dark"] {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Utility row for the refresh/config-link controls. No title: the toolbar's
+   aria-label and per-group labels already identify the bar, and the header
+   isn't rendered at all when neither control applies. */
 .ghbcp-bar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
-  margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 600;
+  margin-bottom: 4px;
   color: var(--ghbcp-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.ghbcp-bar-icon {
-  font-size: 14px;
 }
 
 .ghbcp-bar-actions {

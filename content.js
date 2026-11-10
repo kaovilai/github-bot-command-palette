@@ -473,6 +473,16 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   let pendingComboLines = [];
   let pendingComboButtons = [];
   let pendingComboTimer = null;
+  // Draft text (if any) the user had typed into the comment box before the
+  // first button of the current combo was clicked. The combo is appended
+  // BELOW it instead of replacing it — see queueAutoSubmit().
+  let pendingComboBase = '';
+  // The text of the most recent combo we submitted. While GitHub hasn't
+  // cleared the textarea yet (post still in flight), that text is still in
+  // the box; snapshotting it as a "draft" for the next combo would duplicate
+  // it, so queueAutoSubmit() treats a textarea matching this as empty.
+  // Cleared once waitForPostToClear() sees the box emptied.
+  let lastSubmittedText = '';
   let shortcutMap = {};
 
   /** @returns {string|null} Full `org/repo` path extracted from the current URL, or null. */
@@ -2746,7 +2756,16 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       showToast('No comment box found', 'error');
       return;
     }
-    setCommentTextareaValue(textarea, cmdText);
+    // Don't clobber text the user had typed before clicking: keep the
+    // existing lines and append the command below them (once — clicking the
+    // same button again just re-fills, it doesn't duplicate the line). A box
+    // still holding the last submitted combo is a post GitHub hasn't cleared
+    // yet, not a draft — replace that as before.
+    const current = (textarea.value || '').replace(/\s+$/, '');
+    const existing = current && current !== lastSubmittedText ? current : '';
+    const lines = existing ? existing.split('\n') : [];
+    if (!lines.includes(cmdText)) lines.push(cmdText);
+    setCommentTextareaValue(textarea, lines.join('\n'));
     showToast(`Filled: ${cmdText}`, 'success');
   }
 
@@ -2792,6 +2811,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     } else {
       pendingComboLines = [];
       pendingComboButtons = [];
+      // Snapshot whatever the user had already typed so the combo lines get
+      // appended below their draft instead of erasing it. A textarea still
+      // holding the last submitted combo is just a post GitHub hasn't
+      // cleared yet — not a draft — so treat that as empty.
+      const current = (textarea.value || '').replace(/\s+$/, '');
+      pendingComboBase = current && current !== lastSubmittedText ? current : '';
     }
     pendingComboTimer = null;
     pendingComboLines.push(cmdText);
@@ -2810,7 +2835,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       btn.appendChild(cancelX);
     }
 
-    const joined = pendingComboLines.join('\n');
+    const joined = pendingComboBase
+      ? pendingComboBase + '\n' + pendingComboLines.join('\n')
+      : pendingComboLines.join('\n');
     setCommentTextareaValue(textarea, joined);
 
     const seconds = COMBO_SEND_DELAY_MS / 1000;
@@ -2832,8 +2859,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     pendingComboTimer = null;
     const finalLines = pendingComboLines;
     const finalButtons = pendingComboButtons;
+    const finalBase = pendingComboBase;
     pendingComboLines = [];
     pendingComboButtons = [];
+    pendingComboBase = '';
 
     const textarea = findCommentTextarea();
     if (!textarea) {
@@ -2842,7 +2871,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       return;
     }
 
-    const finalText = finalLines.join('\n');
+    // The user's pre-existing draft (if any) rides along at the top of the
+    // posted comment, above the queued command lines.
+    const finalText = finalBase
+      ? finalBase + '\n' + finalLines.join('\n')
+      : finalLines.join('\n');
+    lastSubmittedText = finalText;
     const trySubmit = (attempts) => {
       const submitBtn = findSubmitButton(textarea);
       if (submitBtn) {
@@ -2890,6 +2924,7 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    */
   function waitForPostToClear(textarea, buttons, attemptsLeft) {
     if (!textarea.isConnected || textarea.value === '' || attemptsLeft <= 0) {
+      if (!textarea.isConnected || textarea.value === '') lastSubmittedText = '';
       clearPendingButtons(buttons);
       return;
     }
@@ -2933,12 +2968,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         clearTimeout(pendingComboTimer);
         pendingComboTimer = null;
       }
-      if (textarea) setCommentTextareaValue(textarea, '');
+      // Everything queued is cancelled — put the user's original draft back,
+      // not an empty box.
+      if (textarea) setCommentTextareaValue(textarea, pendingComboBase);
+      pendingComboBase = '';
       showToast(`Cancelled "${cmdText}"`, 'warning');
       return;
     }
 
-    if (textarea) setCommentTextareaValue(textarea, pendingComboLines.join('\n'));
+    if (textarea) {
+      setCommentTextareaValue(textarea, pendingComboBase
+        ? pendingComboBase + '\n' + pendingComboLines.join('\n')
+        : pendingComboLines.join('\n'));
+    }
     const preview = pendingComboLines.join(' + ');
     showToast(`Cancelled "${cmdText}" — still sending "${preview}"`, 'pending');
   }
@@ -3119,20 +3161,16 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }
 
   /**
-   * Build the "Bot Commands" bar header element with title, optional refresh
-   * button (when cached plugin data is available), and optional config-file link.
+   * Build the bar's utility row: optional refresh button (when cached plugin
+   * data is available) and optional config-file link, right-aligned. Returns
+   * null when neither applies — the bar then has no header row at all, since
+   * the toolbar's accessible name (aria-label) and the per-group labels
+   * already identify it; a title-only header is just a wasted top bar.
    * @param {Object|null} pluginData - Cached plugin data from lastPluginData, or null.
    * @param {Function}    onRefresh  - Callback to invoke after a refresh is triggered.
-   * @returns {HTMLElement} The header div ready to be appended to the bar.
+   * @returns {HTMLElement|null} The header div, or null when it has no controls.
    */
   function buildBarHeader(pluginData, onRefresh) {
-    const header = document.createElement('div');
-    header.className = 'ghbcp-bar-header';
-
-    const headerLeft = document.createElement('span');
-    headerLeft.innerHTML = '<span class="ghbcp-bar-icon" aria-hidden="true">&#129302;</span> <span class="ghbcp-bar-title">Bot Commands</span>';
-    header.appendChild(headerLeft);
-
     const headerRight = document.createElement('span');
     headerRight.className = 'ghbcp-bar-actions';
 
@@ -3172,6 +3210,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       }
     }
 
+    if (!headerRight.firstChild) return null;
+    const header = document.createElement('div');
+    header.className = 'ghbcp-bar-header';
     header.appendChild(headerRight);
     return header;
   }
@@ -3220,7 +3261,8 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     bar.setAttribute('role', 'toolbar');
     bar.setAttribute('aria-label', 'Bot Commands');
 
-    bar.appendChild(buildBarHeader(lastPluginData, inject));
+    const barHeader = buildBarHeader(lastPluginData, inject);
+    if (barHeader) bar.appendChild(barHeader);
 
     bar.appendChild(buildCommandGroups(profiles, extraCommands));
 
@@ -3500,7 +3542,8 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     bar.setAttribute('aria-label', 'Bot Commands');
     bar.style.margin = '0 0 8px 0';
 
-    bar.appendChild(buildBarHeader(lastPluginData, inject));
+    const barHeader = buildBarHeader(lastPluginData, inject);
+    if (barHeader) bar.appendChild(barHeader);
 
     bar.appendChild(buildCommandGroups(profiles, extraCommands));
 
