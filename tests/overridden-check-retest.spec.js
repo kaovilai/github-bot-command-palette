@@ -93,22 +93,32 @@ test('overridden check: inline Retest fills /test and the picker badges it', asy
     expect(overriddenBox.y).toBeLessThan(passedBox.y);
 
     // ── 3. Live refresh while the picker is open ───────────────────────────
-    // Prow re-renders check rows in place. A re-run that replaces the
-    // override description must drop the badge without reopening the picker;
-    // clearing both the description and the aria-label makes the row a clean
-    // pass, so only the observer can notice.
-    const setOverrideMarker = (marker) => page.evaluate((text) => {
+    // Prow re-renders check rows in place. Every override-detection input can
+    // change independently, so the observer must cover childList (textContent
+    // replacement), characterData (text node rewritten in place) and the
+    // title/aria-label attributes. Each step below changes exactly one input
+    // that the picker's badge depends on.
+    const setRow = (description, ariaLabel) => page.evaluate(([text, label]) => {
       const row = document.querySelector('li[aria-label^="ci/prow/5.0-virt-kdm-e2e-test-aws"]');
-      const desc = row.querySelector('span[class*="titleDescription"]');
-      desc.textContent = text;
-      row.setAttribute('aria-label',
-        'ci/prow/5.0-virt-kdm-e2e-test-aws' + (text.includes('Overridden') ? ' Overridden by kaovilai' : ''));
-    }, marker);
+      row.querySelector('span[class*="titleDescription"]').textContent = text;
+      row.setAttribute('aria-label', label);
+    }, [description, ariaLabel]);
 
-    await setOverrideMarker(' — Job succeeded.');
+    // Override removed → badge and highlight disappear.
+    await setRow(' — Job succeeded.', 'ci/prow/5.0-virt-kdm-e2e-test-aws');
     await expect(badge).toHaveCount(0, { timeout: 5000 });
 
-    await setOverrideMarker(' — Overridden by kaovilai');
+    // Description text node rewritten in place (characterData only, no
+    // attribute or child-list change) → badge comes back.
+    await page.evaluate(() => {
+      const row = document.querySelector('li[aria-label^="ci/prow/5.0-virt-kdm-e2e-test-aws"]');
+      row.querySelector('span[class*="titleDescription"]').lastChild.nodeValue = ' — Overridden by kaovilai';
+    });
+    await expect(badge).toBeVisible({ timeout: 5000 });
+
+    // Description no longer carries the marker; only the row's aria-label
+    // does (the third detection fallback) → badge stays correct.
+    await setRow(' — Job succeeded.', 'ci/prow/5.0-virt-kdm-e2e-test-aws Overridden by kaovilai');
     await expect(badge).toBeVisible({ timeout: 5000 });
   } finally {
     await context.close();

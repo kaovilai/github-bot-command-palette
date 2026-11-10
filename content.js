@@ -2268,8 +2268,13 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         liveStatusObserver.observe(watchTarget, {
           childList: true,
           subtree: true,
+          // Prow can rewrite the description text node in place rather than
+          // replacing the row, and every override-detection input (description
+          // text, link title, row aria-label) can change without touching the
+          // icon class — watch all of them or the badge goes stale.
+          characterData: true,
           attributes: true,
-          attributeFilter: ['class', 'data-conclusion']
+          attributeFilter: ['class', 'data-conclusion', 'title', 'aria-label']
         });
       }
     }
@@ -3510,22 +3515,14 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       // now that base has moved) obvious.
       for (const profile of profiles) {
         for (const cmd of profile.checkCommands) {
-          if (canTest) {
-            const jobName = rerunJobName || checkName;
-            const testCmd = Object.assign({}, cmd, {
-              command: '/test ' + jobName,
-              label: overriddenBy ? 'Retest' : 'Test',
-              description: '/test ' + jobName +
-                (overriddenBy
-                  ? ' — previously overridden by ' + overriddenBy + '; rerun now that base may carry the fix'
-                  : '')
-            });
-            btnContainer.appendChild(createButton(testCmd, context));
-          } else if (checkName.startsWith('ci/rehearse/')) {
-            // Rehearsal checks (ci/rehearse/...) ARE Prow jobs, just not
-            // /test-able ones — the real rerun name is resolved from the
-            // target repo's own presubmit config (see
-            // resolveRehearsalJobNames()), not guessed from the check name.
+          // Rehearsal checks must be handled before the canTest branch:
+          // isProwManagedCheck() defaults to true while the presubmit list is
+          // still loading, which would otherwise emit "/test ci/rehearse/..."
+          // — a target Prow cannot find. Rehearsal checks (ci/rehearse/...)
+          // ARE Prow jobs, just not /test-able ones; the real rerun name is
+          // resolved from the target repo's own presubmit config (see
+          // resolveRehearsalJobNames()), not guessed from the check name.
+          if (checkName.startsWith('ci/rehearse/')) {
             if (rehearsalResolution && rehearsalResolution.jobName) {
               const rerunCmd = Object.assign({}, cmd, {
                 command: '/pj-rehearse ' + rehearsalResolution.jobName,
@@ -3536,6 +3533,17 @@ function shouldHandleShortcutKey(e, overlayOpen) {
             } else {
               btnContainer.appendChild(createRehearsalHintButton(checkName, rehearsalResolution));
             }
+          } else if (canTest) {
+            const jobName = rerunJobName || checkName;
+            const testCmd = Object.assign({}, cmd, {
+              command: '/test ' + jobName,
+              label: overriddenBy ? 'Retest' : 'Test',
+              description: '/test ' + jobName +
+                (overriddenBy
+                  ? ' — previously overridden by ' + overriddenBy + '; rerun now that base may carry the fix'
+                  : '')
+            });
+            btnContainer.appendChild(createButton(testCmd, context));
           } else {
             btnContainer.appendChild(createRerunActionButton(checkName, row, context));
           }
