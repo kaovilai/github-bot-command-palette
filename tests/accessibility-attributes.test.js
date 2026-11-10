@@ -282,6 +282,18 @@ test('job picker highlights and badges previously overridden jobs', () => {
   assert.match(stylesCss, /\.ghbcp-job-badge-overridden/);
 });
 
+test('inline check controls repaint on in-place override/status changes', () => {
+  // The checks-section observer must watch the same inputs detection reads
+  // (characterData + title/aria-label), and repaint only the rows — a full
+  // inject() would rebuild the command bar and close an open job picker.
+  assert.match(contentJs, /function observeCheckRowStates\(target\)/);
+  assert.match(contentJs, /characterData: true/);
+  assert.match(contentJs, /attributeFilter: \['class', 'data-conclusion', 'title', 'aria-label'\]/);
+  assert.match(contentJs, /debouncedCheckButtonsRefresh/);
+  assert.match(contentJs, /row\.dataset\.ghbcpOverridden = overriddenBy \|\| ''/);
+  assert.doesNotMatch(contentJs, /debouncedCheckButtonsRefresh[\s\S]{0,400}debouncedInject\(\)/);
+});
+
 test('SPA navigation event listeners are registered for GitHub turbo, pjax, popstate and hashchange', () => {
   // GitHub uses Turbo (formerly Turbolinks) and pjax for SPA navigation.
   // Without these listeners the extension fails to re-inject after page transitions.

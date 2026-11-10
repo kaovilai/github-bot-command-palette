@@ -3393,6 +3393,68 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }
 
   /**
+   * Watch the checks container for in-place changes to the two inputs that
+   * decide an inline check row's controls: its override marker (description
+   * text, link title, row aria-label) and its status icon/conclusion. Without
+   * this, a row that becomes overridden after injection keeps a stale
+   * Test/Override pair (or a stale Retest) until the next full re-inject.
+   * A repaint is scheduled only when a row's recorded state actually
+   * differs, so GitHub's unrelated class churn stays cheap. The repaint is
+   * scoped to the check rows — never the command bar — so an open job picker
+   * survives a live check-state change.
+   * @param {Element|null} target - Checks section / legacy status list.
+   */
+  function observeCheckRowStates(target) {
+    if (!target) return;
+    if (checkRowStateObserver && checkRowStateObserverTarget === target) return;
+    if (checkRowStateObserver) checkRowStateObserver.disconnect();
+    checkRowStateObserverTarget = target;
+    checkRowStateObserver = new MutationObserver(records => {
+      for (const rec of records) {
+        const el = rec.target.nodeType === 1 ? rec.target : rec.target.parentElement;
+        if (!el) continue;
+        const row = el.closest(CHECK_STATE_ROW_SELECTOR);
+        if (!row) continue;
+        const overridden = getCheckOverriddenBy(row) || '';
+        const status = getCheckStatus(row);
+        if (overridden !== (row.dataset.ghbcpOverridden || '') ||
+            status !== (row.dataset.ghbcpStatus || '')) {
+          debouncedCheckButtonsRefresh();
+          return;
+        }
+      }
+    });
+    checkRowStateObserver.observe(target, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-conclusion', 'title', 'aria-label']
+    });
+  }
+
+  let checkRowStateObserver = null;
+  let checkRowStateObserverTarget = null;
+  let lastInjectedProfiles = null;
+  let checkButtonsRefreshTimer = null;
+  /**
+   * Repaint only the inline check-row controls after a live state change.
+   * Deliberately not debouncedInject(): a full inject() rebuilds the command
+   * bar, which takes any open job picker anchored to it down with it.
+   */
+  function debouncedCheckButtonsRefresh() {
+    clearTimeout(checkButtonsRefreshTimer);
+    checkButtonsRefreshTimer = setTimeout(() => {
+      if (!lastInjectedProfiles || !CM.isContextValid()) return;
+      injectCheckButtons(lastInjectedProfiles);
+    }, 150);
+  }
+  // Rows in either supported checks UI; used to attribute a mutation to the
+  // check row it belongs to.
+  const CHECK_STATE_ROW_SELECTOR =
+    'li[aria-label], .merge-status-item, .js-merge-status-check-item, .merge-status-list li';
+
+  /**
    * Inject "Test" and "Override" buttons next to CI check rows.
    * When `config.globalSettings.showOnlyFailedTests` is true (the default),
    * buttons are injected on failed AND pending checks (a re-triggered test is
@@ -3426,6 +3488,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       checkRowEls = document.querySelectorAll(legacyCheckRowSelector());
     }
 
+    // Keep inline controls in step with in-place override/status changes.
+    observeCheckRowStates(checksSection || document.querySelector('.merge-status-list'));
+
     // Single pass: derive checkName once per row, and collect distinct
     // non-passed "ci/rehearse/..." check names needing async job-name
     // resolution (see resolveRehearsalJobNames()) before building any buttons.
@@ -3435,6 +3500,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       if (row.dataset.ghbcpInjected === 'true') continue;
       const status = getCheckStatus(row);
       const overriddenBy = getCheckOverriddenBy(row);
+      // Record what this row's controls were rendered against; the checks
+      // observer re-injects only when one of these drifts (see
+      // observeCheckRowStates()).
+      row.dataset.ghbcpOverridden = overriddenBy || '';
+      row.dataset.ghbcpStatus = status;
       // An overridden job renders green (Prow's override plugin sets the
       // context to success), so `showOnlyFailedTests` would hide the one row
       // the user most likely needs later: the previously failed job they want
@@ -3788,6 +3858,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       }
 
       const extraCommands = CM.getExtraCommands(config, currentRepo);
+
+      // Remembered for the checks-state observer: it repaints only the check
+      // rows, never the command bar, so an open picker/popover survives a
+      // live check-state change.
+      lastInjectedProfiles = profiles;
 
       injectGlobalCommandBar(profiles, extraCommands);
       await injectCheckButtons(profiles);
