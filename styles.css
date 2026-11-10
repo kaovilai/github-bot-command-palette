@@ -785,7 +785,8 @@ html[data-color-mode="dark"] {
   padding: 0 6px;
 }
 
-.ghbcp-log-inline-body {
+.ghbcp-log-inline-body,
+.ghbcp-log-inline-analysis {
   max-height: 260px;
   overflow-y: auto;
   margin: 0;
@@ -967,7 +968,8 @@ html[data-color-mode="dark"] {
     height: 44px;
   }
 
-  .ghbcp-log-inline-body {
+  .ghbcp-log-inline-body,
+  .ghbcp-log-inline-analysis {
     max-height: 200px;
   }
 

@@ -1264,13 +1264,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
 
   /**
    * Render the fetched failure-log data into the inline panel: grep-matched
-   * error lines (scrollable) when the raw log has any, else the Claude
-   * analysis, else a head of the log. The "Full log" button always opens the
-   * complete text in a modal.
-   * @param {{title: HTMLElement, body: HTMLElement}} panel
+   * error lines (scrollable) when the raw log has any, else a head of the log.
+   * The Claude analysis, when the job's analyze-e2e-failure post-step produced
+   * one, is always rendered in its own scrollable block — alongside the
+   * matched error lines, not instead of them. The "Full log" button always
+   * opens the complete text in a modal.
+   * @param {{panel: HTMLElement, title: HTMLElement, body: HTMLElement}} panel
    * @param {{label: string|null, text: string|null, analysis: {label: string, text: string}|null}|null} result
    */
   function renderInlineLogPanel(panel, result) {
+    // A retry can re-render the same panel once the analysis lands; drop any
+    // block from a previous render so it never appears twice.
+    const staleAnalysis = panel.panel.querySelector('.ghbcp-log-inline-analysis');
+    if (staleAnalysis) staleAnalysis.remove();
     if (!result) {
       panel.title.textContent = 'Failure log errors';
       panel.body.textContent = 'Failed to load log.';
@@ -1279,12 +1285,21 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     const matches = result.text
       ? extractErrorLines(result.text, liveLogic.errorLinePatterns, liveLogic.maxErrorLines)
       : [];
+    const analysisText = result.analysis ? result.analysis.text : null;
     if (matches.length > 0) {
       panel.title.textContent = `Failure log errors (${matches.length}) · ${result.label || ''}`.trim();
       panel.body.textContent = matches.map(m => `${m.line}: ${m.text}`).join('\n');
-    } else if (result.analysis) {
+      // The two blocks answer different questions (which lines failed vs. why
+      // and what to do), so keep the report visible below the matched lines.
+      if (analysisText) {
+        const analysisEl = document.createElement('pre');
+        analysisEl.className = 'ghbcp-log-inline-analysis';
+        analysisEl.textContent = `━━━ Claude failure analysis (${result.analysis.label}) ━━━\n\n${analysisText}`;
+        panel.panel.appendChild(analysisEl);
+      }
+    } else if (analysisText) {
       panel.title.textContent = 'Claude failure analysis — no error lines matched in the step log';
-      panel.body.textContent = result.analysis.text.slice(0, 4000);
+      panel.body.textContent = analysisText.slice(0, 4000);
     } else if (result.text) {
       panel.title.textContent = 'Failure log — no error lines matched';
       panel.body.textContent = result.text.slice(0, 4000);
