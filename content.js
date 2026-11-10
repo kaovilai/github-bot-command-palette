@@ -352,6 +352,28 @@ function isUnorderedSubset(term, haystack) {
 }
 
 /**
+ * Parse Prow's override-plugin marker out of a check row's description text.
+ * When `/override` fires, Prow's override plugin overwrites the failed status
+ * context with a SUCCESS status whose description is "Overridden by <login>"
+ * (kubernetes-sigs/prow pkg/plugins/override). GitHub therefore renders the
+ * row green, alongside genuinely passing checks — but the underlying job still
+ * failed, and once its known CI fix lands on the base branch it needs a fresh
+ * `/test`. Callers use this to keep those rows visible/actionable even though
+ * their status says "passed".
+ * Pure function, no chrome/DOM globals touched.
+ * @param {string} text - A check row's description text (or any text containing it).
+ * @returns {string|null} The overriding login, or null when not overridden.
+ */
+function parseOverrideDescription(text) {
+  if (typeof text !== 'string' || !text) return null;
+  // Description is rendered as "— Overridden by kaovilai" (em dash), sometimes
+  // followed by the run's BaseSHA. Accept an optional leading "@" (GitHub
+  // links user mentions), and stop at the first non-login character.
+  const m = text.match(/\boverridden by\s+@?([A-Za-z0-9][A-Za-z0-9-]*)/i);
+  return m ? m[1] : null;
+}
+
+/**
  * Match a job name against the job picker's search box. Every whitespace-
  * separated term (quoted terms may contain spaces) must appear as a plain
  * substring, or else as an in-order subsequence ("5.0cli" finds
@@ -722,6 +744,23 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }
 
   /**
+   * Read Prow's override marker off a check row. GitHub renders an overridden
+   * context as green (Prow sets it to success), so status alone can't tell it
+   * apart from a real pass; the description text ("Overridden by <login>")
+   * is the only reliable signal. Checked in both the visible description and
+   * the name link's `title` attribute, since GitHub puts the same description
+   * in both and either may be the one present in a given UI revision.
+   * @param {Element} element - A check row or list item element.
+   * @returns {string|null} The overriding login, or null when not overridden.
+   */
+  function getCheckOverriddenBy(element) {
+    const link = element.querySelector('h4 a, .status-actions a, .merge-status-item a, a.Link--primary');
+    return parseOverrideDescription(element.textContent || '') ||
+      parseOverrideDescription(link ? link.getAttribute('title') : '') ||
+      null;
+  }
+
+  /**
    * Look up `checkName` against the scraped presubmit config (`lastPresubmitJobs`),
    * matching on either Prow's status context ("ci/prow/images") or the full
    * prowjob name ("pull-ci-...-images") — a check row may surface either.
@@ -837,7 +876,7 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   /**
    * Scrape CI check names and statuses from the current PR page.
    * Supports both the modern Primer React UI and the legacy merge-status UI.
-   * @returns {{name: string, status: 'failed'|'pending'|'passed', isProwManaged: boolean, runId: string|null, jobId: string|null}[]}
+   * @returns {{name: string, status: 'failed'|'pending'|'passed', overriddenBy: string|null, isProwManaged: boolean, runId: string|null, jobId: string|null}[]}
    */
   function scrapeCheckNames() {
     const names = [];
@@ -858,6 +897,7 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         names.push({
           name,
           status: getCheckStatus(item),
+          overriddenBy: getCheckOverriddenBy(item),
           isProwManaged: isProwManagedCheck(name),
           runId: ids ? ids.runId : null,
           jobId: ids ? ids.jobId : null
@@ -878,6 +918,7 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         names.push({
           name,
           status: getCheckStatus(row),
+          overriddenBy: getCheckOverriddenBy(row),
           isProwManaged: isProwManagedCheck(name),
           runId: ids ? ids.runId : null,
           jobId: ids ? ids.jobId : null
@@ -890,16 +931,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
 
 
   /**
-   * Build a name → live status lookup from the checks currently rendered on
-   * the page, so callers with a separately-sourced job list (e.g. presubmits
-   * from Prow config YAML) can override their static/config-derived status
-   * with what GitHub is actually reporting right now.
-   * @returns {Map<string, 'failed'|'pending'|'passed'>}
+   * Build a name → live check info lookup from the checks currently rendered
+   * on the page, so callers with a separately-sourced job list (e.g.
+   * presubmits from Prow config YAML) can override their static/config-derived
+   * status with what GitHub is actually reporting right now. `overriddenBy`
+   * travels alongside the status because an overridden row reports "passed"
+   * even though the job itself failed — the picker highlights those so they
+   * stay easy to retrigger once the base-branch fix lands.
+   * @returns {Map<string, {status: 'failed'|'pending'|'passed', overriddenBy: string|null}>}
    */
-  function buildLiveCheckStatusMap() {
+  function buildLiveCheckInfoMap() {
     const map = new Map();
     for (const c of scrapeCheckNames()) {
-      map.set(c.name, c.status);
+      map.set(c.name, { status: c.status, overriddenBy: c.overriddenBy || null });
     }
     return map;
   }
@@ -1573,18 +1617,23 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         return;
       }
     } else if (usePresubmits && lastPresubmitJobs && lastPresubmitJobs.length > 0) {
-      const liveStatus = buildLiveCheckStatusMap();
-      jobs = lastPresubmitJobs.map(j => ({
-        name: j.name,
-        // Prefer whatever GitHub is actually showing for this check right now
-        // (matched by Prow context or raw job name) over the config-derived
-        // guess — a required job defaults to 'passed' only because Prow
-        // config doesn't say otherwise, but the page might show it failing.
-        status: liveStatus.get(j.context) || liveStatus.get(j.jobName) || liveStatus.get(j.name) ||
-                (j.optional ? 'pending' : 'passed'),
-        context: j.context,
-        jobName: j.jobName
-      }));
+      const liveInfo = buildLiveCheckInfoMap();
+      jobs = lastPresubmitJobs.map(j => {
+        const live = liveInfo.get(j.context) || liveInfo.get(j.jobName) || liveInfo.get(j.name);
+        return {
+          name: j.name,
+          // Prefer whatever GitHub is actually showing for this check right now
+          // (matched by Prow context or raw job name) over the config-derived
+          // guess — a required job defaults to 'passed' only because Prow
+          // config doesn't say otherwise, but the page might show it failing.
+          status: (live && live.status) || (j.optional ? 'pending' : 'passed'),
+          // A previously overridden job still shows green here; carry the
+          // marker through so the picker can highlight it for retriggering.
+          overriddenBy: (live && live.overriddenBy) || null,
+          context: j.context,
+          jobName: j.jobName
+        };
+      });
     }
 
     if (!jobs) {
@@ -1923,17 +1972,26 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         return;
       }
 
+      // Overridden checks report "passed" (Prow's override plugin sets the
+      // context to success), which would otherwise bury them at the bottom of
+      // the list with genuinely green jobs. Rank them between pending and
+      // passed and badge them, so a job that only went green via /override is
+      // still easy to find and retrigger once its base-branch fix lands.
       const order = { failed: 0, pending: 1, passed: 2 };
+      const sortRank = job => (job.overriddenBy ? 1.5 : order[job.status]);
       // Sort a copy: `filtered` aliases the shared `jobs` array when the
       // search box is empty, and an in-place sort would scramble the order
       // the live-status observer and the submit handler's jobsByName map
       // were built against (and re-sort an already-sorted list on every
       // keystroke).
-      const sorted = filtered.slice().sort((a, b) => order[a.status] - order[b.status]);
+      const sorted = filtered.slice().sort((a, b) => sortRank(a) - sortRank(b));
 
       for (const job of sorted) {
+        const overridden = !!job.overriddenBy;
         const item = document.createElement('div');
-        item.className = 'ghbcp-job-picker-item' + (selected.has(job.name) ? ' selected' : '');
+        item.className = 'ghbcp-job-picker-item' +
+          (selected.has(job.name) ? ' selected' : '') +
+          (overridden ? ' ghbcp-job-picker-item-overridden' : '');
         item.dataset.jobName = job.name;
         item.setAttribute('role', 'listitem');
 
@@ -1941,7 +1999,8 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         cb.type = 'checkbox';
         cb.className = 'ghbcp-job-picker-checkbox';
         cb.checked = selected.has(job.name);
-        cb.setAttribute('aria-label', `${job.name} (${job.status || 'unknown'})`);
+        cb.setAttribute('aria-label', `${job.name} (${job.status || 'unknown'}` +
+          (overridden ? `, overridden by ${job.overriddenBy}` : '') + ')');
         item.appendChild(cb);
 
         const dot = document.createElement('span');
@@ -1953,6 +2012,16 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         nameSpan.className = 'ghbcp-job-name';
         nameSpan.textContent = job.name;
         item.appendChild(nameSpan);
+
+        if (overridden) {
+          const badge = document.createElement('span');
+          badge.className = 'ghbcp-job-badge-overridden';
+          badge.textContent = 'Overridden';
+          badge.title = `Overridden by ${job.overriddenBy} — Prow last reported this job ` +
+            'failed and marked the status green. Select it to /test it again, e.g. once ' +
+            'the base branch carries the fix.';
+          item.appendChild(badge);
+        }
 
         // Keep checkbox and selected-set in sync regardless of input method
         // (mouse click on item row, direct click on checkbox, or keyboard Space).
@@ -2169,12 +2238,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     if (command.jobSource !== 'rehearsals' && command.jobSource !== 'branches') {
       let refreshTimer = null;
       const refreshLiveStatuses = () => {
-        const liveStatus = buildLiveCheckStatusMap();
+        const liveInfo = buildLiveCheckInfoMap();
         let changed = false;
         for (const job of jobs) {
-          const live = liveStatus.get(job.context) || liveStatus.get(job.jobName) || liveStatus.get(job.name);
-          if (live && live !== job.status) {
-            job.status = live;
+          const live = liveInfo.get(job.context) || liveInfo.get(job.jobName) || liveInfo.get(job.name);
+          if (!live) continue;
+          if (live.status !== job.status) {
+            job.status = live.status;
+            changed = true;
+          }
+          // Override state flips too (e.g. someone /overrides the job while
+          // the picker is open) — repaint so the badge appears/disappears.
+          if (live.overriddenBy !== (job.overriddenBy || null)) {
+            job.overriddenBy = live.overriddenBy;
             changed = true;
           }
         }
@@ -3351,7 +3427,14 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     for (const row of checkRowEls) {
       if (row.dataset.ghbcpInjected === 'true') continue;
       const status = getCheckStatus(row);
-      if (config.globalSettings.showOnlyFailedTests && status === 'passed') continue;
+      const overriddenBy = getCheckOverriddenBy(row);
+      // An overridden job renders green (Prow's override plugin sets the
+      // context to success), so `showOnlyFailedTests` would hide the one row
+      // the user most likely needs later: the previously failed job they want
+      // to /test again once the base branch carries the known fix. Keep it in
+      // scope here; the render loop below offers Test/Rerun (no second
+      // Override) for it.
+      if (config.globalSettings.showOnlyFailedTests && status === 'passed' && !overriddenBy) continue;
 
       const nameEl = row.querySelector('h4 a span') ||
                      row.querySelector('.status-actions a, .merge-status-item a, a.Link--primary, .text-bold');
@@ -3361,8 +3444,8 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       const detailsLink = nameEl && (nameEl.tagName === 'A' ? nameEl : nameEl.closest('a'));
       const detailsHref = detailsLink ? detailsLink.href : null;
 
-      rows.push({ row, checkName, status, detailsHref });
-      if (checkName.startsWith('ci/rehearse/') && status !== 'passed') {
+      rows.push({ row, checkName, status, detailsHref, overriddenBy });
+      if (checkName.startsWith('ci/rehearse/') && (status !== 'passed' || overriddenBy)) {
         rehearsalCheckNames.add(checkName);
       }
     }
@@ -3371,7 +3454,7 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       ? await resolveRehearsalJobNames(Array.from(rehearsalCheckNames))
       : new Map();
 
-    for (const { row, checkName, status, detailsHref } of rows) {
+    for (const { row, checkName, status, detailsHref, overriddenBy } of rows) {
       // Tide's own "tide" status context is a live-recomputed summary of
       // overall mergeability (labels, hold, required contexts, etc.), not a
       // job of its own — kubernetes-sigs/prow's tide/status.go recomputes it
@@ -3419,14 +3502,21 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         prNumber: getPRNumber()
       };
 
+      // Label the Test button "Retest" on a row that only shows green because
+      // of /override — a plain "Test" reads like a duplicate of an already
+      // passing check, while "Retest" makes the intent (fire the job again
+      // now that base has moved) obvious.
       for (const profile of profiles) {
         for (const cmd of profile.checkCommands) {
           if (canTest) {
             const jobName = rerunJobName || checkName;
             const testCmd = Object.assign({}, cmd, {
               command: '/test ' + jobName,
-              label: 'Test',
-              description: '/test ' + jobName
+              label: overriddenBy ? 'Retest' : 'Test',
+              description: '/test ' + jobName +
+                (overriddenBy
+                  ? ' — previously overridden by ' + overriddenBy + '; rerun now that base may carry the fix'
+                  : '')
             });
             btnContainer.appendChild(createButton(testCmd, context));
           } else if (checkName.startsWith('ci/rehearse/')) {
@@ -3448,14 +3538,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
             btnContainer.appendChild(createRerunActionButton(checkName, row, context));
           }
 
-          const overrideContext = CM.getOverrideContext(checkName);
-          const overrideCmd = Object.assign({}, cmd, {
-            command: '/override "' + overrideContext + '"',
-            label: 'Override',
-            description: '/override "' + overrideContext + '"',
-            style: 'warning'
-          });
-          btnContainer.appendChild(createButton(overrideCmd, context));
+          // No second Override button on an already-overridden row — posting
+          // /override again just re-stamps the same context; Test/Retest (or
+          // Rerun for GitHub Actions checks) is the action that's wanted here.
+          if (!overriddenBy) {
+            const overrideContext = CM.getOverrideContext(checkName);
+            const overrideCmd = Object.assign({}, cmd, {
+              command: '/override "' + overrideContext + '"',
+              label: 'Override',
+              description: '/override "' + overrideContext + '"',
+              style: 'warning'
+            });
+            btnContainer.appendChild(createButton(overrideCmd, context));
+          }
         }
 
         for (const dyn of (profile.dynamicCommands || [])) {

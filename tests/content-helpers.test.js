@@ -26,7 +26,7 @@ const snippet = contentJs.slice(startIdx, endIdx);
 
 const ctx = {};
 vm.runInNewContext(snippet, ctx);
-const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch, buildJoinedCommandText, extractErrorLines, sanitizeLiveLogic, shouldHandleShortcutKey } = ctx;
+const { parseActionsRunJobIds, parseRehearsalCheckContext, computePresubmitContextShortName, findRehearsalJobMatch, findOwnRowAnchor, matchesJobSearch, buildJoinedCommandText, extractErrorLines, sanitizeLiveLogic, shouldHandleShortcutKey, parseOverrideDescription } = ctx;
 assert.equal(typeof parseActionsRunJobIds, 'function', 'parseActionsRunJobIds should have been extracted');
 assert.equal(typeof parseRehearsalCheckContext, 'function', 'parseRehearsalCheckContext should have been extracted');
 assert.equal(typeof computePresubmitContextShortName, 'function', 'computePresubmitContextShortName should have been extracted');
@@ -36,6 +36,7 @@ assert.equal(typeof buildJoinedCommandText, 'function', 'buildJoinedCommandText 
 assert.equal(typeof extractErrorLines, 'function', 'extractErrorLines should have been extracted');
 assert.equal(typeof sanitizeLiveLogic, 'function', 'sanitizeLiveLogic should have been extracted');
 assert.equal(typeof shouldHandleShortcutKey, 'function', 'shouldHandleShortcutKey should have been extracted');
+assert.equal(typeof parseOverrideDescription, 'function', 'parseOverrideDescription should have been extracted');
 
 // assert.deepEqual/deepStrictEqual also compares prototypes — an object
 // returned from code run in a *different* vm context has a different
@@ -477,4 +478,30 @@ test('GHBCP_OVERLAY_SELECTOR covers every focusable GHBCP dialog, including the 
 
 test('handleShortcut routes through shouldHandleShortcutKey with the overlay selector', () => {
   assert.match(contentJs, /shouldHandleShortcutKey\(e, !!document\.querySelector\(GHBCP_OVERLAY_SELECTOR\)\)/);
+});
+
+// ── parseOverrideDescription ────────────────────────────────────────────────
+
+test('parseOverrideDescription: extracts the login from Prow\'s override description', () => {
+  // GitHub renders the description as "— Overridden by <login>" (em dash).
+  assert.equal(parseOverrideDescription(' — Overridden by kaovilai'), 'kaovilai');
+  assert.equal(parseOverrideDescription('Overridden by octocat — BaseSHA:29d1b'), 'octocat');
+});
+
+test('parseOverrideDescription: accepts an @-prefixed mention and case variations', () => {
+  assert.equal(parseOverrideDescription('overridden by @kaovilai'), 'kaovilai');
+  assert.equal(parseOverrideDescription('OVERRIDDEN BY Kaovilai'), 'Kaovilai');
+});
+
+test('parseOverrideDescription: also finds the marker inside a row\'s aggregated text/title', () => {
+  const title = 'ci/prow/5.0-virt-kdm-e2e-test-aws  Overridden by kaovilai  BaseSHA:29d17b3';
+  assert.equal(parseOverrideDescription(title), 'kaovilai');
+});
+
+test('parseOverrideDescription: returns null for a normal check description', () => {
+  assert.equal(parseOverrideDescription(' — Job succeeded. BaseSHA:29d17b3'), null);
+  assert.equal(parseOverrideDescription('waiting for status to be reported'), null);
+  assert.equal(parseOverrideDescription(''), null);
+  assert.equal(parseOverrideDescription(null), null);
+  assert.equal(parseOverrideDescription(undefined), null);
 });

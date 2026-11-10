@@ -21,6 +21,7 @@ Features
 • Command bar above the PR comment box with color-coded buttons for /lgtm, /approve, /hold, /retest and more, plus keyboard shortcuts.
 • Test and Override pickers: search every CI job on the PR, select several, and fire them in one comment.
 • Buttons on each failing check row in the Checks section.
+• Overridden checks still get a Retest button and are highlighted in the Test picker, so a job that only went green via /override is easy to run again once base has the fix.
 • Rehearsal checks (pj-rehearse) are matched to the real job name from the target repository's own CI configuration instead of guessing.
 • Checks that are plain GitHub Actions jobs get a Rerun link, or a one-click Rerun button if you add your own GitHub token.
 • Bot profiles per repository pattern (for example openshift/*), with per-repo overrides, custom commands, and Import/Export of your settings.

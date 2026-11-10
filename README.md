@@ -56,6 +56,18 @@ adjusts what it offers:
   check run, not just ones it owns, so it remains the right way to unblock a
   Tide-blocked merge either way.
 
+**Previously overridden checks stay actionable.** An `/override` makes Prow
+rewrite the failed context to a green "Overridden by \<login\>" status, so the
+job looks passed even though it never ran green. That's usually intentional for
+the moment ("known CI issue, fix landing elsewhere"), but those are exactly the
+jobs you want to re-run once the base branch carries the fix. The extension
+detects the override marker and:
+
+- keeps the row in the checks section (despite the failed-only filter) and
+  offers a **Retest** button instead of a second Override;
+- highlights and badges overridden jobs in the **Test** picker, ranking them
+  above genuinely passing ones so they're easy to find and select.
+
 ### Settings Page
 
 Full profile management — enable/disable profiles, configure commands, set keyboard shortcuts:
