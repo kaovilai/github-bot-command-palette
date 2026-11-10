@@ -274,9 +274,14 @@ test('handleShortcut suppresses keyboard shortcuts when a GHBCP overlay is open'
   assert.match(contentJs, /if \(!shouldHandleShortcutKey\(e, !!document\.querySelector\(GHBCP_OVERLAY_SELECTOR\)\)\) return;/);
 });
 
-test('bar header robot icon has aria-hidden so screen readers skip it', () => {
-  // The robot emoji (🤖) is decorative; screen readers should skip it.
-  assert.match(contentJs, /aria-hidden="true">&#129302;/);
+test('bar header is omitted entirely when it has no controls (no title-only row)', () => {
+  // The visible "Bot Commands" title was removed — the toolbar's own
+  // aria-label already names it — so the header only renders when it has
+  // the refresh button and/or config link, and callers skip a null header.
+  assert.doesNotMatch(contentJs, /ghbcp-bar-title/);
+  assert.match(contentJs, /if \(!headerRight\.firstChild\) return null;/);
+  const guardedAppends = (contentJs.match(/if \(barHeader\) bar\.appendChild\(barHeader\);/g) || []).length;
+  assert.ok(guardedAppends >= 2, `Expected both bar injectors to guard the header append, got ${guardedAppends}`);
 });
 
 test('bar header refresh button has aria-label describing cache age', () => {

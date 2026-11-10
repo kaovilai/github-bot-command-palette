@@ -51,11 +51,34 @@ test('a button that queues a combo line gets marked pending/busy, and cleared on
 test('submitPendingCombo clears pending buttons immediately on failure, and via waitForPostToClear on success', () => {
   assert.match(contentJs, /showToast\('No comment box found', 'error'\);\s*\n\s*clearPendingButtons\(finalButtons\);/);
   assert.match(contentJs, /waitForPostToClear\(textarea, finalButtons, 20\);/);
-  assert.match(contentJs, /showToast\(`Filled: \$\{finalText\} \(submit manually\)`, 'warning'\);\s*\n\s*clearPendingButtons\(finalButtons\);/);
+  assert.match(contentJs, /showToast\(`Filled: \$\{finalText\} \(submit manually\)`, 'warning'\);\s*\n\s*\/\/ The post didn't go through[\s\S]*?lastSubmittedText = '';\s*\n\s*clearPendingButtons\(finalButtons\);/);
 });
 
 test('waitForPostToClear polls for the textarea clearing (or disappearing) rather than assuming success', () => {
-  assert.match(contentJs, /function waitForPostToClear\(textarea, buttons, attemptsLeft\) \{\s*\n\s*if \(!textarea\.isConnected \|\| textarea\.value === '' \|\| attemptsLeft <= 0\) \{\s*\n\s*clearPendingButtons\(buttons\);/);
+  assert.match(contentJs, /function waitForPostToClear\(textarea, buttons, attemptsLeft\) \{\s*\n\s*if \(!textarea\.isConnected \|\| textarea\.value === '' \|\| attemptsLeft <= 0\) \{\s*\n\s*\/\/ Stop watching[\s\S]*?lastSubmittedText = '';\s*\n\s*clearPendingButtons\(buttons\);/);
+});
+
+test('a failed post leaves the stranded text protected as a draft, not treated as an uncleared post', () => {
+  // Both submit-failure exits (form-submit fallback refused, and the
+  // waitForPostToClear poll budget running out with text still in the box)
+  // must drop the lastSubmittedText guard, or a follow-up button click
+  // would snapshot nothing and wipe the user's stranded draft.
+  assert.match(contentJs, /showToast\(`Filled: \$\{finalText\} \(submit manually\)`, 'warning'\);\s*\n\s*\/\/ The post didn't go through[\s\S]*?lastSubmittedText = '';\s*\n\s*clearPendingButtons\(finalButtons\);/);
+});
+
+test('a pre-existing comment draft is preserved, not erased, by button clicks', () => {
+  // Manual (autoSubmit off) path: existing lines are kept and the command
+  // appended below them, once (a box still holding the last submitted combo
+  // is treated as empty, not as a draft).
+  assert.match(contentJs, /const current = \(textarea\.value \|\| ''\)\.replace\(\/\\s\+\$\/, ''\);\s*\n\s*const existing = current && current !== lastSubmittedText \? current : '';\s*\n\s*const lines = existing \? existing\.split\('\\n'\) : \[\];\s*\n\s*if \(!lines\.includes\(cmdText\)\) lines\.push\(cmdText\);/);
+  // Auto-submit path: the draft is snapshotted as the combo base when a
+  // fresh combo starts, and rides along at the top of the posted comment.
+  assert.match(contentJs, /pendingComboBase = current && current !== lastSubmittedText \? current : '';/);
+  assert.match(contentJs, /const finalBase = pendingComboBase;/);
+  assert.match(contentJs, /const finalText = finalBase\s*\n\s*\? finalBase \+ '\\n' \+ finalLines\.join\('\\n'\)\s*\n\s*: finalLines\.join\('\\n'\);/);
+  // Cancelling the last queued line restores the draft instead of emptying
+  // the box.
+  assert.match(contentJs, /if \(textarea\) setCommentTextareaValue\(textarea, pendingComboBase\);/);
 });
 
 // ---------------------------------------------------------------------------
