@@ -68,9 +68,14 @@ test('a failed post leaves the stranded text protected as a draft, not treated a
 
 test('a pre-existing comment draft is preserved, not erased, by button clicks', () => {
   // Manual (autoSubmit off) path: existing lines are kept and the command
-  // appended below them, once (a box still holding the last submitted combo
-  // is treated as empty, not as a draft).
-  assert.match(contentJs, /const current = \(textarea\.value \|\| ''\)\.replace\(\/\\s\+\$\/, ''\);\s*\n\s*const existing = current && current !== lastSubmittedText \? current : '';\s*\n\s*const lines = existing \? existing\.split\('\\n'\) : \[\];\s*\n\s*if \(!lines\.includes\(cmdText\)\) lines\.push\(cmdText\);/);
+  // appended below them, once — deduped per incoming line, since multi-job
+  // pickers pass multi-line command text (a box still holding the last
+  // submitted combo is treated as empty, not as a draft).
+  assert.match(contentJs, /const current = \(textarea\.value \|\| ''\)\.replace\(\/\\s\+\$\/, ''\);\s*\n\s*const existing = current && current !== lastSubmittedText \? current : '';\s*\n\s*const lines = existing \? existing\.split\('\\n'\) : \[\];\s*\n\s*for \(const cmdLine of cmdText\.split\('\\n'\)\) \{\s*\n\s*if \(!lines\.includes\(cmdLine\)\) lines\.push\(cmdLine\);\s*\n\s*\}/);
+  // The 600ms fallback submit inside trySubmit drops the guard when it too
+  // fails, so a stranded draft isn't misread as an uncleared post before
+  // waitForPostToClear's poll budget runs out.
+  assert.match(contentJs, /if \(!submitCommentForm\(textarea\)\) lastSubmittedText = '';/);
   // Auto-submit path: the draft is snapshotted as the combo base when a
   // fresh combo starts, and rides along at the top of the posted comment.
   assert.match(contentJs, /pendingComboBase = current && current !== lastSubmittedText \? current : '';/);
@@ -270,7 +275,7 @@ test('content-script action controls are bound through the touch-friendly addTap
 });
 
 test('submitPendingCombo falls back to form submission, gated on the comment still being unposted so it cannot double-post', () => {
-  assert.match(contentJs, /if \(textarea\.isConnected && textarea\.value === finalText && !isSubmitInFlight\(textarea, submitBtn\)\) \{\s*\n\s*submitCommentForm\(textarea\);\s*\n\s*\}\s*\n\s*\}, SUBMIT_FALLBACK_DELAY_MS\);/);
+  assert.match(contentJs, /if \(textarea\.isConnected && textarea\.value === finalText && !isSubmitInFlight\(textarea, submitBtn\)\) \{\s*\n\s*\/\/ If even the direct form submit[\s\S]*?if \(!submitCommentForm\(textarea\)\) lastSubmittedText = '';\s*\n\s*\}\s*\n\s*\}, SUBMIT_FALLBACK_DELAY_MS\);/);
   // …and when the submit button never showed up at all, submit the form directly.
   assert.match(contentJs, /\} else if \(submitCommentForm\(textarea\)\) \{\s*\n\s*showToast\(`Posted \$\{finalLines\.join\(' \+ '\)\}`, 'success'\);\s*\n\s*waitForPostToClear\(textarea, finalButtons, 20\);/);
 });
