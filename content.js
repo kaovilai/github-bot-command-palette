@@ -4089,12 +4089,14 @@ function mergeCollapsedState(storedKeys, recentToggles) {
 
       // Same rule for the remaining awaited state: a PR-scoped fetch from a
       // stale pass (started on the previous PR) must never land here after a
-      // newer pass rendered — B's /test picker would offer A's jobs.
+      // newer pass rendered — B's /test picker would offer A's jobs. The
+      // token isn't PR-scoped, but a stale pass's older read (e.g. the user
+      // just replaced the token) must not clobber the newer one either.
       const presubmitJobs = await fetchPresubmitJobs();
+      const githubToken = await CM.getGithubToken();
       if (generation !== injectGeneration) return;
       lastPresubmitJobs = presubmitJobs;
-      lastGithubToken = await CM.getGithubToken();
-      if (generation !== injectGeneration) return;
+      lastGithubToken = githubToken;
 
       if (config.globalSettings.prowAutoDetect !== false) {
         const hasProwSignals = detectProwSignals() ||
