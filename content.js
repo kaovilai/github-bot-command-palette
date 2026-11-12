@@ -495,6 +495,9 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   // resolve their awaits out of order; only the newest may render.
   let injectGeneration = 0;
   let lastPluginData = null;
+  // The repo the last successful plugin lookup was for — the reuse fallback
+  // in inject() must never apply one repo's plugin list to another.
+  let lastPluginDataRepo = null;
   let lastPresubmitJobs = null;
   let lastGithubToken = null;
   let lastRehearsalJobsUrl = null;
@@ -4059,6 +4062,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       const hasSources = config.pluginConfigSources && config.pluginConfigSources.some(s => s.enabled);
 
       if (filterMode !== 'disabled' && hasSources && CM.isContextValid()) {
+        let pluginData = null;
         try {
           const response = await chrome.runtime.sendMessage({
             action: 'getEnabledPlugins',
@@ -4068,29 +4072,41 @@ function mergeCollapsedState(storedKeys, recentToggles) {
           // (another PR's plugin list) — publishing it would clobber the
           // newer pass's shared state. Bail before any assignment.
           if (generation !== injectGeneration) return;
-          if (response) {
+          if (response && response.plugins) {
             lastPluginData = response;
-            if (response.plugins) {
-              profiles = CM.filterCommandsByPlugins(profiles, response.plugins, filterMode);
-              // Section-level relevance: profiles that declare requiredPlugins
-              // (e.g. Rehearse → pj-rehearse-plugin) hide entirely when the
-              // repo's plugin config doesn't enable them — in 'filter' mode.
-              // 'indicate' mode keeps everything visible but marks the
-              // affected commands dimmed (same indication the command-level
-              // filter uses); 'disabled' opts out of plugin checks altogether.
-              if (filterMode === 'filter') {
-                profiles = CM.filterProfilesByRequiredPlugins(profiles, response.plugins);
-              } else if (filterMode === 'indicate') {
-                profiles = CM.markProfilesByRequiredPlugins(profiles, response.plugins);
-              }
-            }
+            lastPluginDataRepo = currentRepo;
+            pluginData = response;
           }
         } catch (e) {
           if (generation !== injectGeneration) return;
-          lastPluginData = null;
+          // Fetch unavailable — fall through to the last known state below
+          // instead of flashing filtered sections back on.
+        }
+        if (!pluginData && lastPluginData && lastPluginDataRepo === currentRepo &&
+            lastPluginData.plugins) {
+          // Transient fetch failure (rate limit, offline): reuse the last
+          // known plugin state for THIS repo rather than failing open —
+          // otherwise every plugin-ineligible section and command would
+          // flicker back into the bar until the fetch succeeds again.
+          pluginData = lastPluginData;
+        }
+        if (pluginData) {
+          profiles = CM.filterCommandsByPlugins(profiles, pluginData.plugins, filterMode);
+          // Section-level relevance: profiles that declare requiredPlugins
+          // (e.g. Rehearse → pj-rehearse-plugin) hide entirely when the
+          // repo's plugin config doesn't enable them — in 'filter' mode.
+          // 'indicate' mode keeps everything visible but marks the
+          // affected commands dimmed (same indication the command-level
+          // filter uses); 'disabled' opts out of plugin checks altogether.
+          if (filterMode === 'filter') {
+            profiles = CM.filterProfilesByRequiredPlugins(profiles, pluginData.plugins);
+          } else if (filterMode === 'indicate') {
+            profiles = CM.markProfilesByRequiredPlugins(profiles, pluginData.plugins);
+          }
         }
       } else {
         lastPluginData = null;
+        lastPluginDataRepo = null;
       }
 
       // Same rule for the remaining awaited state: a PR-scoped fetch from a
@@ -4182,16 +4198,19 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     }
     if (pollGeneration !== settingsPollGeneration) return;
     if (!stored || !stored.globalSettings || !stored.globalSettings.enabled) return;
-    if (generationAtRead === injectGeneration) {
-      const changed = !!config && JSON.stringify(stored) !== JSON.stringify(config);
-      config = stored;
-      if (changed) {
-        // A profile was added/removed/disabled or a setting changed: notice
-        // it AND act on it — without this re-render, removed controls and
-        // shortcut bindings would stay active until the next navigation.
-        // (The liveUpdates handling below still runs for the fresh config.)
-        debouncedInject();
-      }
+    // A newer inject raced this read: it published a config read at least as
+    // recently and already applied whatever live-update state the current
+    // config wants — acting on this older snapshot here (assigning it, or
+    // clearing live logic its opt-out branch disagrees with) would undo the
+    // newer state.
+    if (generationAtRead !== injectGeneration) return;
+    const changed = !!config && JSON.stringify(stored) !== JSON.stringify(config);
+    config = stored;
+    if (changed) {
+      // A profile was added/removed/disabled or a setting changed: notice
+      // it AND act on it — without this re-render, removed controls and
+      // shortcut bindings would stay active until the next navigation.
+      debouncedInject();
     }
     if (stored.globalSettings.liveUpdates !== true) {
       // Opted out mid-session: drop any applied overrides and repaint once.

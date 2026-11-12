@@ -465,4 +465,29 @@ test('a failed branch fetch falls back to the input popover only when not supers
       'an older poll snapshot must not overwrite the newer inject config');
     assert.equal(state.config.tag, 'fresh-inject-config');
   });
+  test('a raced settings poll must not clear newer live-update state', async () => {
+    // The poll's opt-out branch clears applied live logic; when a newer
+    // inject raced the poll's read, that branch must not run at all.
+    const sandbox = {
+      document: { visibilityState: 'visible' },
+      settingsPollGeneration: 0,
+      injectGeneration: 7,
+      config: { tag: 'fresh', globalSettings: { enabled: true, liveUpdates: true } },
+      appliedLiveLogicVersion: 'v9',
+      liveLogic: { checksSectionSelector: '.fresh' },
+      CM: {
+        getConfig: () => new Promise(resolve => {
+          sandbox.injectGeneration++; // newer inject during the read
+          resolve({ tag: 'older', globalSettings: { enabled: true, liveUpdates: false } });
+        })
+      },
+      refreshLiveLogic: () => Promise.resolve(false),
+      debouncedInject: () => {}
+    };
+    await vm.runInNewContext(pollSnippet, sandbox);
+    assert.equal(sandbox.appliedLiveLogicVersion, 'v9',
+      'a raced poll must not clear applied live logic');
+    assert.deepEqual(sandbox.liveLogic, { checksSectionSelector: '.fresh' },
+      'a raced poll must not reset live logic overrides');
+  });
 }
