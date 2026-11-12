@@ -4177,7 +4177,15 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     }
     if (!stored || !stored.globalSettings || !stored.globalSettings.enabled) return;
     if (generationAtRead === injectGeneration) {
+      const changed = !!config && JSON.stringify(stored) !== JSON.stringify(config);
       config = stored;
+      if (changed) {
+        // A profile was added/removed/disabled or a setting changed: notice
+        // it AND act on it — without this re-render, removed controls and
+        // shortcut bindings would stay active until the next navigation.
+        // (The liveUpdates handling below still runs for the fresh config.)
+        debouncedInject();
+      }
     }
     if (stored.globalSettings.liveUpdates !== true) {
       // Opted out mid-session: drop any applied overrides and repaint once.

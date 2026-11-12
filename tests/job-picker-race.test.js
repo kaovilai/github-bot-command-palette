@@ -409,8 +409,9 @@ test('a failed branch fetch falls back to the input popover only when not supers
     'expected to find the settings-poll callback');
   const pollSnippet = '(async () => {\n' + contentJs.slice(pollStart, pollEnd) + '\n})()';
 
-  function pollSandbox({ bumpDuringRead }) {
-    const state = { config: { tag: 'fresh-inject-config' } };
+  function pollSandbox({ bumpDuringRead, storedConfig }) {
+    const state = { config: { tag: 'fresh-inject-config', globalSettings: { enabled: true, liveUpdates: false } } };
+    const injectCalls = [];
     const sandbox = {
       document: { visibilityState: 'visible' },
       injectGeneration: 7,
@@ -421,20 +422,30 @@ test('a failed branch fetch falls back to the input popover only when not supers
         getConfig: () => new Promise(resolve => {
           // An inject pass runs while the poll's read is in flight.
           if (bumpDuringRead) sandbox.injectGeneration++;
-          resolve({ tag: 'older-poll-config', globalSettings: { enabled: true, liveUpdates: false } });
+          resolve(storedConfig || { tag: 'older-poll-config', globalSettings: { enabled: true, liveUpdates: false } });
         })
       },
       refreshLiveLogic: () => Promise.resolve(false),
-      debouncedInject: () => {}
+      debouncedInject: () => { injectCalls.push(1); }
     };
-    return { sandbox, state };
+    return { sandbox, state, injectCalls };
   }
 
   test('settings poll assigns its read when no inject raced it', async () => {
-    const { sandbox } = pollSandbox({ bumpDuringRead: false });
+    const { sandbox, injectCalls } = pollSandbox({ bumpDuringRead: false });
     await vm.runInNewContext(pollSnippet, sandbox);
     assert.equal(sandbox.config.tag, 'older-poll-config',
       'with no racing inject, the poll read is the freshest and should publish');
+    assert.equal(injectCalls.length, 1,
+      'a changed config must trigger a re-render (drop stale controls/shortcuts)');
+  });
+
+  test('settings poll re-renders on config change, not on unchanged config', async () => {
+    const unchanged = { tag: 'fresh-inject-config', globalSettings: { enabled: true, liveUpdates: false } };
+    const { sandbox, injectCalls } = pollSandbox({ bumpDuringRead: false, storedConfig: unchanged });
+    await vm.runInNewContext(pollSnippet, sandbox);
+    assert.equal(injectCalls.length, 0,
+      'an unchanged config must not trigger a re-render every minute');
   });
 
   test('settings poll must not clobber a fresher inject-published config', async () => {
