@@ -499,6 +499,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   // first button of the current combo was clicked. The combo is appended
   // BELOW it instead of replacing it — see queueAutoSubmit().
   let pendingComboBase = '';
+  // Collapsed command-bar section keys (profile ids / 'repo-overrides'),
+  // loaded once per inject() from synced storage so a user's collapsed
+  // sections survive sessions and devices. Mutated by the group toggle and
+  // persisted through CM.setCollapsedGroups().
+  let collapsedGroupKeys = new Set();
   // The text of the most recent combo we submitted. While GitHub hasn't
   // cleared the textarea yet (post still in flight), that text is still in
   // the box; snapshotting it as a "draft" for the next combo would duplicate
@@ -3269,27 +3274,78 @@ function shouldHandleShortcutKey(e, overlayOpen) {
 
   /**
    * Build a named group of command buttons wrapped in a labelled container.
+   * The header (chevron + label) is one button: a single click collapses the
+   * group's buttons away, another click brings them back. When `groupKey` is
+   * given (profile id, or 'repo-overrides'), the collapsed state is
+   * remembered across sessions via synced storage, and every bar on the page
+   * sharing that key toggles in lockstep.
    * @param {string}   name     - Group label shown above the buttons.
    * @param {Object[]} commands - Array of command descriptors.
+   * @param {string}   [groupKey] - Stable persistence key for collapse state.
    * @returns {HTMLDivElement}
    */
-  function createCommandGroup(name, commands) {
+  function createCommandGroup(name, commands, groupKey) {
     const group = document.createElement('div');
     group.className = 'ghbcp-cmd-group';
     group.setAttribute('role', 'group');
+    if (groupKey) group.dataset.groupKey = groupKey;
     const groupLabelId = 'ghbcp-group-' + (++_ghbcpGroupIdCounter);
     group.setAttribute('aria-labelledby', groupLabelId);
+
+    const applyCollapsed = (collapsed) => {
+      group.classList.toggle('ghbcp-collapsed', collapsed);
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+    };
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ghbcp-group-toggle';
+    toggle.setAttribute('aria-labelledby', groupLabelId);
+    const wrapId = groupLabelId + '-wrap';
+    toggle.setAttribute('aria-controls', wrapId);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'ghbcp-group-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = '▾';
+    toggle.appendChild(chevron);
+
     const groupLabel = document.createElement('span');
     groupLabel.className = 'ghbcp-group-label';
     groupLabel.id = groupLabelId;
     groupLabel.textContent = name;
-    group.appendChild(groupLabel);
+    toggle.appendChild(groupLabel);
+
     const btnWrap = document.createElement('div');
     btnWrap.className = 'ghbcp-btn-wrap';
+    btnWrap.id = wrapId;
     const ctx = { repoName: currentRepo, prNumber: getPRNumber() };
     for (const cmd of commands) {
       btnWrap.appendChild(createButton(cmd, ctx));
     }
+
+    if (groupKey) {
+      const remembered = collapsedGroupKeys.has(groupKey);
+      applyCollapsed(remembered);
+      addTapListener(toggle, () => {
+        const nowCollapsed = !group.classList.contains('ghbcp-collapsed');
+        if (nowCollapsed) collapsedGroupKeys.add(groupKey);
+        else collapsedGroupKeys.delete(groupKey);
+        // Sync every bar on the page (comment box, review dialog) that shows
+        // the same group — they share the key, so they share the state.
+        document.querySelectorAll(
+          `.ghbcp-cmd-group[data-group-key="${CSS.escape(groupKey)}"]`
+        ).forEach(g => {
+          g.classList.toggle('ghbcp-collapsed', nowCollapsed);
+          const t = g.querySelector('.ghbcp-group-toggle');
+          if (t) t.setAttribute('aria-expanded', String(!nowCollapsed));
+        });
+        // Fire-and-forget: setCollapsedGroups swallows storage failures.
+        CM.setCollapsedGroups(collapsedGroupKeys);
+      });
+    }
+
+    group.appendChild(toggle);
     group.appendChild(btnWrap);
     return group;
   }
@@ -3362,10 +3418,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     const fragment = document.createDocumentFragment();
     for (const profile of profiles) {
       if (profile.globalCommands.length === 0) continue;
-      fragment.appendChild(createCommandGroup(profile.name, profile.globalCommands));
+      fragment.appendChild(createCommandGroup(profile.name, profile.globalCommands, profile.id));
     }
     if (extraCommands.length > 0) {
-      fragment.appendChild(createCommandGroup('Repo Overrides', extraCommands));
+      fragment.appendChild(createCommandGroup('Repo Overrides', extraCommands, 'repo-overrides'));
     }
     return fragment;
   }
@@ -3874,6 +3930,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       if (!currentRepo) return;
       if (CM.isRepoExcluded(config, currentRepo)) return;
 
+      // Collapsed-section preference (per profile id) — read before the bar
+      // is built so groups render in their remembered state.
+      collapsedGroupKeys = new Set(await CM.getCollapsedGroups());
+
       let profiles = CM.getMatchingProfiles(config, currentRepo);
       if (profiles.length === 0) return;
 
@@ -3890,6 +3950,14 @@ function shouldHandleShortcutKey(e, overlayOpen) {
             lastPluginData = response;
             if (response.plugins) {
               profiles = CM.filterCommandsByPlugins(profiles, response.plugins, filterMode);
+              // Section-level relevance: profiles that declare requiredPlugins
+              // (e.g. Rehearse → pj-rehearse-plugin) hide entirely when the
+              // repo's plugin config doesn't enable them. Only in 'filter'
+              // mode — 'indicate' deliberately keeps everything visible, just
+              // marked, and 'disabled' opts out of plugin checks altogether.
+              if (filterMode === 'filter') {
+                profiles = CM.filterProfilesByRequiredPlugins(profiles, response.plugins);
+              }
             }
           }
         } catch (e) {

@@ -28,9 +28,10 @@
     {
       "id": "profile-prow-openshift-release",
       "name": "Prow — OpenShift Release",
-      "description": "Extra commands for openshift/release repo (pj-rehearse)",
+      "description": "pj-rehearse commands for repos where the pj-rehearse-plugin is enabled",
       "enabled": true,
       "repoPatterns": ["openshift/release"],
+      "requiredPlugins": ["pj-rehearse-plugin"],
       "globalCommands": [
         { "id": "cmd-rehearse-ack", "label": "Rehearse ACK", "command": "/pj-rehearse ack", "description": "Acknowledge rehearsal", "style": "warning", "requireConfirm": true, "hasInput": false, "inputPlaceholder": "", "commandTemplate": "", "shortcut": "" },
         { "id": "cmd-rehearse-test", "label": "Rehearse...", "command": "/pj-rehearse", "description": "Rehearse specific tests from REHEARSALNOTIFIER", "style": "primary", "requireConfirm": false, "hasInput": false, "hasJobPicker": true, "jobSource": "rehearsals", "joinMode": "single-command", "inputPlaceholder": "", "commandTemplate": "/pj-rehearse {input}", "shortcut": "" },
@@ -141,6 +142,9 @@
     }
   ],
   "repoOverrides": [],
+  "pluginConfigSources": [
+    { "id": "src-openshift-ci", "name": "OpenShift CI (openshift/release)", "enabled": true, "format": "sharded", "configRepo": "openshift/release", "branch": "master", "pathTemplate": "core-services/prow/02_config", "filePath": "", "presubmitsBasePath": "ci-operator/jobs", "cacheTTLMinutes": 60 }
+  ],
   "globalSettings": {
     "enabled": true,
     "buttonPosition": "above-comment-box",

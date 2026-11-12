@@ -1108,7 +1108,10 @@ test('getConfig: fills in missing pluginConfigSources when stored config lacks i
   const CM = makeContextWithStorage(partial);
   const config = await CM.getConfig();
   assert.ok(Array.isArray(config.pluginConfigSources), 'pluginConfigSources should be an array');
-  assert.equal(config.pluginConfigSources.length, 0);
+  // Since v15 the default carries the seeded OpenShift CI source so section
+  // relevance is checked dynamically out of the box.
+  assert.equal(config.pluginConfigSources.length, 1);
+  assert.equal(config.pluginConfigSources[0].configRepo, 'openshift/release');
 });
 
 test('getConfig: fills in individual missing globalSettings keys from defaults', async () => {
@@ -1707,4 +1710,161 @@ test('DEFAULT_CONFIG: specialized profile exposes its OpenShift commands', () =>
   ]);
   assert.equal(profile.globalCommands.find(c => c.command === '/testwith abort').requireConfirm, true,
     'aborting in-flight jobs should require confirmation');
+});
+
+// ---------------------------------------------------------------------------
+// filterProfilesByRequiredPlugins (dynamic section relevance)
+// ---------------------------------------------------------------------------
+test('filterProfilesByRequiredPlugins: drops profiles whose required plugin is not enabled', () => {
+  const CM = makeContext();
+  const profiles = [
+    { id: 'a', requiredPlugins: ['pj-rehearse-plugin'] },
+    { id: 'b' }
+  ];
+  const out = CM.filterProfilesByRequiredPlugins(profiles, ['approve', 'lgtm']);
+  assert.deepEqual(out.map(p => p.id), ['b'],
+    'profile requiring pj-rehearse-plugin must hide when it is not enabled');
+});
+
+test('filterProfilesByRequiredPlugins: keeps profiles whose required plugins are all enabled', () => {
+  const CM = makeContext();
+  const profiles = [
+    { id: 'a', requiredPlugins: ['pj-rehearse-plugin'] },
+    { id: 'b' }
+  ];
+  const out = CM.filterProfilesByRequiredPlugins(profiles, ['approve', 'pj-rehearse-plugin']);
+  assert.deepEqual(out.map(p => p.id), ['a', 'b']);
+});
+
+test('filterProfilesByRequiredPlugins: requires every listed plugin', () => {
+  const CM = makeContext();
+  const out = CM.filterProfilesByRequiredPlugins(
+    [{ id: 'a', requiredPlugins: ['x', 'y'] }], ['x']);
+  assert.deepEqual(out, [], 'a missing second required plugin must hide the profile');
+});
+
+test('filterProfilesByRequiredPlugins: no plugin data means no filtering (static patterns stand)', () => {
+  const CM = makeContext();
+  const profiles = [{ id: 'a', requiredPlugins: ['pj-rehearse-plugin'] }];
+  assert.equal(CM.filterProfilesByRequiredPlugins(profiles, null), profiles,
+    'null plugin data must return the profiles unchanged');
+  assert.equal(CM.filterProfilesByRequiredPlugins(profiles, []), profiles,
+    'empty plugin data must return the profiles unchanged');
+});
+
+// ---------------------------------------------------------------------------
+// Collapsed group persistence (own sync key, outside the Export/Import schema)
+// ---------------------------------------------------------------------------
+function makeContextWithStatefulStorage(initial = {}) {
+  const store = { ...initial };
+  const ctx = vm.createContext({
+    window: { GHBCP: { CommandToPlugin: {} } },
+    crypto: { randomUUID: () => 'test-uuid-1234' },
+    document: { createElement: () => makeEscapingDiv() },
+    chrome: {
+      runtime: { id: 'fake-id', lastError: null },
+      storage: {
+        sync: {
+          get: (key, cb) => cb(key in store ? { [key]: store[key] } : {}),
+          set: (obj, cb) => { Object.assign(store, obj); cb && cb(); }
+        }
+      }
+    }
+  });
+  vm.runInContext(configManagerSrc, ctx);
+  return { CM: ctx.window.GHBCP.ConfigManager, store };
+}
+
+test('getCollapsedGroups: returns [] when nothing is stored', async () => {
+  const { CM } = makeContextWithStatefulStorage();
+  assert.deepEqual([...await CM.getCollapsedGroups()], []);
+});
+
+test('collapsed groups round-trip through storage under their own key', async () => {
+  const { CM, store } = makeContextWithStatefulStorage();
+  await CM.setCollapsedGroups(['profile-payload-openshift', 'repo-overrides']);
+  assert.ok('ghbcp_collapsed_groups' in store,
+    'collapse state must live under its own key');
+  assert.ok(!('ghbcp_config' in store),
+    'collapse state must not be written into the config blob');
+  assert.deepEqual([...await CM.getCollapsedGroups()],
+    ['profile-payload-openshift', 'repo-overrides']);
+});
+
+test('collapsed group helpers never throw on storage failures', async () => {
+  const CM = makeContextWithStorage(null, { message: 'quota exceeded' });
+  assert.deepEqual([...await CM.getCollapsedGroups()], []);
+  await CM.setCollapsedGroups(['x']); // must resolve, not reject
+});
+
+// ---------------------------------------------------------------------------
+// v14 → v15 migration: dynamic plugin checks
+// ---------------------------------------------------------------------------
+function makeV14Config(CM, overrides = {}) {
+  return {
+    version: 14,
+    profiles: [],
+    repoOverrides: [],
+    globalSettings: JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG.globalSettings)),
+    pluginConfigSources: [],
+    ...overrides
+  };
+}
+
+test('migrateConfig: v14 seeds the OpenShift CI plugin source when none is configured', async () => {
+  const CM = makeContext();
+  const CM2 = makeContextWithStorage(makeV14Config(CM));
+  const config = await CM2.getConfig();
+  assert.ok(Array.isArray(config.pluginConfigSources) && config.pluginConfigSources.length === 1,
+    'the OpenShift CI preset should be seeded');
+  const src = config.pluginConfigSources[0];
+  assert.equal(src.configRepo, 'openshift/release');
+  assert.equal(src.enabled, true);
+  assert.equal(src.format, 'sharded');
+});
+
+test('migrateConfig: v14 leaves already-configured plugin sources untouched', async () => {
+  const CM = makeContext();
+  const own = [{ id: 'src-mine', name: 'Mine', enabled: true, format: 'monolithic',
+    configRepo: 'org/repo', branch: 'main', pathTemplate: '', filePath: 'prow/plugins.yaml',
+    presubmitsBasePath: '', cacheTTLMinutes: 60 }];
+  const CM2 = makeContextWithStorage(makeV14Config(CM, { pluginConfigSources: own }));
+  const config = await CM2.getConfig();
+  assert.equal(config.pluginConfigSources.length, 1);
+  assert.equal(config.pluginConfigSources[0].id, 'src-mine',
+    'a user-configured source must not be replaced by the seeded preset');
+});
+
+test('migrateConfig: v14 rehearse profile gains the pj-rehearse-plugin gate', async () => {
+  const CM = makeContext();
+  const CM2 = makeContextWithStorage(makeV14Config(CM));
+  const config = await CM2.getConfig();
+  const p = config.profiles.find(x => x.id === 'profile-prow-openshift-release');
+  assert.ok(p, 'rehearse profile should exist after migration');
+  assert.deepEqual([...p.requiredPlugins], ['pj-rehearse-plugin'],
+    'the dynamic gate should be attached to the rehearse profile');
+  assert.deepEqual([...p.repoPatterns], ['openshift/release'],
+    'the static repo floor should stay in place');
+});
+
+test('pj-rehearse commands map to the pj-rehearse-plugin for command-level filtering', () => {
+  // The reverse map is built at load time in prow-plugin-map.js; content.js's
+  // filterCommandsByPlugins reads it via window.GHBCP.CommandToPlugin. Feed a
+  // map shaped like the real one to confirm the lookup semantics the map
+  // entry enables.
+  const CM = makeContext({ '/pj-rehearse': 'pj-rehearse-plugin' });
+  const profiles = [{
+    id: 'p',
+    globalCommands: [
+      { command: '/pj-rehearse' },
+      { command: '/pj-rehearse ack' }
+    ],
+    checkCommands: []
+  }];
+  const filtered = CM.filterCommandsByPlugins(profiles, ['approve'], 'filter');
+  assert.deepEqual([...filtered[0].globalCommands], [],
+    '/pj-rehearse commands must be filtered out when the plugin is absent');
+  const kept = CM.filterCommandsByPlugins(profiles, ['pj-rehearse-plugin'], 'filter');
+  assert.equal(kept[0].globalCommands.length, 2,
+    '/pj-rehearse commands must stay when the plugin is enabled');
 });

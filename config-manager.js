@@ -28,7 +28,7 @@ GHBCP.addTapListener = function addTapListener(el, handler) {
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 14;
+  const SCHEMA_VERSION = 15;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -136,9 +136,16 @@ GHBCP.ConfigManager = (() => {
       {
         id: 'profile-prow-openshift-release',
         name: 'Prow — OpenShift Release',
-        description: 'Extra commands for openshift/release repo (pj-rehearse)',
+        description: 'pj-rehearse commands for repos where the pj-rehearse-plugin is enabled',
         enabled: true,
+        // Static floor: the repos known to carry the plugin (today only
+        // openshift/release). requiredPlugins is the dynamic gate on top —
+        // when the repo's actual plugin config is available, the section
+        // hides on repos that don't enable pj-rehearse-plugin, so it follows
+        // reality instead of this hardcoded list. The gate only ever hides:
+        // without plugin data the static pattern stands.
         repoPatterns: ['openshift/release'],
+        requiredPlugins: ['pj-rehearse-plugin'],
         globalCommands: [
           cmd('Rehearse ACK', '/pj-rehearse ack', 'warning', { requireConfirm: true, description: 'Acknowledge rehearsal' }),
           cmd('Rehearse...', '/pj-rehearse', 'primary', { hasJobPicker: true, jobSource: 'rehearsals', joinMode: 'single-command', commandTemplate: '/pj-rehearse {input}', description: 'Rehearse specific tests from REHEARSALNOTIFIER' }),
@@ -307,7 +314,25 @@ GHBCP.ConfigManager = (() => {
       }
     ],
     repoOverrides: [],
-    pluginConfigSources: [],
+    // Seeded so section relevance is checked dynamically against each repo's
+    // real plugin config (e.g. Rehearse hides where pj-rehearse-plugin isn't
+    // enabled). Same public openshift/release data the presubmit fetch
+    // already reads; cached in the background worker (cacheTTLMinutes).
+    // Users can disable or remove it in Settings → Plugin config sources.
+    pluginConfigSources: [
+      {
+        id: 'src-openshift-ci',
+        name: 'OpenShift CI (openshift/release)',
+        enabled: true,
+        format: 'sharded',
+        configRepo: 'openshift/release',
+        branch: 'master',
+        pathTemplate: 'core-services/prow/02_config',
+        filePath: '',
+        presubmitsBasePath: 'ci-operator/jobs',
+        cacheTTLMinutes: 60
+      }
+    ],
     globalSettings: {
       enabled: true,
       buttonPosition: 'above-comment-box',
@@ -500,6 +525,14 @@ GHBCP.ConfigManager = (() => {
     }
     if (!config.globalSettings.excludedRepos) config.globalSettings.excludedRepos = [];
     if (config.globalSettings.prowAutoDetect === undefined) config.globalSettings.prowAutoDetect = true;
+    // v15: dynamic section relevance (e.g. Rehearse hidden where
+    // pj-rehearse-plugin isn't enabled) needs a plugin config source. Seed
+    // the OpenShift CI preset for installs that never configured one. This
+    // runs exactly once (on the version bump), so a user who clears their
+    // sources afterwards stays cleared.
+    if (!config.pluginConfigSources || config.pluginConfigSources.length === 0) {
+      config.pluginConfigSources = JSON.parse(JSON.stringify(defaults.pluginConfigSources));
+    }
     // Sources saved before presubmitsBasePath existed can't resolve /test
     // rerun_command targets; backfill the known path for openshift/release.
     for (const src of (config.pluginConfigSources || [])) {
@@ -563,6 +596,57 @@ GHBCP.ConfigManager = (() => {
         reject(e);
       }
     });
+  }
+
+  // Collapsed command-bar sections, stored under its own sync key (not part
+  // of the Export/Import config schema) so the preference follows the user
+  // across sessions and devices without touching their command config.
+  const COLLAPSED_GROUPS_KEY = 'ghbcp_collapsed_groups';
+
+  /**
+   * Read the set of collapsed command-bar group keys (profile ids, or
+   * 'repo-overrides' for the Repo Overrides group).
+   * @returns {Promise<string[]>} Collapsed keys; empty array on any failure.
+   */
+  async function getCollapsedGroups() {
+    try {
+      const res = await syncGet(COLLAPSED_GROUPS_KEY);
+      return Array.isArray(res[COLLAPSED_GROUPS_KEY]) ? res[COLLAPSED_GROUPS_KEY] : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * Persist the full set of collapsed group keys. Fire-and-forget safe:
+   * storage failures resolve rather than reject (a collapse preference is
+   * not worth an error toast).
+   * @param {Iterable<string>} keys
+   * @returns {Promise<void>}
+   */
+  async function setCollapsedGroups(keys) {
+    try {
+      await syncSet({ [COLLAPSED_GROUPS_KEY]: Array.from(keys) });
+    } catch (e) { /* best effort */ }
+  }
+
+  /**
+   * Drop profiles whose `requiredPlugins` aren't all enabled for the repo.
+   * The dynamic section-relevance gate: a profile declaring requiredPlugins
+   * (e.g. Rehearse → pj-rehearse-plugin) hides entirely on repos whose
+   * plugin config doesn't enable it. Profiles without the field always pass,
+   * and so does everything when plugin data is unavailable (the static
+   * repoPatterns remain the floor in that case).
+   * @param {Object[]}   profiles       - Matched profile objects.
+   * @param {string[]|null} enabledPlugins - Plugin names active for the repo, or null/empty when unknown.
+   * @returns {Object[]} Filtered profiles array (same reference when nothing drops).
+   */
+  function filterProfilesByRequiredPlugins(profiles, enabledPlugins) {
+    if (!profiles || !Array.isArray(enabledPlugins) || enabledPlugins.length === 0) return profiles;
+    const enabled = new Set(enabledPlugins);
+    return profiles.filter(p => !Array.isArray(p.requiredPlugins) ||
+      p.requiredPlugins.length === 0 ||
+      p.requiredPlugins.every(pl => enabled.has(pl)));
   }
 
   /**
@@ -873,6 +957,9 @@ GHBCP.ConfigManager = (() => {
     getMatchingProfiles,
     getExtraCommands,
     filterCommandsByPlugins,
+    filterProfilesByRequiredPlugins,
+    getCollapsedGroups,
+    setCollapsedGroups,
     globMatch,
     isRepoExcluded,
     getOverrideContext,

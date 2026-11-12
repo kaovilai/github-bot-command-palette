@@ -240,4 +240,46 @@ test.describe('GitHub Bot Command Palette', () => {
 
     console.log('\nPlugin config filtering test complete!');
   });
+
+  test('collapsible sections collapse in one click and persist across reloads', async () => {
+    test.setTimeout(120000);
+
+    page = await context.newPage();
+    await page.goto(PR_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    const commandBar = page.locator('.ghbcp-command-bar');
+    await expect(commandBar).toBeVisible({ timeout: 30000 });
+
+    // Pick the first collapsible group (every group carries a stable key).
+    const group = page.locator('.ghbcp-cmd-group[data-group-key]').first();
+    await expect(group).toBeVisible();
+    const groupKey = await group.getAttribute('data-group-key');
+    const toggle = group.locator('.ghbcp-group-toggle');
+    const btnWrap = group.locator('.ghbcp-btn-wrap');
+
+    // Expanded by default: buttons visible, toggle announces expanded.
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(btnWrap).toBeVisible();
+
+    // One click collapses the section away.
+    await toggle.click();
+    await expect(group).toHaveClass(/ghbcp-collapsed/);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(btnWrap).toBeHidden();
+
+    // Reload the page: the collapsed state is remembered across sessions.
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+    await expect(page.locator('.ghbcp-command-bar')).toBeVisible({ timeout: 30000 });
+    const groupAfter = page.locator(
+      `.ghbcp-cmd-group[data-group-key="${groupKey}"]`).first();
+    await expect(groupAfter).toHaveClass(/ghbcp-collapsed/);
+    await expect(groupAfter.locator('.ghbcp-btn-wrap')).toBeHidden();
+    console.log('PASS: section stayed collapsed across reload');
+
+    // Undo is one click away — expand again (also cleans up for other tests).
+    await groupAfter.locator('.ghbcp-group-toggle').click();
+    await expect(groupAfter).not.toHaveClass(/ghbcp-collapsed/);
+    await expect(groupAfter.locator('.ghbcp-btn-wrap')).toBeVisible();
+    console.log('PASS: section expanded again on second click');
+  });
 });
