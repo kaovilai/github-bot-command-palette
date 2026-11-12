@@ -4105,6 +4105,13 @@ function mergeCollapsedState(storedKeys, recentToggles) {
 
       injectGlobalCommandBar(profiles, extraCommands);
       await injectCheckButtons(profiles);
+      // injectCheckButtons awaits network fetches (rehearsal job-name
+      // resolution), so a newer inject can have fully rendered while this
+      // pass was parked. Its profiles own the remaining surfaces from here:
+      // resuming with this pass's (older) profiles would overwrite the
+      // newer shortcut bindings and inject stale commands into the newer
+      // page's review toolbar/dialog.
+      if (generation !== injectGeneration) return;
       injectReviewToolbar(profiles, extraCommands);
       injectReviewDialogBar(profiles, extraCommands);
       registerShortcuts(profiles);
