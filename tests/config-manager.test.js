@@ -2019,7 +2019,8 @@ test('markProfilesByRequiredPlugins: marks all commands of unsatisfied profiles,
   const CM = makeContext();
   const profiles = [
     { id: 'a', requiredPlugins: ['pj-rehearse-plugin'],
-      globalCommands: [{ command: '/pj-rehearse' }], checkCommands: [{ command: '/pj-rehearse ack' }] },
+      globalCommands: [{ command: '/pj-rehearse' }], checkCommands: [{ command: '/pj-rehearse ack' }],
+      dynamicCommands: [{ label: 'Rehearse', commandExpression: '"/pj-rehearse " + testName' }] },
     { id: 'b', globalCommands: [{ command: '/lgtm' }] },
     { id: 'c', requiredPlugins: ['approve'],
       globalCommands: [{ command: '/x' }], checkCommands: [] }
@@ -2027,6 +2028,8 @@ test('markProfilesByRequiredPlugins: marks all commands of unsatisfied profiles,
   const out = CM.markProfilesByRequiredPlugins(profiles, ['approve', 'lgtm']);
   assert.ok(out[0].globalCommands[0]._pluginDisabled && out[0].checkCommands[0]._pluginDisabled,
     'commands of a profile whose required plugin is missing must be marked');
+  assert.ok(out[0].dynamicCommands[0]._pluginDisabled,
+    'dynamic commands of a profile whose required plugin is missing must be marked too');
   assert.equal(out[1].globalCommands[0]._pluginDisabled, undefined,
     'profiles without requiredPlugins must not be marked');
   assert.equal(out[2].globalCommands[0]._pluginDisabled, undefined,

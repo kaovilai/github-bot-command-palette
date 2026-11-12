@@ -724,6 +724,7 @@ GHBCP.ConfigManager = (() => {
       const marked = JSON.parse(JSON.stringify(p));
       for (const cmd of (marked.globalCommands || [])) cmd._pluginDisabled = true;
       for (const cmd of (marked.checkCommands || [])) cmd._pluginDisabled = true;
+      for (const cmd of (marked.dynamicCommands || [])) cmd._pluginDisabled = true;
       return marked;
     });
   }

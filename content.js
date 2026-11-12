@@ -3852,7 +3852,10 @@ function mergeCollapsedState(storedKeys, recentToggles) {
                 description: `${dyn.label}: ${checkName}`,
                 style: dyn.style,
                 requireConfirm: false,
-                hasInput: false
+                hasInput: false,
+                // Carries the indicate-mode "plugin not enabled" marking
+                // (markProfilesByRequiredPlugins) through to the button.
+                _pluginDisabled: dyn._pluginDisabled
               };
               btnContainer.appendChild(createButton(dynCmd, context));
             } catch (e) {
