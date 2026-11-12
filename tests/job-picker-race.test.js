@@ -376,12 +376,19 @@ test('a failed branch fetch falls back to the input popover only when not supers
     assert.ok(winListeners['popstate'] && winListeners['popstate'].length >= 1,
       'popstate must be wired on window');
 
-    const before = sandbox.dialogGeneration;
-    docListeners['turbo:load'].forEach(fn => fn());
-    docListeners['pjax:end'].forEach(fn => fn());
-    winListeners['popstate'].forEach(fn => fn());
-    assert.ok(sandbox.dialogGeneration > before,
-      'turbo:load / pjax:end / popstate must bump dialogGeneration');
+    // Each navigation event must bump on its own — a single combined
+    // assertion would pass even if only one of the three were wired to
+    // the supersession handler.
+    for (const [listeners, ev] of [
+      [docListeners, 'turbo:load'],
+      [docListeners, 'pjax:end'],
+      [winListeners, 'popstate']
+    ]) {
+      const before = sandbox.dialogGeneration;
+      listeners[ev].forEach(fn => fn());
+      assert.ok(sandbox.dialogGeneration > before,
+        `${ev} must bump dialogGeneration on its own`);
+    }
 
     // hashchange (same-page anchor jumps — the PR does not change) must
     // only schedule re-injection, never supersede dialogs.

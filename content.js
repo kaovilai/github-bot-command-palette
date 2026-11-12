@@ -4016,7 +4016,13 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       if (!CM.isContextValid()) return;
       if (!isPRPage()) return;
 
-      config = await CM.getConfig();
+      // Read into a local and publish only when current: an older pass's
+      // getConfig() resolving after a newer one's would otherwise leave the
+      // module-level `config` on the older snapshot (a settings change made
+      // mid-session — e.g. autoSubmit — quietly reverted).
+      const storedConfig = await CM.getConfig();
+      if (generation !== injectGeneration) return;
+      config = storedConfig;
       if (config._migrated) {
         showToast('Bot Commands updated to v' + config.version + ' — built-in profiles refreshed', 'success');
         delete config._migrated;
