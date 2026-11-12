@@ -107,6 +107,7 @@ function buildSandbox(collapsed = []) {
 
   const savedCalls = [];
   const closeDialogCalls = [];
+  const recentToggles = new Map();
   const sandbox = {
     document,
     _ghbcpGroupIdCounter: 0,
@@ -123,10 +124,11 @@ function buildSandbox(collapsed = []) {
     },
     CSS: { escape: s => s },
     closeOpenDialogs: () => { closeDialogCalls.push(1); },
+    recentCollapseToggles: recentToggles,
     console: { error: () => {} }
   };
   vm.runInNewContext(snippet, sandbox);
-  return { sandbox, document, savedCalls, closeDialogCalls };
+  return { sandbox, document, savedCalls, closeDialogCalls, recentToggles };
 }
 
 function toggleButtonOf(group) {
@@ -163,7 +165,7 @@ test('a remembered key renders the group collapsed', () => {
 });
 
 test('clicking the toggle collapses, persists, and undoes on the next click', () => {
-  const { sandbox, savedCalls, closeDialogCalls } = buildSandbox();
+  const { sandbox, savedCalls, closeDialogCalls, recentToggles } = buildSandbox();
   const group = sandbox.createCommandGroup('OpenShift Payload Testing', [{ command: '/payload' }], 'profile-payload-openshift');
   const toggle = toggleButtonOf(group);
 
@@ -182,6 +184,8 @@ test('clicking the toggle collapses, persists, and undoes on the next click', ()
     'expand cleared this group key only');
   assert.equal(closeDialogCalls.length, 1,
     'expanding must not close dialogs');
+  assert.equal(recentToggles.get('profile-payload-openshift'), false,
+    'the latest toggle must be recorded for the storage-read merge');
 });
 
 test('toggling one group syncs every bar showing the same key', () => {
@@ -208,3 +212,46 @@ test('groups without a key have no collapse behavior', () => {
   assert.equal(toggle._tapHandler, undefined);
   assert.equal(savedCalls.length, 0);
 });
+
+// mergeCollapsedState(): the pure merge inject() applies over the freshly
+// read storage snapshot, so a read that resolved after a local toggle
+// cannot visibly reverse it.
+{
+  const mergeStart = contentJs.indexOf('function mergeCollapsedState(');
+  const mergeEnd = contentJs.indexOf('\n(async () => {', mergeStart);
+  assert.ok(mergeStart !== -1 && mergeEnd !== -1,
+    'expected to find mergeCollapsedState() before the IIFE');
+  const mergeSnippet = contentJs.slice(mergeStart, mergeEnd);
+
+  test('mergeCollapsedState: local toggles win over the stale storage snapshot', () => {
+    const sandbox = {};
+    vm.runInNewContext(mergeSnippet, sandbox);
+    const merge = sandbox.mergeCollapsedState;
+    // Storage (pre-toggle snapshot): A and B collapsed. Locally: A was
+    // expanded again, C was collapsed — the merged state must reflect the
+    // local toggles, not the snapshot.
+    const merged = merge(['A', 'B'], new Map([['A', false], ['C', true]]));
+    assert.deepEqual([...merged].sort(), ['B', 'C']);
+  });
+
+  test('mergeCollapsedState: untouched keys follow storage (cross-tab changes flow)', () => {
+    const mergeSandbox = {};
+    vm.runInNewContext(mergeSnippet, mergeSandbox);
+    const merge = mergeSandbox.mergeCollapsedState;
+    const merged = merge(['A', 'B'], new Map());
+    assert.deepEqual([...merged].sort(), ['A', 'B']);
+    // Another tab expanded B (storage no longer has it) — no local toggle
+    // for B, so the merged state drops it.
+    const merged2 = merge(['A'], new Map([['C', true]]));
+    assert.deepEqual([...merged2].sort(), ['A', 'C']);
+  });
+
+  test('mergeCollapsedState: last local toggle wins per key', () => {
+    const mergeSandbox = {};
+    vm.runInNewContext(mergeSnippet, mergeSandbox);
+    const merge = mergeSandbox.mergeCollapsedState;
+    const toggles = new Map([['A', true], ['A', false]]); // collapse then expand
+    assert.deepEqual([...merge([], toggles)], [],
+      'the final expansion must win');
+  });
+}

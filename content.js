@@ -464,6 +464,27 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   return !overlayOpen;
 }
 
+/**
+ * Merge a freshly-read collapsed-group snapshot with the collapses/
+ * expansions toggled locally since that read started. A storage read that
+ * resolves after a local toggle carries a pre-toggle snapshot; rendering
+ * from it alone would visibly reverse the toggle when the bar re-renders.
+ * Per key, the local toggle wins (last write wins); keys not toggled
+ * locally take the storage value, so cross-tab changes still flow.
+ * Pure function, no chrome/DOM globals touched.
+ * @param {Iterable<string>} storedKeys     - Collapsed keys from storage.
+ * @param {Map<string, boolean>} recentToggles - Group key → latest local toggle (true = collapsed).
+ * @returns {Set<string>} The merged collapsed-key set.
+ */
+function mergeCollapsedState(storedKeys, recentToggles) {
+  const merged = new Set(storedKeys);
+  for (const [key, collapsed] of recentToggles) {
+    if (collapsed) merged.add(key);
+    else merged.delete(key);
+  }
+  return merged;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
@@ -504,6 +525,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   // sections survive sessions and devices. Mutated by the group toggle and
   // persisted per key through CM.setGroupCollapsed().
   let collapsedGroupKeys = new Set();
+  // Toggles made since the last storage read in inject(), keyed by group
+  // (last write wins). Re-applied over the freshly-read snapshot so a read
+  // that resolved after a toggle can't visibly reverse it; cleared once
+  // consumed. See mergeCollapsedState().
+  const recentCollapseToggles = new Map();
   // Monotonic generation of dialog-open requests (job picker, payload
   // picker, input popover). Each opener increments it and captures the
   // value; an async opener (the job picker fetches its job list over the
@@ -3384,6 +3410,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
         } else {
           collapsedGroupKeys.delete(groupKey);
         }
+        // Record for mergeCollapsedState(): a storage read that resolved
+        // after this toggle must not reverse it on re-render.
+        recentCollapseToggles.set(groupKey, nowCollapsed);
         // Sync every bar on the page (comment box, review dialog) that shows
         // the same group — they share the key, so they share the state.
         document.querySelectorAll(
@@ -3986,8 +4015,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       if (CM.isRepoExcluded(config, currentRepo)) return;
 
       // Collapsed-section preference (per profile id) — read before the bar
-      // is built so groups render in their remembered state.
-      collapsedGroupKeys = new Set(await CM.getCollapsedGroups());
+      // is built so groups render in their remembered state. Toggles made
+      // while the read was in flight are re-applied over the snapshot: the
+      // read resolves with pre-toggle data and would visibly reverse them.
+      collapsedGroupKeys = mergeCollapsedState(
+        await CM.getCollapsedGroups(), recentCollapseToggles);
+      recentCollapseToggles.clear();
 
       let profiles = CM.getMatchingProfiles(config, currentRepo);
       if (profiles.length === 0) return;
