@@ -1646,7 +1646,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     } else if (command.jobSource === 'branches') {
       jobs = await fetchRepoBranches();
       if (!jobs) {
-        // Branch list unavailable (rate limit, offline) — free-form input instead.
+        // Branch list unavailable (rate limit, offline) — free-form input
+        // instead. Guard the generation first: if a newer dialog (e.g. a
+        // CC User popover) opened while the fetch was in flight, the
+        // fallback would close it and discard whatever was typed there.
+        if (generation !== dialogGeneration) return;
         showInputPopover(command, context, anchorBtn);
         return;
       }

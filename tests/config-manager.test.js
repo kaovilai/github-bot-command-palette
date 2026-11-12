@@ -1780,8 +1780,17 @@ function makeContextWithStatefulStorage(initial = {}) {
       storage: {
         sync: {
           get: (key, cb) => {
-            // chrome.storage.sync.get(null, ...) returns everything.
+            // chrome.storage.sync.get(null, ...) returns everything, and
+            // readStoredConfig() reassembles sharded configs by passing an
+            // ARRAY of chunk keys — support both, or every sharded read
+            // silently falls back to defaults and the round-trip tests
+            // below compare fallbacks instead of persisted data.
             if (key === null) return cb({ ...store });
+            if (Array.isArray(key)) {
+              const out = {};
+              for (const k of key) if (k in store) out[k] = store[k];
+              return cb(out);
+            }
             cb(key in store ? { [key]: store[key] } : {});
           },
           set: (obj, cb) => { Object.assign(store, obj); cb && cb(); },
@@ -1847,6 +1856,15 @@ test('getConfig persists defaults on a genuinely empty store (fresh install)', a
   const reread = await CM.getConfig();
   assert.deepEqual(reread, config,
     'a second read must return the persisted defaults');
+  // Prove the second read actually parsed the persisted shards rather
+  // than falling back to defaults again: corrupting one chunk must make
+  // the read fail over to a fresh defaults copy.
+  const chunkKeys = Object.keys(store).filter(k => k.startsWith('ghbcp_config_part_'));
+  assert.ok(chunkKeys.length > 0, 'defaults should have been persisted as shards');
+  store[chunkKeys[0]] = 'INVALID{JSON';
+  const fallback = await CM.getConfig();
+  assert.deepEqual(fallback, config,
+    'a corrupted shard must fall back to defaults, not throw');
 });
 
 // ---------------------------------------------------------------------------

@@ -160,12 +160,23 @@ function buildSandbox() {
     return gate.then(() => JOBS);
   };
 
+  // Branch fetches gate the same way and resolve null (the rate-limit/
+  // offline failure that triggers the free-form popover fallback).
+  const branchGates = [];
+  const fetchRepoBranches = () => {
+    let release;
+    const gate = new Promise(res => { release = res; });
+    branchGates.push({ release });
+    return gate.then(() => null);
+  };
+  const popoverCalls = [];
+
   const sandbox = {
     document,
     fetchFullRehearsalJobs,
     scrapeRehearsalNames: () => JOBS,
-    fetchRepoBranches: () => Promise.resolve([]),
-    showInputPopover: () => {},
+    fetchRepoBranches,
+    showInputPopover: (...args) => { popoverCalls.push(args); },
     scrapeCheckNames: () => [],
     addTapListener: () => {},
     addFocusTrap: () => {},
@@ -189,7 +200,7 @@ function buildSandbox() {
 
   // Release the fetch gate of the i-th showTestJobPicker() call.
   const releaseCall = i => fetchGates[i].release();
-  return { sandbox, anchorBtn, anchorParent, releaseCall, observerInstances };
+  return { sandbox, anchorBtn, anchorParent, releaseCall, observerInstances, branchGates, popoverCalls };
 }
 
 function attachedPickers(anchorParent) {
@@ -311,4 +322,26 @@ test('replacing a checks-backed picker disconnects the old picker\'s live-status
   assert.equal(observerInstances[1].disconnectCalls, 0,
     'the new picker\'s observer must still be live');
   assert.equal(attachedPickers(anchorParent).length, 1);
+});
+
+test('a failed branch fetch falls back to the input popover only when not superseded', async () => {
+  const { sandbox, anchorBtn, branchGates, popoverCalls } = buildSandbox();
+  const cmd = { commandTemplate: '/cherry-pick {input}', label: 'Cherry-pick', jobSource: 'branches' };
+
+  // Superseded mid-fetch (the user opened a newer dialog, e.g. a CC User
+  // popover): the failed branch fetch must NOT open the fallback popover —
+  // that would close the newer dialog and discard its typed input.
+  const stale = sandbox.showTestJobPicker(cmd, {}, anchorBtn);
+  sandbox.dialogGeneration++;
+  branchGates[0].release();
+  await stale;
+  assert.equal(popoverCalls.length, 0,
+    'a superseded branch-fetch continuation must not open the fallback popover');
+
+  // Not superseded: the free-form fallback still opens.
+  const fresh = sandbox.showTestJobPicker(cmd, {}, anchorBtn);
+  branchGates[1].release();
+  await fresh;
+  assert.equal(popoverCalls.length, 1,
+    'an un-superseded failed branch fetch must still fall back to free-form input');
 });
