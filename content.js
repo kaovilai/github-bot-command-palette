@@ -4157,8 +4157,13 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   // and the tab is visible. Re-render only when a new logic version actually
   // lands — a full inject() rebuilds check buttons and closes any open
   // failure-log panel, so unchanged polls must not trigger it.
+  // Monotonic generation for overlapping poll ticks: a pathological slow
+  // read (>60s) resolving after a newer tick's must not assign its older
+  // snapshot over the newer tick's.
+  let settingsPollGeneration = 0;
   setInterval(async () => {
     if (document.visibilityState !== 'visible') return;
+    const pollGeneration = ++settingsPollGeneration;
     // Re-read the stored config: the in-memory copy is from the last inject,
     // so a Settings change made on an idle tab (enable or disable) would
     // otherwise never be noticed here.
@@ -4175,6 +4180,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     } catch (e) {
       return;
     }
+    if (pollGeneration !== settingsPollGeneration) return;
     if (!stored || !stored.globalSettings || !stored.globalSettings.enabled) return;
     if (generationAtRead === injectGeneration) {
       const changed = !!config && JSON.stringify(stored) !== JSON.stringify(config);

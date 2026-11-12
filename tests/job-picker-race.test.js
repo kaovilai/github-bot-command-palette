@@ -403,7 +403,7 @@ test('a failed branch fetch falls back to the input popover only when not supers
 // with its older snapshot (could re-enable autoSubmit against a mid-session
 // settings change). Slice: the poll callback body.
 {
-  const pollStart = contentJs.indexOf("if (document.visibilityState !== 'visible') return;");
+  const pollStart = contentJs.indexOf('const pollGeneration = ++settingsPollGeneration;');
   const pollEnd = contentJs.indexOf('}, 60 * 1000);', pollStart);
   assert.ok(pollStart !== -1 && pollEnd !== -1,
     'expected to find the settings-poll callback');
@@ -414,6 +414,7 @@ test('a failed branch fetch falls back to the input popover only when not supers
     const injectCalls = [];
     const sandbox = {
       document: { visibilityState: 'visible' },
+      settingsPollGeneration: 0,
       injectGeneration: 7,
       config: state.config,
       appliedLiveLogicVersion: null,
@@ -421,7 +422,9 @@ test('a failed branch fetch falls back to the input popover only when not supers
       CM: {
         getConfig: () => new Promise(resolve => {
           // An inject pass runs while the poll's read is in flight.
-          if (bumpDuringRead) sandbox.injectGeneration++;
+          if (bumpDuringRead === 'inject') sandbox.injectGeneration++;
+          // A newer poll tick runs while this read is in flight.
+          if (bumpDuringRead === 'poll') sandbox.settingsPollGeneration++;
           resolve(storedConfig || { tag: 'older-poll-config', globalSettings: { enabled: true, liveUpdates: false } });
         })
       },
@@ -430,6 +433,13 @@ test('a failed branch fetch falls back to the input popover only when not supers
     };
     return { sandbox, state, injectCalls };
   }
+
+  test('a slower overlapping poll tick must not assign its older snapshot', async () => {
+    const { sandbox } = pollSandbox({ bumpDuringRead: 'poll' });
+    await vm.runInNewContext(pollSnippet, sandbox);
+    assert.equal(sandbox.config.tag, 'fresh-inject-config',
+      'an older poll tick resolving after a newer one must not assign');
+  });
 
   test('settings poll assigns its read when no inject raced it', async () => {
     const { sandbox, injectCalls } = pollSandbox({ bumpDuringRead: false });
@@ -449,7 +459,7 @@ test('a failed branch fetch falls back to the input popover only when not supers
   });
 
   test('settings poll must not clobber a fresher inject-published config', async () => {
-    const { sandbox, state } = pollSandbox({ bumpDuringRead: true });
+    const { sandbox, state } = pollSandbox({ bumpDuringRead: 'inject' });
     await vm.runInNewContext(pollSnippet, sandbox);
     assert.equal(sandbox.config.tag, 'fresh-inject-config',
       'an older poll snapshot must not overwrite the newer inject config');

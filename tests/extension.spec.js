@@ -244,6 +244,28 @@ test.describe('GitHub Bot Command Palette', () => {
   test('collapsible sections collapse in one click and persist across reloads', async () => {
     test.setTimeout(120000);
 
+    // Isolation: a previous (interrupted) run of this test can leave a
+    // collapsed group in the persistent profile's synced storage, which
+    // would fail the expanded-by-default assertion below. Clear every
+    // collapse key via the service worker first.
+    let cleanupSw = context.serviceWorkers()[0];
+    if (!cleanupSw) {
+      const triggerPage = await context.newPage();
+      await triggerPage.goto('https://github.com/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await triggerPage.waitForTimeout(2000);
+      cleanupSw = context.serviceWorkers()[0];
+      await triggerPage.close();
+    }
+    if (cleanupSw) {
+      await cleanupSw.evaluate(() => new Promise(resolve => {
+        chrome.storage.sync.get(null, items => {
+          const keys = Object.keys(items || {}).filter(k => k.startsWith('ghbcp_collapsed_group:'));
+          if (keys.length === 0) return resolve();
+          chrome.storage.sync.remove(keys, () => resolve());
+        });
+      }));
+    }
+
     page = await context.newPage();
     await page.goto(PR_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
