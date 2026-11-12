@@ -20,11 +20,13 @@ const jsyaml = jsyamlCtx.jsyaml;
 // ── Extract the two pure functions under test ─────────────────────────────────
 const backgroundSrc = fs.readFileSync(path.resolve(__dirname, '..', 'background.js'), 'utf8');
 
-// Strip the chrome runtime listener and importScripts so Node can eval the rest
-const stripped = backgroundSrc
-  .replace(/importScripts\([^)]*\);?/g, '')
-  .replace(/chrome\.runtime\.onMessage\.addListener[\s\S]*?\}\);/, '')
-  .replace(/chrome\.runtime\.on(?:Startup|Installed)\.addListener\(.*\);/g, '');
+// Skip the chrome runtime listeners and importScripts so Node can eval the rest
+const listenerStart = backgroundSrc.indexOf('chrome.runtime.onMessage.addListener');
+const functionsStart = backgroundSrc.indexOf('function storageGet', listenerStart);
+assert.notEqual(listenerStart, -1);
+assert.notEqual(functionsStart, -1);
+const stripped = `${backgroundSrc.slice(0, listenerStart)}${backgroundSrc.slice(functionsStart)}`
+  .replace("importScripts('vendor/js-yaml.min.js');", '');
 
 const ctx = { jsyaml, console };
 vm.runInNewContext(stripped, ctx);
