@@ -490,6 +490,10 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   let config = null;
   let currentRepo = null;
   let debounceTimer = null;
+  // Monotonic generation of inject() passes — see inject(). Overlapping
+  // passes (SPA nav + MutationObserver + live-logic poll + refresh button)
+  // resolve their awaits out of order; only the newest may render.
+  let injectGeneration = 0;
   let lastPluginData = null;
   let lastPresubmitJobs = null;
   let lastGithubToken = null;
@@ -3992,6 +3996,12 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    * No-ops if the extension is disabled, the page is not a PR, or context is invalid.
    */
   async function inject() {
+    // Claim this injection pass: SPA navigation, the MutationObserver, the
+    // live-logic poll and the plugin-refresh button can overlap. A stale
+    // pass resuming after a newer one started must not clobber module
+    // state (collapsedGroupKeys, lastPresubmitJobs, …) or re-render the
+    // bar from its older snapshot — the newest pass owns the page.
+    const generation = ++injectGeneration;
     try {
       if (!CM.isContextValid()) return;
       if (!isPRPage()) return;
@@ -4018,8 +4028,12 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       // is built so groups render in their remembered state. Toggles made
       // while the read was in flight are re-applied over the snapshot: the
       // read resolves with pre-toggle data and would visibly reverse them.
-      collapsedGroupKeys = mergeCollapsedState(
-        await CM.getCollapsedGroups(), recentCollapseToggles);
+      // Stale inject passes bail first: a newer pass already consumed (and
+      // cleared) recentCollapseToggles, so this older snapshot would clobber
+      // the user's toggles with nothing left to correct it.
+      const storedCollapsed = await CM.getCollapsedGroups();
+      if (generation !== injectGeneration) return;
+      collapsedGroupKeys = mergeCollapsedState(storedCollapsed, recentCollapseToggles);
       recentCollapseToggles.clear();
 
       let profiles = CM.getMatchingProfiles(config, currentRepo);
@@ -4073,6 +4087,9 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       // Remembered for the checks-state observer: it repaints only the check
       // rows, never the command bar, so an open picker/popover survives a
       // live check-state change.
+      // Stale pass: a newer injection already started — it owns the render.
+      if (generation !== injectGeneration) return;
+
       lastInjectedProfiles = profiles;
 
       injectGlobalCommandBar(profiles, extraCommands);
