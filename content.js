@@ -498,6 +498,9 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   // The repo the last successful plugin lookup was for — the reuse fallback
   // in inject() must never apply one repo's plugin list to another.
   let lastPluginDataRepo = null;
+  // Fingerprint of the enabled plugin-config sources the cached data was
+  // fetched under — a source removed/disabled in Settings invalidates it.
+  let lastPluginDataSources = null;
   let lastPresubmitJobs = null;
   let lastGithubToken = null;
   let lastRehearsalJobsUrl = null;
@@ -3887,7 +3890,10 @@ function mergeCollapsedState(storedKeys, recentToggles) {
                        document.querySelector('.js-diff-progressive-container');
     if (!isFilesTab) return;
 
-    if (document.querySelector('.ghbcp-review-toolbar')) return;
+    // Replace a previous toolbar instead of skipping, so a config change
+    // (settings-poll re-render) refreshes its commands.
+    const existingToolbar = document.querySelector('.ghbcp-review-toolbar');
+    if (existingToolbar) existingToolbar.remove();
 
     const reviewForm = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu');
     if (!reviewForm) return;
@@ -3934,7 +3940,11 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   function injectReviewDialogBar(profiles, extraCommands) {
     const dialog = document.querySelector('div[role="dialog"][aria-modal="true"]');
     if (!dialog) return;
-    if (dialog.querySelector('.ghbcp-command-bar')) return;
+    // Replace a previous bar instead of skipping: a config change
+    // (settings-poll re-render) must refresh the dialog's commands, not
+    // keep the outdated set on screen.
+    const existingBar = dialog.querySelector('.ghbcp-command-bar');
+    if (existingBar) existingBar.remove();
 
     const textarea = dialog.querySelector('textarea');
     if (!textarea) return;
@@ -3963,6 +3973,28 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    * registered listener before re-registering so shortcut bindings stay fresh.
    * @param {Object[]} profiles - Enabled, matched profile objects.
    */
+  /**
+   * Remove every injected surface and binding: the command bars (main +
+   * review dialog), the review toolbar, inline check buttons, open
+   * dialogs/modals/toasts, the shortcut listener and the checks observer.
+   * Called when the settings poll finds the extension disabled
+   * mid-session — the UI must not outlive the setting that created it.
+   */
+  function teardownInjectedUI() {
+    closeOpenDialogs();
+    document.querySelectorAll(
+      '.ghbcp-command-bar, .ghbcp-review-toolbar, .ghbcp-check-btns, ' +
+      '.ghbcp-text-modal-overlay, .ghbcp-toast'
+    ).forEach(el => el.remove());
+    document.removeEventListener('keydown', handleShortcut);
+    shortcutMap = {};
+    lastInjectedProfiles = [];
+    if (checkRowStateObserver) {
+      checkRowStateObserver.disconnect();
+      checkRowStateObserver = null;
+    }
+  }
+
   function registerShortcuts(profiles) {
     document.removeEventListener('keydown', handleShortcut);
     shortcutMap = {};
@@ -4075,6 +4107,9 @@ function mergeCollapsedState(storedKeys, recentToggles) {
           if (response && response.plugins) {
             lastPluginData = response;
             lastPluginDataRepo = currentRepo;
+            lastPluginDataSources = JSON.stringify(
+              (config.pluginConfigSources || []).filter(s => s.enabled)
+                .map(s => s.id).sort());
             pluginData = response;
           }
         } catch (e) {
@@ -4084,11 +4119,22 @@ function mergeCollapsedState(storedKeys, recentToggles) {
         }
         if (!pluginData && lastPluginData && lastPluginData.plugins) {
           if (lastPluginDataRepo === currentRepo) {
-            // Transient fetch failure (rate limit, offline): reuse the last
-            // known plugin state for THIS repo rather than failing open —
-            // otherwise every plugin-ineligible section and command would
-            // flicker back into the bar until the fetch succeeds again.
-            pluginData = lastPluginData;
+            const currentSources = JSON.stringify(
+              (config.pluginConfigSources || []).filter(s => s.enabled)
+                .map(s => s.id).sort());
+            if (lastPluginDataSources === currentSources) {
+              // Transient fetch failure (rate limit, offline): reuse the last
+              // known plugin state for THIS repo rather than failing open —
+              // otherwise every plugin-ineligible section and command would
+              // flicker back into the bar until the fetch succeeds again.
+              pluginData = lastPluginData;
+            } else {
+              // The source set changed since this data was fetched (a source
+              // removed or disabled in Settings) — stale, drop it.
+              lastPluginData = null;
+              lastPluginDataRepo = null;
+              lastPluginDataSources = null;
+            }
           } else {
             // The cached data belongs to a DIFFERENT repo (navigated). It
             // must not be reused for filtering — and it must not survive:
@@ -4098,6 +4144,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
             // would show here. Drop it.
             lastPluginData = null;
             lastPluginDataRepo = null;
+            lastPluginDataSources = null;
           }
         }
         if (pluginData) {
@@ -4207,13 +4254,25 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       return;
     }
     if (pollGeneration !== settingsPollGeneration) return;
-    if (!stored || !stored.globalSettings || !stored.globalSettings.enabled) return;
+    if (!stored || !stored.globalSettings) return;
     // A newer inject raced this read: it published a config read at least as
     // recently and already applied whatever live-update state the current
-    // config wants — acting on this older snapshot here (assigning it, or
-    // clearing live logic its opt-out branch disagrees with) would undo the
-    // newer state.
+    // config wants — acting on this older snapshot here (assigning it,
+    // tearing down, or clearing live logic its branches disagree with)
+    // would undo the newer state.
     if (generationAtRead !== injectGeneration) return;
+    if (!stored.globalSettings.enabled) {
+      // The extension was disabled in Settings on an idle tab: tear the
+      // injected UI down — the bar, check buttons, review surfaces and
+      // shortcut bindings must not stay active until the next navigation.
+      // (A failed/malformed read is NOT a disable — leave the UI alone.)
+      // Publish the disabled config first so any later debouncedInject()
+      // bails at its own enabled check instead of re-rendering from the
+      // stale in-memory copy.
+      config = stored;
+      teardownInjectedUI();
+      return;
+    }
     const changed = !!config && JSON.stringify(stored) !== JSON.stringify(config);
     config = stored;
     if (changed) {

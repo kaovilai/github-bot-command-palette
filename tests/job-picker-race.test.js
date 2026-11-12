@@ -412,6 +412,7 @@ test('a failed branch fetch falls back to the input popover only when not supers
   function pollSandbox({ bumpDuringRead, storedConfig }) {
     const state = { config: { tag: 'fresh-inject-config', globalSettings: { enabled: true, liveUpdates: false } } };
     const injectCalls = [];
+    const teardownCalls = [];
     const sandbox = {
       document: { visibilityState: 'visible' },
       settingsPollGeneration: 0,
@@ -429,9 +430,10 @@ test('a failed branch fetch falls back to the input popover only when not supers
         })
       },
       refreshLiveLogic: () => Promise.resolve(false),
-      debouncedInject: () => { injectCalls.push(1); }
+      debouncedInject: () => { injectCalls.push(1); },
+      teardownInjectedUI: () => { teardownCalls.push(1); }
     };
-    return { sandbox, state, injectCalls };
+    return { sandbox, state, injectCalls, teardownCalls };
   }
 
   test('a slower overlapping poll tick must not assign its older snapshot', async () => {
@@ -475,6 +477,7 @@ test('a failed branch fetch falls back to the input popover only when not supers
       config: { tag: 'fresh', globalSettings: { enabled: true, liveUpdates: true } },
       appliedLiveLogicVersion: 'v9',
       liveLogic: { checksSectionSelector: '.fresh' },
+      teardownInjectedUI: () => { sandbox.toreDown = true; },
       CM: {
         getConfig: () => new Promise(resolve => {
           sandbox.injectGeneration++; // newer inject during the read
@@ -489,5 +492,17 @@ test('a failed branch fetch falls back to the input popover only when not supers
       'a raced poll must not clear applied live logic');
     assert.deepEqual(sandbox.liveLogic, { checksSectionSelector: '.fresh' },
       'a raced poll must not reset live logic overrides');
+  });
+
+  test('settings poll tears the UI down when the extension is disabled mid-session', async () => {
+    const { sandbox, teardownCalls } = pollSandbox({
+      bumpDuringRead: false,
+      storedConfig: { tag: 'disabled-config', globalSettings: { enabled: false } }
+    });
+    await vm.runInNewContext(pollSnippet, sandbox);
+    assert.equal(teardownCalls.length, 1,
+      'a disabled extension must tear down the injected UI');
+    assert.equal(sandbox.config.tag, 'disabled-config',
+      'the disabled config must be published so later injects bail');
   });
 }
