@@ -345,3 +345,49 @@ test('a failed branch fetch falls back to the input popover only when not supers
   assert.equal(popoverCalls.length, 1,
     'an un-superseded failed branch fetch must still fall back to free-form input');
 });
+
+// Navigation must supersede pending dialog requests: a job-list fetch that
+// started on the previous PR page must not attach its picker (and post its
+// command) on the newly navigated PR. The listener wiring lives outside the
+// showTestJobPicker() slice, so it gets its own small slice here.
+{
+  const navStart = contentJs.indexOf('function supersedeDialogsOnNavigation()');
+  const navEndMarker = "window.addEventListener('hashchange', debouncedInject);";
+  const navEnd = contentJs.indexOf(navEndMarker, navStart);
+  assert.ok(navStart !== -1 && navEnd !== -1,
+    'expected to find the navigation-supersession listener wiring');
+  const navSnippet = contentJs.slice(navStart, navEnd + navEndMarker.length);
+
+  test('navigation events supersede pending dialog requests', () => {
+    const docListeners = {};
+    const winListeners = {};
+    const sandbox = {
+      document: { addEventListener: (ev, fn) => { (docListeners[ev] ||= []).push(fn); } },
+      window: { addEventListener: (ev, fn) => { (winListeners[ev] ||= []).push(fn); } },
+      dialogGeneration: 0,
+      debouncedInject: () => {}
+    };
+    vm.runInNewContext(navSnippet, sandbox);
+
+    for (const ev of ['turbo:load', 'pjax:end']) {
+      assert.ok(docListeners[ev] && docListeners[ev].length >= 1,
+        `${ev} must be wired on document`);
+    }
+    assert.ok(winListeners['popstate'] && winListeners['popstate'].length >= 1,
+      'popstate must be wired on window');
+
+    const before = sandbox.dialogGeneration;
+    docListeners['turbo:load'].forEach(fn => fn());
+    docListeners['pjax:end'].forEach(fn => fn());
+    winListeners['popstate'].forEach(fn => fn());
+    assert.ok(sandbox.dialogGeneration > before,
+      'turbo:load / pjax:end / popstate must bump dialogGeneration');
+
+    // hashchange (same-page anchor jumps — the PR does not change) must
+    // only schedule re-injection, never supersede dialogs.
+    const afterNav = sandbox.dialogGeneration;
+    (winListeners['hashchange'] || []).forEach(fn => fn());
+    assert.equal(sandbox.dialogGeneration, afterNav,
+      'hashchange must not supersede pending dialogs');
+  });
+}

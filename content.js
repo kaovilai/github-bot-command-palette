@@ -4094,6 +4094,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }, 60 * 1000);
 
   // SPA navigation listeners
+  // Real navigation supersedes any dialog request still awaiting its job
+  // list: a fetch that started on the previous PR would otherwise pass its
+  // generation check here (nothing else bumps the generation), and with its
+  // anchor gone, attachOverlay falls back to THIS page's command bar — the
+  // picker's command then lands in the new PR's comment box (auto-submits
+  // there too). Bumped ONLY on these navigation events, never in inject()
+  // or the MutationObserver: those fire on routine DOM updates, and bumping
+  // there would cancel valid pickers mid-render.
+  function supersedeDialogsOnNavigation() { dialogGeneration++; }
+  document.addEventListener('turbo:load', supersedeDialogsOnNavigation);
+  document.addEventListener('pjax:end', supersedeDialogsOnNavigation);
+  window.addEventListener('popstate', supersedeDialogsOnNavigation);
+
   document.addEventListener('turbo:load', debouncedInject);
   document.addEventListener('pjax:end', debouncedInject);
   window.addEventListener('popstate', debouncedInject);
