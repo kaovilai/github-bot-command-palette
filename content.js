@@ -3471,7 +3471,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     clearTimeout(checkButtonsRefreshTimer);
     checkButtonsRefreshTimer = setTimeout(() => {
       if (!lastInjectedProfiles || !CM.isContextValid()) return;
-      injectCheckButtons(lastInjectedProfiles);
+      // Catch so a throw mid-render (malformed DOM row) logs like inject()'s
+      // own try/catch instead of surfacing as an unhandled rejection.
+      injectCheckButtons(lastInjectedProfiles).catch(e => {
+        console.error('[GHBCP] check buttons refresh failed:', e);
+      });
     }, 150);
   }
   // Rows in either supported checks UI; used to attribute a mutation to the

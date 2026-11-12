@@ -127,7 +127,8 @@ function buildSandbox() {
     config: { globalSettings: { showOnlyFailedTests: true } },
     CM: { isContextValid: () => true, getOverrideContext: n => n },
     clearTimeout,
-    setTimeout
+    setTimeout,
+    console: { error: () => {} }
   };
   vm.runInNewContext(snippet, sandbox);
 
