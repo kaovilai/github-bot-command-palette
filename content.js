@@ -2304,7 +2304,22 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       if (liveStatusObserver) liveStatusObserver.disconnect();
       rawClosePicker();
     }
+    // createDialogCloser registered its raw close as _ghbcpClose, which
+    // doesn't disconnect liveStatusObserver — re-point it at the wrapping
+    // closePicker so a close routed through closeOpenDialogs() (e.g. a newer
+    // picker replacing this one mid-race) also drops the checks observer
+    // instead of leaving it refreshing a detached dialog forever.
+    picker._ghbcpClose = closePicker;
 
+    // The closeOpenDialogs() at the top of this function ran before the
+    // awaits above (rehearsal/branch lists are fetched over the network), so
+    // a second click that landed inside that await window also found nothing
+    // to close — and both calls then attached their pickers. Both are
+    // absolutely positioned on the same anchor parent, so they overlap
+    // pixel-perfectly until search filtering shrinks the top one and reveals
+    // the stale full-list picker underneath. Re-close here, after the awaits
+    // and immediately before attaching, so only the newest picker survives.
+    closeOpenDialogs();
     attachOverlay(picker, anchorBtn);
     requestAnimationFrame(() => searchInput.focus());
   }
@@ -2444,18 +2459,22 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }
 
   /**
-   * Close a previously-opened GHBCP dialog via its stored close function so
-   * its document-level click listener is removed too; falls back to removing
-   * the element for dialogs created before the close handoff existed.
+   * Close previously-opened GHBCP dialogs via their stored close function so
+   * their document-level click listeners are removed too; falls back to
+   * removing the element for dialogs created before the close handoff
+   * existed. Closes every match, not just the first — stacked duplicates
+   * (e.g. from racing dialog opens) must all be swept, or the older one
+   * lingers under the newest.
    * @param {string} selector - Dialog selector ('.ghbcp-job-picker' or '.ghbcp-popover').
    */
   function closeExistingDialog(selector) {
-    const existing = document.querySelector(selector);
-    if (!existing) return;
-    if (typeof existing._ghbcpClose === 'function') {
-      existing._ghbcpClose();
-    } else {
-      existing.remove();
+    const existing = document.querySelectorAll(selector);
+    for (const dialog of existing) {
+      if (typeof dialog._ghbcpClose === 'function') {
+        dialog._ghbcpClose();
+      } else {
+        dialog.remove();
+      }
     }
   }
 
