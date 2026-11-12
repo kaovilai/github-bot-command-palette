@@ -19,6 +19,13 @@ concurrency:
 
 permissions:
   contents: write
+  # The auto-fix below pushes recompiled lock files (which live under
+  # .github/workflows/) back to PR branches. GitHub rejects a GITHUB_TOKEN
+  # push touching workflow files without the workflows permission:
+  # "refusing to allow a GitHub App to create or update workflow ...
+  # without `workflows` permission" — exactly what made dependabot PRs
+  # (e.g. #209) fail this check with the push already staged.
+  workflows: write
 
 jobs:
   check-lock-files:
