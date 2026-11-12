@@ -1,0 +1,41 @@
+name: Test workflows permission probe
+
+# Throwaway probe for https://github.com/kaovilai/github-bot-command-palette/pull/214:
+# 1. Does GitHub's workflow parser accept `workflows:` in the permissions map?
+# 2. If so, can the GITHUB_TOKEN actually push a commit that modifies a file
+#    under .github/workflows/ back to the PR branch?
+# Delete after the answer lands.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/test-workflows-permission.yml"
+
+permissions:
+  contents: write
+  workflows: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Guard against probe loops
+        run: |
+          if [ "$(git log -1 --pretty=%s)" = "probe: workflows permission push" ]; then
+            echo "Probe already ran on this head — nothing to do."
+            exit 0
+          fi
+
+      - name: Attempt workflow-file push with GITHUB_TOKEN
+        run: |
+          set -x
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "# workflows-permission probe $(date -u +%FT%TZ)" >> .github/workflows/continuous-improvement.lock.yml
+          git add .github/workflows/continuous-improvement.lock.yml
+          git commit -m "probe: workflows permission push"
+          git push origin HEAD:"$GITHUB_HEAD_REF"
