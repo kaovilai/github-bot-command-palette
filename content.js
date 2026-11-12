@@ -3906,9 +3906,14 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     if (!isFilesTab) return;
 
     // Replace a previous toolbar instead of skipping, so a config change
-    // (settings-poll re-render) refreshes its commands.
+    // (settings-poll re-render) refreshes its commands — except while a
+    // picker or popover is open from it (same mid-interaction protection
+    // as the review-dialog bar).
     const existingToolbar = document.querySelector('.ghbcp-review-toolbar');
-    if (existingToolbar) existingToolbar.remove();
+    if (existingToolbar) {
+      if (existingToolbar.querySelector('.ghbcp-job-picker, .ghbcp-popover')) return;
+      existingToolbar.remove();
+    }
 
     const reviewForm = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu');
     if (!reviewForm) return;
@@ -3957,9 +3962,15 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     if (!dialog) return;
     // Replace a previous bar instead of skipping: a config change
     // (settings-poll re-render) must refresh the dialog's commands, not
-    // keep the outdated set on screen.
+    // keep the outdated set on screen. But not while a picker or popover
+    // is open from this bar — routine mutation-driven re-injects would
+    // otherwise discard the user's selections/typed input mid-interaction;
+    // the next inject after the dialog closes refreshes it.
     const existingBar = dialog.querySelector('.ghbcp-command-bar');
-    if (existingBar) existingBar.remove();
+    if (existingBar) {
+      if (existingBar.querySelector('.ghbcp-job-picker, .ghbcp-popover')) return;
+      existingBar.remove();
+    }
 
     const textarea = dialog.querySelector('textarea');
     if (!textarea) return;
@@ -3997,6 +4008,14 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    */
   function teardownInjectedUI() {
     closeOpenDialogs();
+    // Cancel a pending auto-submit combo: its 2s timer would otherwise
+    // still post the queued comment after the UI that queued it is gone.
+    // The text stays in the textarea as an unsubmitted draft.
+    clearTimeout(pendingComboTimer);
+    pendingComboTimer = null;
+    pendingComboLines = [];
+    pendingComboButtons = [];
+    pendingComboBase = '';
     document.querySelectorAll(
       '.ghbcp-command-bar, .ghbcp-review-toolbar, .ghbcp-check-btns, ' +
       '.ghbcp-text-modal-overlay, .ghbcp-toast, ' +
@@ -4012,8 +4031,10 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     // Invalidate any inject pass still awaiting network work: without this
     // bump, a pass parked on the token/presubmit fetches would pass its
     // remaining generation checks and re-render the bar and shortcuts over
-    // the teardown.
+    // the teardown. Same for in-flight check-button passes (their own
+    // generation mechanism aborts on a newer pass).
     injectGeneration++;
+    checkButtonsGeneration++;
   }
 
   function registerShortcuts(profiles) {
