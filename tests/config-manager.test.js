@@ -2014,3 +2014,29 @@ test('pj-rehearse commands map to the pj-rehearse-plugin for command-level filte
   assert.equal(kept[0].globalCommands.length, 2,
     '/pj-rehearse commands must stay when the plugin is enabled');
 });
+
+test('markProfilesByRequiredPlugins: marks all commands of unsatisfied profiles, leaves others', () => {
+  const CM = makeContext();
+  const profiles = [
+    { id: 'a', requiredPlugins: ['pj-rehearse-plugin'],
+      globalCommands: [{ command: '/pj-rehearse' }], checkCommands: [{ command: '/pj-rehearse ack' }] },
+    { id: 'b', globalCommands: [{ command: '/lgtm' }] },
+    { id: 'c', requiredPlugins: ['approve'],
+      globalCommands: [{ command: '/x' }], checkCommands: [] }
+  ];
+  const out = CM.markProfilesByRequiredPlugins(profiles, ['approve', 'lgtm']);
+  assert.ok(out[0].globalCommands[0]._pluginDisabled && out[0].checkCommands[0]._pluginDisabled,
+    'commands of a profile whose required plugin is missing must be marked');
+  assert.equal(out[1].globalCommands[0]._pluginDisabled, undefined,
+    'profiles without requiredPlugins must not be marked');
+  assert.equal(out[2].globalCommands[0]._pluginDisabled, undefined,
+    'a satisfied requiredPlugins profile must not be marked');
+  assert.equal(profiles[0].globalCommands[0]._pluginDisabled, undefined,
+    'the input profiles must not be mutated');
+});
+
+test('markProfilesByRequiredPlugins: unknown plugin data is a no-op', () => {
+  const CM = makeContext();
+  const profiles = [{ id: 'a', requiredPlugins: ['x'], globalCommands: [{ command: '/y' }] }];
+  assert.equal(CM.markProfilesByRequiredPlugins(profiles, null), profiles);
+});

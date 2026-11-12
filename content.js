@@ -1522,11 +1522,18 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    */
   async function fetchRepoBranches() {
     if (!CM.isContextValid() || !currentRepo) return null;
-    if (lastRepoBranches && lastRepoBranchesRepo === currentRepo) return lastRepoBranches;
+    // Capture the repo BEFORE awaiting: a fetch started on PR A that
+    // resolves after navigation to PR B must not write A's branches into
+    // the cache keyed as B's (the picker continuation bails on the
+    // navigation generation bump, but this cache write happens inside the
+    // fetch, before that guard).
+    const repo = currentRepo;
+    if (lastRepoBranches && lastRepoBranchesRepo === repo) return lastRepoBranches;
     try {
-      const resp = await chrome.runtime.sendMessage({ action: 'getRepoBranches', repo: currentRepo });
+      const resp = await chrome.runtime.sendMessage({ action: 'getRepoBranches', repo });
       if (resp && resp.branches && resp.branches.length > 0) {
-        lastRepoBranchesRepo = currentRepo;
+        if (currentRepo !== repo) return null;
+        lastRepoBranchesRepo = repo;
         lastRepoBranches = resp.branches.map(name => ({ name, status: 'pending' }));
         return lastRepoBranches;
       }
@@ -4058,11 +4065,14 @@ function mergeCollapsedState(storedKeys, recentToggles) {
               profiles = CM.filterCommandsByPlugins(profiles, response.plugins, filterMode);
               // Section-level relevance: profiles that declare requiredPlugins
               // (e.g. Rehearse → pj-rehearse-plugin) hide entirely when the
-              // repo's plugin config doesn't enable them. Only in 'filter'
-              // mode — 'indicate' deliberately keeps everything visible, just
-              // marked, and 'disabled' opts out of plugin checks altogether.
+              // repo's plugin config doesn't enable them — in 'filter' mode.
+              // 'indicate' mode keeps everything visible but marks the
+              // affected commands dimmed (same indication the command-level
+              // filter uses); 'disabled' opts out of plugin checks altogether.
               if (filterMode === 'filter') {
                 profiles = CM.filterProfilesByRequiredPlugins(profiles, response.plugins);
+              } else if (filterMode === 'indicate') {
+                profiles = CM.markProfilesByRequiredPlugins(profiles, response.plugins);
               }
             }
           }

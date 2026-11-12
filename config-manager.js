@@ -704,6 +704,31 @@ GHBCP.ConfigManager = (() => {
   }
 
   /**
+   * 'indicate'-mode sibling of filterProfilesByRequiredPlugins: instead of
+   * dropping profiles whose requiredPlugins aren't enabled for the repo,
+   * mark every command in them `_pluginDisabled` so the buttons render
+   * dimmed with the "plugin not enabled for this repo" tooltip — the same
+   * indication command-level filtering already uses in that mode.
+   * @param {Object[]}   profiles       - Matched profile objects.
+   * @param {string[]|null} enabledPlugins - Plugin names active for the repo, or null/undefined when unknown.
+   * @returns {Object[]} Profiles with the affected commands marked (deep-cloned only where marked).
+   */
+  function markProfilesByRequiredPlugins(profiles, enabledPlugins) {
+    if (!profiles || !Array.isArray(enabledPlugins)) return profiles;
+    const enabled = new Set(enabledPlugins);
+    return profiles.map(p => {
+      const missing = Array.isArray(p.requiredPlugins) &&
+        p.requiredPlugins.length > 0 &&
+        !p.requiredPlugins.every(pl => enabled.has(pl));
+      if (!missing) return p;
+      const marked = JSON.parse(JSON.stringify(p));
+      for (const cmd of (marked.globalCommands || [])) cmd._pluginDisabled = true;
+      for (const cmd of (marked.checkCommands || [])) cmd._pluginDisabled = true;
+      return marked;
+    });
+  }
+
+  /**
    * Read the raw stored config, reassembling sharded chunks when present.
    * @returns {Promise<Object|undefined>} Parsed config, or undefined if nothing is stored.
    */
@@ -1029,6 +1054,7 @@ GHBCP.ConfigManager = (() => {
     getExtraCommands,
     filterCommandsByPlugins,
     filterProfilesByRequiredPlugins,
+    markProfilesByRequiredPlugins,
     getCollapsedGroups,
     setGroupCollapsed,
     globMatch,
