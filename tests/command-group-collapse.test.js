@@ -106,6 +106,7 @@ function buildSandbox(collapsed = []) {
   };
 
   const savedCalls = [];
+  const closeDialogCalls = [];
   const sandbox = {
     document,
     _ghbcpGroupIdCounter: 0,
@@ -121,10 +122,11 @@ function buildSandbox(collapsed = []) {
       }
     },
     CSS: { escape: s => s },
+    closeOpenDialogs: () => { closeDialogCalls.push(1); },
     console: { error: () => {} }
   };
   vm.runInNewContext(snippet, sandbox);
-  return { sandbox, document, savedCalls };
+  return { sandbox, document, savedCalls, closeDialogCalls };
 }
 
 function toggleButtonOf(group) {
@@ -161,7 +163,7 @@ test('a remembered key renders the group collapsed', () => {
 });
 
 test('clicking the toggle collapses, persists, and undoes on the next click', () => {
-  const { sandbox, savedCalls } = buildSandbox();
+  const { sandbox, savedCalls, closeDialogCalls } = buildSandbox();
   const group = sandbox.createCommandGroup('OpenShift Payload Testing', [{ command: '/payload' }], 'profile-payload-openshift');
   const toggle = toggleButtonOf(group);
 
@@ -170,12 +172,16 @@ test('clicking the toggle collapses, persists, and undoes on the next click', ()
   assert.equal(toggle.getAttribute('aria-expanded'), 'false');
   assert.deepEqual(savedCalls.at(-1), { key: 'profile-payload-openshift', collapsed: true },
     'collapse persisted for this group key only');
+  assert.equal(closeDialogCalls.length, 1,
+    'collapsing a section must close any dialog anchored inside it');
 
   toggle._tapHandler();
   assert.equal(group.classList.contains('ghbcp-collapsed'), false, 'second click expands');
   assert.equal(toggle.getAttribute('aria-expanded'), 'true');
   assert.deepEqual(savedCalls.at(-1), { key: 'profile-payload-openshift', collapsed: false },
     'expand cleared this group key only');
+  assert.equal(closeDialogCalls.length, 1,
+    'expanding must not close dialogs');
 });
 
 test('toggling one group syncs every bar showing the same key', () => {

@@ -3231,11 +3231,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @param {HTMLElement|null}       anchorBtn - Button that triggered the overlay, or null.
    */
   function attachOverlay(overlay, anchorBtn) {
-    if (anchorBtn && anchorBtn.parentElement) {
+    // A pending dialog can outlive its anchor: SPA re-injection replaces
+    // the command bar (anchor detached from the document), or the user
+    // collapsed the section the anchor lives in (anchor inside a
+    // display:none subtree). Attaching into a detached or hidden subtree
+    // would render an invisible dialog with dead buttons — fall back to
+    // the command bar / body so the dialog stays reachable.
+    const anchorUsable = !!(anchorBtn && anchorBtn.parentElement &&
+      anchorBtn.isConnected && anchorBtn.offsetParent != null);
+    if (anchorUsable) {
       anchorBtn.parentElement.style.position = 'relative';
       anchorBtn.parentElement.appendChild(overlay);
     } else {
-      // Keyboard shortcut path: no button anchor, attach to command bar or body
+      // Keyboard shortcut / stale anchor path: attach to command bar or body
       const bar = document.querySelector('.ghbcp-command-bar');
       const container = bar || document.body;
       if (bar) bar.style.position = 'relative';
@@ -3367,8 +3375,15 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       applyCollapsed(collapsedGroupKeys.has(groupKey));
       addTapListener(toggle, () => {
         const nowCollapsed = !group.classList.contains('ghbcp-collapsed');
-        if (nowCollapsed) collapsedGroupKeys.add(groupKey);
-        else collapsedGroupKeys.delete(groupKey);
+        if (nowCollapsed) {
+          collapsedGroupKeys.add(groupKey);
+          // Collapsing a section hides its buttons — and would hide any
+          // dialog still anchored inside it (invisible, dead buttons).
+          // Pickers are transient; close whatever is open.
+          closeOpenDialogs();
+        } else {
+          collapsedGroupKeys.delete(groupKey);
+        }
         // Sync every bar on the page (comment box, review dialog) that shows
         // the same group — they share the key, so they share the state.
         document.querySelectorAll(
