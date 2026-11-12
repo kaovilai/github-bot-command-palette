@@ -4048,6 +4048,10 @@ function mergeCollapsedState(storedKeys, recentToggles) {
             action: 'getEnabledPlugins',
             repo: currentRepo
           });
+          // A stale pass's fetch result belongs to the page it started on
+          // (another PR's plugin list) — publishing it would clobber the
+          // newer pass's shared state. Bail before any assignment.
+          if (generation !== injectGeneration) return;
           if (response) {
             lastPluginData = response;
             if (response.plugins) {
@@ -4063,14 +4067,21 @@ function mergeCollapsedState(storedKeys, recentToggles) {
             }
           }
         } catch (e) {
+          if (generation !== injectGeneration) return;
           lastPluginData = null;
         }
       } else {
         lastPluginData = null;
       }
 
-      lastPresubmitJobs = await fetchPresubmitJobs();
+      // Same rule for the remaining awaited state: a PR-scoped fetch from a
+      // stale pass (started on the previous PR) must never land here after a
+      // newer pass rendered — B's /test picker would offer A's jobs.
+      const presubmitJobs = await fetchPresubmitJobs();
+      if (generation !== injectGeneration) return;
+      lastPresubmitJobs = presubmitJobs;
       lastGithubToken = await CM.getGithubToken();
+      if (generation !== injectGeneration) return;
 
       if (config.globalSettings.prowAutoDetect !== false) {
         const hasProwSignals = detectProwSignals() ||
