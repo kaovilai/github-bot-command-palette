@@ -94,12 +94,18 @@ function buildSandbox() {
     }
   };
 
-  // Manually-released gate standing in for the network round trip inside
-  // resolveRehearsalJobNames() — the window in which overlapping calls race.
-  let releaseResolver;
-  const resolverGate = new Promise(res => { releaseResolver = res; });
-  const resolveRehearsalJobNames = names =>
-    resolverGate.then(() => new Map(names.map(n => [n, { jobName: 'pull-ci-org-repo-branch-unit' }])));
+  // Manually-released per-call gates standing in for the network round trip
+  // inside resolveRehearsalJobNames() — the window in which overlapping
+  // calls race. Each injectCheckButtons() call parks on its own gate, so
+  // tests can order the resumes (e.g. let the newer pass finish rendering
+  // before the stale one wakes up).
+  const resolverGates = [];
+  const resolveRehearsalJobNames = names => {
+    let release;
+    const gate = new Promise(res => { release = res; });
+    resolverGates.push({ names, release });
+    return gate.then(() => new Map(names.map(n => [n, { jobName: 'pull-ci-org-repo-branch-unit' }])));
+  };
 
   const sandbox = {
     document,
@@ -125,7 +131,9 @@ function buildSandbox() {
   };
   vm.runInNewContext(snippet, sandbox);
 
-  return { sandbox, row, releaseResolver };
+  // Release the resolver gate of the i-th injectCheckButtons() call.
+  const releaseCall = i => resolverGates[i].release();
+  return { sandbox, row, releaseCall };
 }
 
 const PROFILES = [{ checkCommands: [{}] }];
@@ -135,14 +143,15 @@ function buttonSetsOn(row) {
 }
 
 test('overlapping injectCheckButtons() calls render buttons exactly once', async () => {
-  const { sandbox, row, releaseResolver } = buildSandbox();
+  const { sandbox, row, releaseCall } = buildSandbox();
 
   // First pass: runs cleanup + collection synchronously, then parks on the
   // rehearsal resolver. Second pass starts inside that await window — the
   // interleaving produced by SPA navigation / MutationObserver re-triggers.
   const first = sandbox.injectCheckButtons(PROFILES);
   const second = sandbox.injectCheckButtons(PROFILES);
-  releaseResolver();
+  releaseCall(0);
+  releaseCall(1);
   await Promise.all([first, second]);
 
   const sets = buttonSetsOn(row);
@@ -152,29 +161,37 @@ test('overlapping injectCheckButtons() calls render buttons exactly once', async
 });
 
 test('a stale pass must not render on top of a completed newer pass', async () => {
-  const { sandbox, row, releaseResolver } = buildSandbox();
+  const { sandbox, row, releaseCall } = buildSandbox();
 
-  // Older pass parks on the resolver; newer pass starts, resolves, renders.
+  // Older pass parks on its resolver gate; newer pass starts, its gate is
+  // released, and it fully renders BEFORE the stale pass wakes up.
   const stale = sandbox.injectCheckButtons(PROFILES);
   const fresh = sandbox.injectCheckButtons(PROFILES);
-  releaseResolver();
-  await Promise.all([stale, fresh]);
+  releaseCall(1);
+  await fresh;
+  assert.equal(buttonSetsOn(row).length, 1,
+    'newer pass should have rendered its button set');
 
-  // Newer pass may render first or second in microtask order; either way the
-  // stale pass must not add a second set.
+  // Now the stale pass resumes after the newer one already rendered — it
+  // must bail on its stale generation instead of stacking a second set.
+  releaseCall(0);
+  await stale;
   const sets = buttonSetsOn(row);
   assert.equal(sets.length, 1);
 });
 
 test('sequential (non-overlapping) injectCheckButtons() calls still refresh cleanly', async () => {
-  const { sandbox, row, releaseResolver } = buildSandbox();
+  const { sandbox, row, releaseCall } = buildSandbox();
 
-  releaseResolver();
-  await sandbox.injectCheckButtons(PROFILES);
+  const first = sandbox.injectCheckButtons(PROFILES);
+  releaseCall(0);
+  await first;
   assert.equal(buttonSetsOn(row).length, 1);
 
   // A second pass after the first fully completed must replace, not stack.
-  await sandbox.injectCheckButtons(PROFILES);
+  const second = sandbox.injectCheckButtons(PROFILES);
+  releaseCall(1);
+  await second;
   const sets = buttonSetsOn(row);
   assert.equal(sets.length, 1);
   assert.ok(sets[0].children.length > 0);
