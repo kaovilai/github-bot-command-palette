@@ -2331,8 +2331,15 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     // Superseded while awaiting the job list (a newer picker or popover
     // opened): bail — attaching now would stack this stale dialog on top of
     // the newer one, and closing first would discard the newer dialog's
-    // selections/input. The newer dialog owns the slot.
-    if (generation !== dialogGeneration) return;
+    // selections/input. The newer dialog owns the slot. Drop the checks
+    // observer too if one was created above: today the observer setup only
+    // happens after all awaits, but that ordering is implicit — a future
+    // await on the checks-backed path would otherwise leak a page-attached
+    // observer on every supersession.
+    if (generation !== dialogGeneration) {
+      if (liveStatusObserver) liveStatusObserver.disconnect();
+      return;
+    }
 
     // The closeOpenDialogs() at the top of this function ran before the
     // awaits above (rehearsal/branch lists are fetched over the network), so
