@@ -247,24 +247,29 @@ test.describe('GitHub Bot Command Palette', () => {
     // Isolation: a previous (interrupted) run of this test can leave a
     // collapsed group in the persistent profile's synced storage, which
     // would fail the expanded-by-default assertion below. Clear every
-    // collapse key via the service worker first.
+    // collapse key via the service worker first — and fail setup loudly if
+    // the worker can't be reached, rather than silently skipping cleanup
+    // and letting leftover state decide the test's outcome.
     let cleanupSw = context.serviceWorkers()[0];
     if (!cleanupSw) {
       const triggerPage = await context.newPage();
       await triggerPage.goto('https://github.com/', { waitUntil: 'domcontentloaded', timeout: 15000 });
-      await triggerPage.waitForTimeout(2000);
-      cleanupSw = context.serviceWorkers()[0];
+      for (let i = 0; i < 15 && !cleanupSw; i++) {
+        await triggerPage.waitForTimeout(1000);
+        cleanupSw = context.serviceWorkers()[0];
+      }
       await triggerPage.close();
     }
-    if (cleanupSw) {
-      await cleanupSw.evaluate(() => new Promise(resolve => {
-        chrome.storage.sync.get(null, items => {
-          const keys = Object.keys(items || {}).filter(k => k.startsWith('ghbcp_collapsed_group:'));
-          if (keys.length === 0) return resolve();
-          chrome.storage.sync.remove(keys, () => resolve());
-        });
-      }));
+    if (!cleanupSw) {
+      throw new Error('collapse-isolation cleanup: service worker unreachable, cannot clear synced collapse keys');
     }
+    await cleanupSw.evaluate(() => new Promise(resolve => {
+      chrome.storage.sync.get(null, items => {
+        const keys = Object.keys(items || {}).filter(k => k.startsWith('ghbcp_collapsed_group:'));
+        if (keys.length === 0) return resolve();
+        chrome.storage.sync.remove(keys, () => resolve());
+      });
+    }));
 
     page = await context.newPage();
     await page.goto(PR_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });

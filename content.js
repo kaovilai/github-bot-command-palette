@@ -498,9 +498,24 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   // The repo the last successful plugin lookup was for — the reuse fallback
   // in inject() must never apply one repo's plugin list to another.
   let lastPluginDataRepo = null;
-  // Fingerprint of the enabled plugin-config sources the cached data was
-  // fetched under — a source removed/disabled in Settings invalidates it.
+  // Fingerprint of the enabled plugin-config source configuration the cached
+  // data was fetched under — a source removed, disabled, or re-pointed at
+  // another repo/branch in Settings invalidates it. The settings editor
+  // keeps a source's id while editing its fields, so the fingerprint must
+  // cover the fetch-relevant fields, not just the id.
   let lastPluginDataSources = null;
+
+  /**
+   * Stable fingerprint of the enabled plugin-config sources: id plus every
+   * field that decides what gets fetched. Pure function.
+   * @param {Object[]} sources - config.pluginConfigSources
+   * @returns {string}
+   */
+  function pluginSourcesFingerprint(sources) {
+    return JSON.stringify((sources || []).filter(s => s.enabled)
+      .map(s => [s.id, s.configRepo, s.branch, s.pathTemplate, s.filePath, s.format])
+      .sort());
+  }
   let lastPresubmitJobs = null;
   let lastGithubToken = null;
   let lastRehearsalJobsUrl = null;
@@ -3984,7 +3999,8 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     closeOpenDialogs();
     document.querySelectorAll(
       '.ghbcp-command-bar, .ghbcp-review-toolbar, .ghbcp-check-btns, ' +
-      '.ghbcp-text-modal-overlay, .ghbcp-toast'
+      '.ghbcp-text-modal-overlay, .ghbcp-toast, ' +
+      '.ghbcp-claude-icon, .ghbcp-log-inline-panel'
     ).forEach(el => el.remove());
     document.removeEventListener('keydown', handleShortcut);
     shortcutMap = {};
@@ -3993,6 +4009,11 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       checkRowStateObserver.disconnect();
       checkRowStateObserver = null;
     }
+    // Invalidate any inject pass still awaiting network work: without this
+    // bump, a pass parked on the token/presubmit fetches would pass its
+    // remaining generation checks and re-render the bar and shortcuts over
+    // the teardown.
+    injectGeneration++;
   }
 
   function registerShortcuts(profiles) {
@@ -4107,9 +4128,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
           if (response && response.plugins) {
             lastPluginData = response;
             lastPluginDataRepo = currentRepo;
-            lastPluginDataSources = JSON.stringify(
-              (config.pluginConfigSources || []).filter(s => s.enabled)
-                .map(s => s.id).sort());
+            lastPluginDataSources = pluginSourcesFingerprint(config.pluginConfigSources);
             pluginData = response;
           }
         } catch (e) {
@@ -4119,18 +4138,16 @@ function mergeCollapsedState(storedKeys, recentToggles) {
         }
         if (!pluginData && lastPluginData && lastPluginData.plugins) {
           if (lastPluginDataRepo === currentRepo) {
-            const currentSources = JSON.stringify(
-              (config.pluginConfigSources || []).filter(s => s.enabled)
-                .map(s => s.id).sort());
-            if (lastPluginDataSources === currentSources) {
+            if (lastPluginDataSources === pluginSourcesFingerprint(config.pluginConfigSources)) {
               // Transient fetch failure (rate limit, offline): reuse the last
               // known plugin state for THIS repo rather than failing open —
               // otherwise every plugin-ineligible section and command would
               // flicker back into the bar until the fetch succeeds again.
               pluginData = lastPluginData;
             } else {
-              // The source set changed since this data was fetched (a source
-              // removed or disabled in Settings) — stale, drop it.
+              // The source configuration changed since this data was fetched
+              // (a source removed, disabled, or re-pointed at another
+              // repo/branch in Settings) — stale, drop it.
               lastPluginData = null;
               lastPluginDataRepo = null;
               lastPluginDataSources = null;
