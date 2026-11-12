@@ -205,7 +205,13 @@ async function handleGetEnabledPlugins(repo, forceRefresh) {
  */
 async function getPluginsFromSource(source, org, repoName, fullRepo, forceRefresh) {
   const cache = await getCache();
-  const sourceCache = cache[source.id] || { repos: {} };
+  // Cache key covers every fetch-relevant field, not just the id: Settings
+  // keeps a source's id while editing its repo/branch/path/format, and a
+  // bare-id key would serve the pre-edit plugins until the TTL expires.
+  const sourceKey = [
+    source.id, source.configRepo, source.branch, source.pathTemplate, source.filePath, source.format
+  ].join('|');
+  const sourceCache = cache[sourceKey] || { repos: {} };
   const repoCache = sourceCache.repos[fullRepo];
   const ttlMs = (source.cacheTTLMinutes || 60) * 60 * 1000;
 
@@ -235,13 +241,13 @@ async function getPluginsFromSource(source, org, repoName, fullRepo, forceRefres
     plugins = Array.from(merged);
   } catch (err) {
     sourceCache.repos[fullRepo] = { fetchedAt: Date.now(), plugins: null, error: err.message };
-    cache[source.id] = sourceCache;
+    cache[sourceKey] = sourceCache;
     try { await setCache(cache); } catch (_) { /* best effort */ }
     return null;
   }
 
   sourceCache.repos[fullRepo] = { fetchedAt: Date.now(), plugins, error: null };
-  cache[source.id] = sourceCache;
+  cache[sourceKey] = sourceCache;
   // Cache write is best-effort; a storage failure should not suppress the result.
   try { await setCache(cache); } catch (_) { /* best effort */ }
 

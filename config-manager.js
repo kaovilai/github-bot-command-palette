@@ -28,7 +28,7 @@ GHBCP.addTapListener = function addTapListener(el, handler) {
 
 GHBCP.ConfigManager = (() => {
   const STORAGE_KEY = 'ghbcp_config';
-  const SCHEMA_VERSION = 14;
+  const SCHEMA_VERSION = 15;
   const BUILTIN_PROFILE_IDS = new Set([
     'profile-tide-prow-universal',
     'profile-prow-openshift-release',
@@ -136,9 +136,16 @@ GHBCP.ConfigManager = (() => {
       {
         id: 'profile-prow-openshift-release',
         name: 'Prow — OpenShift Release',
-        description: 'Extra commands for openshift/release repo (pj-rehearse)',
+        description: 'pj-rehearse commands for repos where the pj-rehearse-plugin is enabled',
         enabled: true,
+        // Static floor: the repos known to carry the plugin (today only
+        // openshift/release). requiredPlugins is the dynamic gate on top —
+        // when the repo's actual plugin config is available, the section
+        // hides on repos that don't enable pj-rehearse-plugin, so it follows
+        // reality instead of this hardcoded list. The gate only ever hides:
+        // without plugin data the static pattern stands.
         repoPatterns: ['openshift/release'],
+        requiredPlugins: ['pj-rehearse-plugin'],
         globalCommands: [
           cmd('Rehearse ACK', '/pj-rehearse ack', 'warning', { requireConfirm: true, description: 'Acknowledge rehearsal' }),
           cmd('Rehearse...', '/pj-rehearse', 'primary', { hasJobPicker: true, jobSource: 'rehearsals', joinMode: 'single-command', commandTemplate: '/pj-rehearse {input}', description: 'Rehearse specific tests from REHEARSALNOTIFIER' }),
@@ -307,7 +314,25 @@ GHBCP.ConfigManager = (() => {
       }
     ],
     repoOverrides: [],
-    pluginConfigSources: [],
+    // Seeded so section relevance is checked dynamically against each repo's
+    // real plugin config (e.g. Rehearse hides where pj-rehearse-plugin isn't
+    // enabled). Same public openshift/release data the presubmit fetch
+    // already reads; cached in the background worker (cacheTTLMinutes).
+    // Users can disable or remove it in Settings → Plugin config sources.
+    pluginConfigSources: [
+      {
+        id: 'src-openshift-ci',
+        name: 'OpenShift CI (openshift/release)',
+        enabled: true,
+        format: 'sharded',
+        configRepo: 'openshift/release',
+        branch: 'master',
+        pathTemplate: 'core-services/prow/02_config',
+        filePath: '',
+        presubmitsBasePath: 'ci-operator/jobs',
+        cacheTTLMinutes: 60
+      }
+    ],
     globalSettings: {
       enabled: true,
       buttonPosition: 'above-comment-box',
@@ -439,13 +464,14 @@ GHBCP.ConfigManager = (() => {
    * Migrate a stored config object to the current schema version.
    * Refreshes built-in profiles from DEFAULT_CONFIG while preserving user's `enabled` state,
    * and appends any new built-in profiles not yet in the stored config —
-   * except the v13 → v14 step, which instead keeps each stored built-in
-   * profile's saved edits (the settings editor edits built-ins in place, so
-   * a wholesale refresh would silently revert them) and applies only the
-   * Cherry-pick merge: the removed "Cherry-pick Chain..." entry is dropped
-   * and the `/cherry-pick` branch picker moves to the new 'choose' joinMode
-   * unless the user set a custom one. Older stored shapes keep the
-   * wholesale refresh.
+   * except the v13 → v14 and v14 → v15 steps, which instead keep each stored
+   * built-in profile's saved edits (the settings editor edits built-ins in
+   * place, so a wholesale refresh would silently revert them) and apply only
+   * that step's delta: v14 merges the Cherry-pick change (the removed
+   * "Cherry-pick Chain..." entry is dropped and the `/cherry-pick` branch
+   * picker moves to the new 'choose' joinMode unless the user set a custom
+   * one); v15 merges the new `requiredPlugins` gate onto the rehearse
+   * profile. Older stored shapes keep the wholesale refresh.
    * @param {Object} config - Stored config object (mutated in place).
    * @returns {Object} The mutated config with `version` bumped and `_migrated: true`.
    */
@@ -454,6 +480,20 @@ GHBCP.ConfigManager = (() => {
     const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     const defaultMap = new Map(defaults.profiles.map(p => [p.id, p]));
     const surgicalV14 = config.version === 13;
+    // v14 configs reach v15 through the same edit-preserving path: the only
+    // built-in delta in v15 is the rehearse profile's requiredPlugins gate.
+    const surgicalV15 = config.version === 14;
+    // The v15 delta, shared by both surgical paths: v13 configs hop straight
+    // to v15 in one migrateConfig() call, so they need it just as much as
+    // v14 configs. A stored profile that already declares requiredPlugins
+    // (user-set) keeps its value.
+    const mergeV15Delta = p => {
+      const updated = defaultMap.get(p.id);
+      if (updated && Array.isArray(updated.requiredPlugins) &&
+          !Array.isArray(p.requiredPlugins)) {
+        p.requiredPlugins = JSON.parse(JSON.stringify(updated.requiredPlugins));
+      }
+    };
     for (let i = 0; i < config.profiles.length; i++) {
       const p = config.profiles[i];
       if (BUILTIN_PROFILE_IDS.has(p.id) && defaultMap.has(p.id)) {
@@ -486,6 +526,11 @@ GHBCP.ConfigManager = (() => {
               }
             }
           }
+          // v13 configs jump straight to v15 here — apply the v15 delta too.
+          mergeV15Delta(p);
+        } else if (surgicalV15) {
+          // Keep the stored profile; merge in only the v15 delta.
+          mergeV15Delta(p);
         } else {
           const updated = defaultMap.get(p.id);
           updated.enabled = p.enabled;
@@ -500,6 +545,14 @@ GHBCP.ConfigManager = (() => {
     }
     if (!config.globalSettings.excludedRepos) config.globalSettings.excludedRepos = [];
     if (config.globalSettings.prowAutoDetect === undefined) config.globalSettings.prowAutoDetect = true;
+    // v15: dynamic section relevance (e.g. Rehearse hidden where
+    // pj-rehearse-plugin isn't enabled) needs a plugin config source. Seed
+    // the OpenShift CI preset for installs that never configured one. This
+    // runs exactly once (on the version bump), so a user who clears their
+    // sources afterwards stays cleared.
+    if (!config.pluginConfigSources || config.pluginConfigSources.length === 0) {
+      config.pluginConfigSources = JSON.parse(JSON.stringify(defaults.pluginConfigSources));
+    }
     // Sources saved before presubmitsBasePath existed can't resolve /test
     // rerun_command targets; backfill the known path for openshift/release.
     for (const src of (config.pluginConfigSources || [])) {
@@ -566,6 +619,117 @@ GHBCP.ConfigManager = (() => {
   }
 
   /**
+   * Promise wrapper over `chrome.storage.sync.remove` that rejects on lastError.
+   * @param {string|string[]} keys
+   * @returns {Promise<void>}
+   */
+  function syncRemove(keys) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.storage.sync.remove(keys, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  // Collapsed command-bar sections, stored as one sync key per group
+  // (profile ids, or 'repo-overrides') rather than one key holding the whole
+  // set: two tabs collapsing different sections then never overwrite each
+  // other's change, and the preference stays out of the Export/Import config
+  // schema so it follows the user across sessions and devices without
+  // touching their command config.
+  const COLLAPSED_GROUP_KEY_PREFIX = 'ghbcp_collapsed_group:';
+
+  /**
+   * Read the group keys (profile ids / 'repo-overrides') whose sections are
+   * remembered as collapsed.
+   * @returns {Promise<string[]>} Collapsed group keys; empty array on any failure.
+   */
+  async function getCollapsedGroups() {
+    try {
+      const all = await syncGet(null);
+      return Object.keys(all)
+        .filter(k => k.startsWith(COLLAPSED_GROUP_KEY_PREFIX))
+        .map(k => k.slice(COLLAPSED_GROUP_KEY_PREFIX.length));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * Persist or clear one group's collapsed state. Fire-and-forget safe:
+   * storage failures resolve rather than reject (a collapse preference is
+   * not worth an error toast). Writing only this group's own key is what
+   * makes concurrent tabs safe — see COLLAPSED_GROUP_KEY_PREFIX.
+   * @param {string}  groupKey  - Group key (profile id or 'repo-overrides').
+   * @param {boolean} collapsed - True to remember collapsed, false to clear.
+   * @returns {Promise<void>}
+   */
+  async function setGroupCollapsed(groupKey, collapsed) {
+    try {
+      if (collapsed) {
+        await syncSet({ [COLLAPSED_GROUP_KEY_PREFIX + groupKey]: true });
+      } else {
+        await syncRemove(COLLAPSED_GROUP_KEY_PREFIX + groupKey);
+      }
+    } catch (e) { /* best effort */ }
+  }
+
+  /**
+   * Drop profiles whose `requiredPlugins` aren't all enabled for the repo.
+   * The dynamic section-relevance gate: a profile declaring requiredPlugins
+   * (e.g. Rehearse → pj-rehearse-plugin) hides entirely on repos whose
+   * plugin config doesn't enable it. Profiles without the field always pass.
+   * An empty plugin ARRAY is a successful lookup that enabled nothing —
+   * such profiles hide; only non-array data (null/undefined, lookup
+   * unavailable) skips filtering, leaving the static repoPatterns as the
+   * floor in that case.
+   * @param {Object[]}   profiles       - Matched profile objects.
+   * @param {string[]|null} enabledPlugins - Plugin names active for the repo, or null/undefined when unknown.
+   * @returns {Object[]} Filtered profiles array (same reference when nothing drops).
+   */
+  function filterProfilesByRequiredPlugins(profiles, enabledPlugins) {
+    if (!profiles || !Array.isArray(enabledPlugins)) return profiles;
+    const enabled = new Set(enabledPlugins);
+    return profiles.filter(p => !Array.isArray(p.requiredPlugins) ||
+      p.requiredPlugins.length === 0 ||
+      p.requiredPlugins.every(pl => enabled.has(pl)));
+  }
+
+  /**
+   * 'indicate'-mode sibling of filterProfilesByRequiredPlugins: instead of
+   * dropping profiles whose requiredPlugins aren't enabled for the repo,
+   * mark every command in them `_pluginDisabled` so the buttons render
+   * dimmed with the "plugin not enabled for this repo" tooltip — the same
+   * indication command-level filtering already uses in that mode.
+   * @param {Object[]}   profiles       - Matched profile objects.
+   * @param {string[]|null} enabledPlugins - Plugin names active for the repo, or null/undefined when unknown.
+   * @returns {Object[]} Profiles with the affected commands marked (deep-cloned only where marked).
+   */
+  function markProfilesByRequiredPlugins(profiles, enabledPlugins) {
+    if (!profiles || !Array.isArray(enabledPlugins)) return profiles;
+    const enabled = new Set(enabledPlugins);
+    return profiles.map(p => {
+      const missing = Array.isArray(p.requiredPlugins) &&
+        p.requiredPlugins.length > 0 &&
+        !p.requiredPlugins.every(pl => enabled.has(pl));
+      if (!missing) return p;
+      const marked = JSON.parse(JSON.stringify(p));
+      for (const cmd of (marked.globalCommands || [])) cmd._pluginDisabled = true;
+      for (const cmd of (marked.checkCommands || [])) cmd._pluginDisabled = true;
+      for (const cmd of (marked.dynamicCommands || [])) cmd._pluginDisabled = true;
+      return marked;
+    });
+  }
+
+  /**
    * Read the raw stored config, reassembling sharded chunks when present.
    * @returns {Promise<Object|undefined>} Parsed config, or undefined if nothing is stored.
    */
@@ -588,6 +752,10 @@ GHBCP.ConfigManager = (() => {
    * unless `opts.strict` is set — then a storage read error rejects instead, so
    * a caller that writes the result back (the Settings page) can't overwrite
    * the user's real config with defaults after a transient read failure.
+   * On a genuinely EMPTY store (fresh install) the defaults are persisted
+   * best-effort: the background worker reads stored config only, so until
+   * something saves, it would otherwise never see the seeded plugin-config
+   * source that dynamic section relevance depends on.
    * @param {{strict?: boolean}} [opts]
    * @returns {Promise<Object>} Resolved configuration object.
    */
@@ -599,11 +767,24 @@ GHBCP.ConfigManager = (() => {
       return defaults();
     }
     let config;
+    let hadStored = true;
     try {
-      config = (await readStoredConfig()) || defaults();
+      const stored = await readStoredConfig();
+      if (stored) {
+        config = stored;
+      } else {
+        hadStored = false;
+        config = defaults();
+      }
     } catch (e) {
       if (strict) throw e;
       return defaults();
+    }
+    if (!hadStored) {
+      // First run: seed storage so every reader (background worker, popup,
+      // options page) sees the same config. Best-effort — a failure just
+      // means the next empty read tries again.
+      saveConfig(config).catch(() => {});
     }
     // Defensive: fill in missing top-level keys so callers never crash on
     // partial or manually-edited stored configs.
@@ -873,6 +1054,10 @@ GHBCP.ConfigManager = (() => {
     getMatchingProfiles,
     getExtraCommands,
     filterCommandsByPlugins,
+    filterProfilesByRequiredPlugins,
+    markProfilesByRequiredPlugins,
+    getCollapsedGroups,
+    setGroupCollapsed,
     globMatch,
     isRepoExcluded,
     getOverrideContext,

@@ -464,12 +464,58 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   return !overlayOpen;
 }
 
+/**
+ * Merge a freshly-read collapsed-group snapshot with the collapses/
+ * expansions toggled locally since that read started. A storage read that
+ * resolves after a local toggle carries a pre-toggle snapshot; rendering
+ * from it alone would visibly reverse the toggle when the bar re-renders.
+ * Per key, the local toggle wins (last write wins); keys not toggled
+ * locally take the storage value, so cross-tab changes still flow.
+ * Pure function, no chrome/DOM globals touched.
+ * @param {Iterable<string>} storedKeys     - Collapsed keys from storage.
+ * @param {Map<string, boolean>} recentToggles - Group key → latest local toggle (true = collapsed).
+ * @returns {Set<string>} The merged collapsed-key set.
+ */
+function mergeCollapsedState(storedKeys, recentToggles) {
+  const merged = new Set(storedKeys);
+  for (const [key, collapsed] of recentToggles) {
+    if (collapsed) merged.add(key);
+    else merged.delete(key);
+  }
+  return merged;
+}
+
 (async () => {
   const CM = GHBCP.ConfigManager;
   let config = null;
   let currentRepo = null;
   let debounceTimer = null;
+  // Monotonic generation of inject() passes — see inject(). Overlapping
+  // passes (SPA nav + MutationObserver + live-logic poll + refresh button)
+  // resolve their awaits out of order; only the newest may render.
+  let injectGeneration = 0;
   let lastPluginData = null;
+  // The repo the last successful plugin lookup was for — the reuse fallback
+  // in inject() must never apply one repo's plugin list to another.
+  let lastPluginDataRepo = null;
+  // Fingerprint of the enabled plugin-config source configuration the cached
+  // data was fetched under — a source removed, disabled, or re-pointed at
+  // another repo/branch in Settings invalidates it. The settings editor
+  // keeps a source's id while editing its fields, so the fingerprint must
+  // cover the fetch-relevant fields, not just the id.
+  let lastPluginDataSources = null;
+
+  /**
+   * Stable fingerprint of the enabled plugin-config sources: id plus every
+   * field that decides what gets fetched. Pure function.
+   * @param {Object[]} sources - config.pluginConfigSources
+   * @returns {string}
+   */
+  function pluginSourcesFingerprint(sources) {
+    return JSON.stringify((sources || []).filter(s => s.enabled)
+      .map(s => [s.id, s.configRepo, s.branch, s.pathTemplate, s.filePath, s.format])
+      .sort());
+  }
   let lastPresubmitJobs = null;
   let lastGithubToken = null;
   let lastRehearsalJobsUrl = null;
@@ -499,6 +545,23 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   // first button of the current combo was clicked. The combo is appended
   // BELOW it instead of replacing it — see queueAutoSubmit().
   let pendingComboBase = '';
+  // Collapsed command-bar section keys (profile ids / 'repo-overrides'),
+  // loaded once per inject() from synced storage so a user's collapsed
+  // sections survive sessions and devices. Mutated by the group toggle and
+  // persisted per key through CM.setGroupCollapsed().
+  let collapsedGroupKeys = new Set();
+  // Toggles made since the last storage read in inject(), keyed by group
+  // (last write wins). Re-applied over the freshly-read snapshot so a read
+  // that resolved after a toggle can't visibly reverse it; cleared once
+  // consumed. See mergeCollapsedState().
+  const recentCollapseToggles = new Map();
+  // Monotonic generation of dialog-open requests (job picker, payload
+  // picker, input popover). Each opener increments it and captures the
+  // value; an async opener (the job picker fetches its job list over the
+  // network before attaching) bails if the generation moved on — a newer
+  // dialog request superseded it, and the stale continuation must neither
+  // attach its own dialog nor close the newer one.
+  let dialogGeneration = 0;
   // The text of the most recent combo we submitted. While GitHub hasn't
   // cleared the textarea yet (post still in flight), that text is still in
   // the box; snapshotting it as a "draft" for the next combo would duplicate
@@ -1480,11 +1543,18 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    */
   async function fetchRepoBranches() {
     if (!CM.isContextValid() || !currentRepo) return null;
-    if (lastRepoBranches && lastRepoBranchesRepo === currentRepo) return lastRepoBranches;
+    // Capture the repo BEFORE awaiting: a fetch started on PR A that
+    // resolves after navigation to PR B must not write A's branches into
+    // the cache keyed as B's (the picker continuation bails on the
+    // navigation generation bump, but this cache write happens inside the
+    // fetch, before that guard).
+    const repo = currentRepo;
+    if (lastRepoBranches && lastRepoBranchesRepo === repo) return lastRepoBranches;
     try {
-      const resp = await chrome.runtime.sendMessage({ action: 'getRepoBranches', repo: currentRepo });
+      const resp = await chrome.runtime.sendMessage({ action: 'getRepoBranches', repo });
       if (resp && resp.branches && resp.branches.length > 0) {
-        lastRepoBranchesRepo = currentRepo;
+        if (currentRepo !== repo) return null;
+        lastRepoBranchesRepo = repo;
         lastRepoBranches = resp.branches.map(name => ({ name, status: 'pending' }));
         return lastRepoBranches;
       }
@@ -1618,6 +1688,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @returns {Promise<void>}
    */
   async function showTestJobPicker(command, context, anchorBtn) {
+    // Claim this dialog slot synchronously, before any await: a newer
+    // picker/popover opening while this request fetches its job list bumps
+    // the generation past `generation`, and the continuation below bails
+    // instead of attaching on top of (or closing) the newer dialog.
+    const generation = ++dialogGeneration;
     closeOpenDialogs();
 
     const usePresubmits = (command.commandTemplate || '').startsWith('/test');
@@ -1629,7 +1704,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     } else if (command.jobSource === 'branches') {
       jobs = await fetchRepoBranches();
       if (!jobs) {
-        // Branch list unavailable (rate limit, offline) — free-form input instead.
+        // Branch list unavailable (rate limit, offline) — free-form input
+        // instead. Guard the generation first: if a newer dialog (e.g. a
+        // CC User popover) opened while the fetch was in flight, the
+        // fallback would close it and discard whatever was typed there.
+        if (generation !== dialogGeneration) return;
         showInputPopover(command, context, anchorBtn);
         return;
       }
@@ -2304,7 +2383,35 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       if (liveStatusObserver) liveStatusObserver.disconnect();
       rawClosePicker();
     }
+    // createDialogCloser registered its raw close as _ghbcpClose, which
+    // doesn't disconnect liveStatusObserver — re-point it at the wrapping
+    // closePicker so a close routed through closeOpenDialogs() (e.g. a newer
+    // picker replacing this one mid-race) also drops the checks observer
+    // instead of leaving it refreshing a detached dialog forever.
+    picker._ghbcpClose = closePicker;
 
+    // Superseded while awaiting the job list (a newer picker or popover
+    // opened): bail — attaching now would stack this stale dialog on top of
+    // the newer one, and closing first would discard the newer dialog's
+    // selections/input. The newer dialog owns the slot. Drop the checks
+    // observer too if one was created above: today the observer setup only
+    // happens after all awaits, but that ordering is implicit — a future
+    // await on the checks-backed path would otherwise leak a page-attached
+    // observer on every supersession.
+    if (generation !== dialogGeneration) {
+      if (liveStatusObserver) liveStatusObserver.disconnect();
+      return;
+    }
+
+    // The closeOpenDialogs() at the top of this function ran before the
+    // awaits above (rehearsal/branch lists are fetched over the network), so
+    // a second click that landed inside that await window also found nothing
+    // to close — and both calls then attached their pickers. Both are
+    // absolutely positioned on the same anchor parent, so they overlap
+    // pixel-perfectly until search filtering shrinks the top one and reveals
+    // the stale full-list picker underneath. Re-close here, after the awaits
+    // and immediately before attaching, so only the newest picker survives.
+    closeOpenDialogs();
     attachOverlay(picker, anchorBtn);
     requestAnimationFrame(() => searchInput.focus());
   }
@@ -2444,18 +2551,22 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }
 
   /**
-   * Close a previously-opened GHBCP dialog via its stored close function so
-   * its document-level click listener is removed too; falls back to removing
-   * the element for dialogs created before the close handoff existed.
+   * Close previously-opened GHBCP dialogs via their stored close function so
+   * their document-level click listeners are removed too; falls back to
+   * removing the element for dialogs created before the close handoff
+   * existed. Closes every match, not just the first — stacked duplicates
+   * (e.g. from racing dialog opens) must all be swept, or the older one
+   * lingers under the newest.
    * @param {string} selector - Dialog selector ('.ghbcp-job-picker' or '.ghbcp-popover').
    */
   function closeExistingDialog(selector) {
-    const existing = document.querySelector(selector);
-    if (!existing) return;
-    if (typeof existing._ghbcpClose === 'function') {
-      existing._ghbcpClose();
-    } else {
-      existing.remove();
+    const existing = document.querySelectorAll(selector);
+    for (const dialog of existing) {
+      if (typeof dialog._ghbcpClose === 'function') {
+        dialog._ghbcpClose();
+      } else {
+        dialog.remove();
+      }
     }
   }
 
@@ -2506,6 +2617,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the picker, or null.
    */
   function showPayloadPicker(command, context, anchorBtn) {
+    // Claim the dialog slot (see dialogGeneration): supersedes any in-flight
+    // job-picker continuation still awaiting its job list.
+    ++dialogGeneration;
     // Commands are user-editable, so resolve the form as an own property only —
     // a command named e.g. "toString" must not pick up an Object.prototype
     // member. A command with no known form gets the free-form popover instead
@@ -2727,6 +2841,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the popover, or null.
    */
   function showInputPopover(command, context, anchorBtn) {
+    // Claim the dialog slot (see dialogGeneration): supersedes any in-flight
+    // job-picker continuation still awaiting its job list.
+    ++dialogGeneration;
     closeOpenDialogs();
 
     const popover = document.createElement('div');
@@ -3172,11 +3289,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @param {HTMLElement|null}       anchorBtn - Button that triggered the overlay, or null.
    */
   function attachOverlay(overlay, anchorBtn) {
-    if (anchorBtn && anchorBtn.parentElement) {
+    // A pending dialog can outlive its anchor: SPA re-injection replaces
+    // the command bar (anchor detached from the document), or the user
+    // collapsed the section the anchor lives in (anchor inside a
+    // display:none subtree). Attaching into a detached or hidden subtree
+    // would render an invisible dialog with dead buttons — fall back to
+    // the command bar / body so the dialog stays reachable.
+    const anchorUsable = !!(anchorBtn && anchorBtn.parentElement &&
+      anchorBtn.isConnected && anchorBtn.offsetParent != null);
+    if (anchorUsable) {
       anchorBtn.parentElement.style.position = 'relative';
       anchorBtn.parentElement.appendChild(overlay);
     } else {
-      // Keyboard shortcut path: no button anchor, attach to command bar or body
+      // Keyboard shortcut / stale anchor path: attach to command bar or body
       const bar = document.querySelector('.ghbcp-command-bar');
       const container = bar || document.body;
       if (bar) bar.style.position = 'relative';
@@ -3250,27 +3375,93 @@ function shouldHandleShortcutKey(e, overlayOpen) {
 
   /**
    * Build a named group of command buttons wrapped in a labelled container.
+   * The header (chevron + label) is one button: a single click collapses the
+   * group's buttons away, another click brings them back. When `groupKey` is
+   * given (profile id, or 'repo-overrides'), the collapsed state is
+   * remembered across sessions via synced storage, and every bar on the page
+   * sharing that key toggles in lockstep.
    * @param {string}   name     - Group label shown above the buttons.
    * @param {Object[]} commands - Array of command descriptors.
+   * @param {string}   [groupKey] - Stable persistence key for collapse state.
    * @returns {HTMLDivElement}
    */
-  function createCommandGroup(name, commands) {
+  function createCommandGroup(name, commands, groupKey) {
     const group = document.createElement('div');
     group.className = 'ghbcp-cmd-group';
     group.setAttribute('role', 'group');
+    if (groupKey) group.dataset.groupKey = groupKey;
     const groupLabelId = 'ghbcp-group-' + (++_ghbcpGroupIdCounter);
     group.setAttribute('aria-labelledby', groupLabelId);
+
+    const applyCollapsed = (collapsed) => {
+      group.classList.toggle('ghbcp-collapsed', collapsed);
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+    };
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ghbcp-group-toggle';
+    toggle.setAttribute('aria-labelledby', groupLabelId);
+    const wrapId = groupLabelId + '-wrap';
+    toggle.setAttribute('aria-controls', wrapId);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'ghbcp-group-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = '▾';
+    toggle.appendChild(chevron);
+
     const groupLabel = document.createElement('span');
     groupLabel.className = 'ghbcp-group-label';
     groupLabel.id = groupLabelId;
     groupLabel.textContent = name;
-    group.appendChild(groupLabel);
+    toggle.appendChild(groupLabel);
+
     const btnWrap = document.createElement('div');
     btnWrap.className = 'ghbcp-btn-wrap';
+    btnWrap.id = wrapId;
     const ctx = { repoName: currentRepo, prNumber: getPRNumber() };
     for (const cmd of commands) {
       btnWrap.appendChild(createButton(cmd, ctx));
     }
+
+    // Every toggle announces its state (expanded by default); keyed groups
+    // re-apply the remembered state right after.
+    applyCollapsed(false);
+
+    if (groupKey) {
+      applyCollapsed(collapsedGroupKeys.has(groupKey));
+      addTapListener(toggle, () => {
+        const nowCollapsed = !group.classList.contains('ghbcp-collapsed');
+        if (nowCollapsed) {
+          collapsedGroupKeys.add(groupKey);
+          // Collapsing a section hides its buttons — and would hide any
+          // dialog still anchored inside it (invisible, dead buttons).
+          // Pickers are transient; close whatever is open.
+          closeOpenDialogs();
+        } else {
+          collapsedGroupKeys.delete(groupKey);
+        }
+        // Record for mergeCollapsedState(): a storage read that resolved
+        // after this toggle must not reverse it on re-render.
+        recentCollapseToggles.set(groupKey, nowCollapsed);
+        // Sync every bar on the page (comment box, review dialog) that shows
+        // the same group — they share the key, so they share the state.
+        document.querySelectorAll(
+          `.ghbcp-cmd-group[data-group-key="${CSS.escape(groupKey)}"]`
+        ).forEach(g => {
+          g.classList.toggle('ghbcp-collapsed', nowCollapsed);
+          const t = g.querySelector('.ghbcp-group-toggle');
+          if (t) t.setAttribute('aria-expanded', String(!nowCollapsed));
+        });
+        // Fire-and-forget, one key per group: two tabs collapsing different
+        // sections never overwrite each other's remembered state.
+        // setGroupCollapsed swallows storage failures.
+        CM.setGroupCollapsed(groupKey, nowCollapsed);
+      });
+    }
+
+    group.appendChild(toggle);
     group.appendChild(btnWrap);
     return group;
   }
@@ -3343,10 +3534,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     const fragment = document.createDocumentFragment();
     for (const profile of profiles) {
       if (profile.globalCommands.length === 0) continue;
-      fragment.appendChild(createCommandGroup(profile.name, profile.globalCommands));
+      fragment.appendChild(createCommandGroup(profile.name, profile.globalCommands, profile.id));
     }
     if (extraCommands.length > 0) {
-      fragment.appendChild(createCommandGroup('Repo Overrides', extraCommands));
+      fragment.appendChild(createCommandGroup('Repo Overrides', extraCommands, 'repo-overrides'));
     }
     return fragment;
   }
@@ -3682,7 +3873,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
                 description: `${dyn.label}: ${checkName}`,
                 style: dyn.style,
                 requireConfirm: false,
-                hasInput: false
+                hasInput: false,
+                // Carries the indicate-mode "plugin not enabled" marking
+                // (markProfilesByRequiredPlugins) through to the button.
+                _pluginDisabled: dyn._pluginDisabled
               };
               btnContainer.appendChild(createButton(dynCmd, context));
             } catch (e) {
@@ -3711,7 +3905,15 @@ function shouldHandleShortcutKey(e, overlayOpen) {
                        document.querySelector('.js-diff-progressive-container');
     if (!isFilesTab) return;
 
-    if (document.querySelector('.ghbcp-review-toolbar')) return;
+    // Replace a previous toolbar instead of skipping, so a config change
+    // (settings-poll re-render) refreshes its commands — except while a
+    // picker or popover is open from it (same mid-interaction protection
+    // as the review-dialog bar).
+    const existingToolbar = document.querySelector('.ghbcp-review-toolbar');
+    if (existingToolbar) {
+      if (existingToolbar.querySelector('.ghbcp-job-picker, .ghbcp-popover')) return;
+      existingToolbar.remove();
+    }
 
     const reviewForm = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu');
     if (!reviewForm) return;
@@ -3758,7 +3960,17 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   function injectReviewDialogBar(profiles, extraCommands) {
     const dialog = document.querySelector('div[role="dialog"][aria-modal="true"]');
     if (!dialog) return;
-    if (dialog.querySelector('.ghbcp-command-bar')) return;
+    // Replace a previous bar instead of skipping: a config change
+    // (settings-poll re-render) must refresh the dialog's commands, not
+    // keep the outdated set on screen. But not while a picker or popover
+    // is open from this bar — routine mutation-driven re-injects would
+    // otherwise discard the user's selections/typed input mid-interaction;
+    // the next inject after the dialog closes refreshes it.
+    const existingBar = dialog.querySelector('.ghbcp-command-bar');
+    if (existingBar) {
+      if (existingBar.querySelector('.ghbcp-job-picker, .ghbcp-popover')) return;
+      existingBar.remove();
+    }
 
     const textarea = dialog.querySelector('textarea');
     if (!textarea) return;
@@ -3787,6 +3999,51 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * registered listener before re-registering so shortcut bindings stay fresh.
    * @param {Object[]} profiles - Enabled, matched profile objects.
    */
+  /**
+   * Remove every injected surface and binding: the command bars (main +
+   * review dialog), the review toolbar, inline check buttons, open
+   * dialogs/modals/toasts, the shortcut listener and the checks observer.
+   * Called when the settings poll finds the extension disabled
+   * mid-session — the UI must not outlive the setting that created it.
+   */
+  function teardownInjectedUI() {
+    closeOpenDialogs();
+    // Cancel a pending auto-submit combo: its 2s timer would otherwise
+    // still post the queued comment after the UI that queued it is gone.
+    // The text stays in the textarea as an unsubmitted draft.
+    clearTimeout(pendingComboTimer);
+    pendingComboTimer = null;
+    pendingComboLines = [];
+    pendingComboButtons = [];
+    pendingComboBase = '';
+    document.querySelectorAll(
+      '.ghbcp-command-bar, .ghbcp-review-toolbar, .ghbcp-check-btns, ' +
+      '.ghbcp-text-modal-overlay, .ghbcp-toast, ' +
+      '.ghbcp-claude-icon, .ghbcp-log-inline-panel'
+    ).forEach(el => el.remove());
+    document.removeEventListener('keydown', handleShortcut);
+    shortcutMap = {};
+    // null, not []: debouncedCheckButtonsRefresh()'s queued timer guards on
+    // truthiness, and an empty array would let it repaint check controls
+    // over the teardown. Cancel the queued timer outright too.
+    clearTimeout(checkButtonsRefreshTimer);
+    checkButtonsRefreshTimer = null;
+    lastInjectedProfiles = null;
+    if (checkRowStateObserver) {
+      checkRowStateObserver.disconnect();
+      checkRowStateObserver = null;
+    }
+    // Invalidate any inject pass still awaiting network work: without this
+    // bump, a pass parked on the token/presubmit fetches would pass its
+    // remaining generation checks and re-render the bar and shortcuts over
+    // the teardown. Same for in-flight check-button passes (their own
+    // generation mechanism aborts on a newer pass) and pending picker/popover
+    // requests still awaiting their job list.
+    injectGeneration++;
+    checkButtonsGeneration++;
+    dialogGeneration++;
+  }
+
   function registerShortcuts(profiles) {
     document.removeEventListener('keydown', handleShortcut);
     shortcutMap = {};
@@ -3833,11 +4090,23 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * No-ops if the extension is disabled, the page is not a PR, or context is invalid.
    */
   async function inject() {
+    // Claim this injection pass: SPA navigation, the MutationObserver, the
+    // live-logic poll and the plugin-refresh button can overlap. A stale
+    // pass resuming after a newer one started must not clobber module
+    // state (collapsedGroupKeys, lastPresubmitJobs, …) or re-render the
+    // bar from its older snapshot — the newest pass owns the page.
+    const generation = ++injectGeneration;
     try {
       if (!CM.isContextValid()) return;
       if (!isPRPage()) return;
 
-      config = await CM.getConfig();
+      // Read into a local and publish only when current: an older pass's
+      // getConfig() resolving after a newer one's would otherwise leave the
+      // module-level `config` on the older snapshot (a settings change made
+      // mid-session — e.g. autoSubmit — quietly reverted).
+      const storedConfig = await CM.getConfig();
+      if (generation !== injectGeneration) return;
+      config = storedConfig;
       if (config._migrated) {
         showToast('Bot Commands updated to v' + config.version + ' — built-in profiles refreshed', 'success');
         delete config._migrated;
@@ -3855,6 +4124,18 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       if (!currentRepo) return;
       if (CM.isRepoExcluded(config, currentRepo)) return;
 
+      // Collapsed-section preference (per profile id) — read before the bar
+      // is built so groups render in their remembered state. Toggles made
+      // while the read was in flight are re-applied over the snapshot: the
+      // read resolves with pre-toggle data and would visibly reverse them.
+      // Stale inject passes bail first: a newer pass already consumed (and
+      // cleared) recentCollapseToggles, so this older snapshot would clobber
+      // the user's toggles with nothing left to correct it.
+      const storedCollapsed = await CM.getCollapsedGroups();
+      if (generation !== injectGeneration) return;
+      collapsedGroupKeys = mergeCollapsedState(storedCollapsed, recentCollapseToggles);
+      recentCollapseToggles.clear();
+
       let profiles = CM.getMatchingProfiles(config, currentRepo);
       if (profiles.length === 0) return;
 
@@ -3862,26 +4143,84 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       const hasSources = config.pluginConfigSources && config.pluginConfigSources.some(s => s.enabled);
 
       if (filterMode !== 'disabled' && hasSources && CM.isContextValid()) {
+        let pluginData = null;
         try {
           const response = await chrome.runtime.sendMessage({
             action: 'getEnabledPlugins',
             repo: currentRepo
           });
-          if (response) {
+          // A stale pass's fetch result belongs to the page it started on
+          // (another PR's plugin list) — publishing it would clobber the
+          // newer pass's shared state. Bail before any assignment.
+          if (generation !== injectGeneration) return;
+          if (response && response.plugins) {
             lastPluginData = response;
-            if (response.plugins) {
-              profiles = CM.filterCommandsByPlugins(profiles, response.plugins, filterMode);
-            }
+            lastPluginDataRepo = currentRepo;
+            lastPluginDataSources = pluginSourcesFingerprint(config.pluginConfigSources);
+            pluginData = response;
           }
         } catch (e) {
-          lastPluginData = null;
+          if (generation !== injectGeneration) return;
+          // Fetch unavailable — fall through to the last known state below
+          // instead of flashing filtered sections back on.
+        }
+        if (!pluginData && lastPluginData && lastPluginData.plugins) {
+          if (lastPluginDataRepo === currentRepo) {
+            if (lastPluginDataSources === pluginSourcesFingerprint(config.pluginConfigSources)) {
+              // Transient fetch failure (rate limit, offline): reuse the last
+              // known plugin state for THIS repo rather than failing open —
+              // otherwise every plugin-ineligible section and command would
+              // flicker back into the bar until the fetch succeeds again.
+              pluginData = lastPluginData;
+            } else {
+              // The source configuration changed since this data was fetched
+              // (a source removed, disabled, or re-pointed at another
+              // repo/branch in Settings) — stale, drop it.
+              lastPluginData = null;
+              lastPluginDataRepo = null;
+              lastPluginDataSources = null;
+            }
+          } else {
+            // The cached data belongs to a DIFFERENT repo (navigated). It
+            // must not be reused for filtering — and it must not survive:
+            // the bar header renders the refresh button and edit-config
+            // link from lastPluginData, and Prow auto-detect counts its
+            // plugins, so the previous repo's Prow commands and link
+            // would show here. Drop it.
+            lastPluginData = null;
+            lastPluginDataRepo = null;
+            lastPluginDataSources = null;
+          }
+        }
+        if (pluginData) {
+          profiles = CM.filterCommandsByPlugins(profiles, pluginData.plugins, filterMode);
+          // Section-level relevance: profiles that declare requiredPlugins
+          // (e.g. Rehearse → pj-rehearse-plugin) hide entirely when the
+          // repo's plugin config doesn't enable them — in 'filter' mode.
+          // 'indicate' mode keeps everything visible but marks the
+          // affected commands dimmed (same indication the command-level
+          // filter uses); 'disabled' opts out of plugin checks altogether.
+          if (filterMode === 'filter') {
+            profiles = CM.filterProfilesByRequiredPlugins(profiles, pluginData.plugins);
+          } else if (filterMode === 'indicate') {
+            profiles = CM.markProfilesByRequiredPlugins(profiles, pluginData.plugins);
+          }
         }
       } else {
         lastPluginData = null;
+        lastPluginDataRepo = null;
       }
 
-      lastPresubmitJobs = await fetchPresubmitJobs();
-      lastGithubToken = await CM.getGithubToken();
+      // Same rule for the remaining awaited state: a PR-scoped fetch from a
+      // stale pass (started on the previous PR) must never land here after a
+      // newer pass rendered — B's /test picker would offer A's jobs. The
+      // token isn't PR-scoped, but a stale pass's older read (e.g. the user
+      // just replaced the token) must not clobber the newer one either.
+      const presubmitJobs = await fetchPresubmitJobs();
+      const githubToken = await CM.getGithubToken();
+      if (generation !== injectGeneration) return;
+      lastPresubmitJobs = presubmitJobs;
+      lastGithubToken = githubToken;
 
       if (config.globalSettings.prowAutoDetect !== false) {
         const hasProwSignals = detectProwSignals() ||
@@ -3898,10 +4237,20 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       // Remembered for the checks-state observer: it repaints only the check
       // rows, never the command bar, so an open picker/popover survives a
       // live check-state change.
+      // Stale pass: a newer injection already started — it owns the render.
+      if (generation !== injectGeneration) return;
+
       lastInjectedProfiles = profiles;
 
       injectGlobalCommandBar(profiles, extraCommands);
       await injectCheckButtons(profiles);
+      // injectCheckButtons awaits network fetches (rehearsal job-name
+      // resolution), so a newer inject can have fully rendered while this
+      // pass was parked. Its profiles own the remaining surfaces from here:
+      // resuming with this pass's (older) profiles would overwrite the
+      // newer shortcut bindings and inject stale commands into the newer
+      // page's review toolbar/dialog.
+      if (generation !== injectGeneration) return;
       injectReviewToolbar(profiles, extraCommands);
       injectReviewDialogBar(profiles, extraCommands);
       registerShortcuts(profiles);
@@ -3926,19 +4275,57 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   // and the tab is visible. Re-render only when a new logic version actually
   // lands — a full inject() rebuilds check buttons and closes any open
   // failure-log panel, so unchanged polls must not trigger it.
+  // Monotonic generation for overlapping poll ticks: a pathological slow
+  // read (>60s) resolving after a newer tick's must not assign its older
+  // snapshot over the newer tick's.
+  let settingsPollGeneration = 0;
   setInterval(async () => {
     if (document.visibilityState !== 'visible') return;
+    const pollGeneration = ++settingsPollGeneration;
     // Re-read the stored config: the in-memory copy is from the last inject,
     // so a Settings change made on an idle tab (enable or disable) would
     // otherwise never be noticed here.
+    // Snapshot the injection generation first: an inject pass that ran while
+    // this read was in flight published a config read at least as recently —
+    // assigning this older snapshot over it could re-enable the extension or
+    // autoSubmit against a settings change the user just made. When that
+    // happens, leave the newer config in place (a debouncedInject below, if
+    // any, re-reads everything properly).
+    const generationAtRead = injectGeneration;
     let stored = null;
     try {
       stored = await CM.getConfig();
     } catch (e) {
       return;
     }
-    if (!stored || !stored.globalSettings || !stored.globalSettings.enabled) return;
+    if (pollGeneration !== settingsPollGeneration) return;
+    if (!stored || !stored.globalSettings) return;
+    // A newer inject raced this read: it published a config read at least as
+    // recently and already applied whatever live-update state the current
+    // config wants — acting on this older snapshot here (assigning it,
+    // tearing down, or clearing live logic its branches disagree with)
+    // would undo the newer state.
+    if (generationAtRead !== injectGeneration) return;
+    if (!stored.globalSettings.enabled) {
+      // The extension was disabled in Settings on an idle tab: tear the
+      // injected UI down — the bar, check buttons, review surfaces and
+      // shortcut bindings must not stay active until the next navigation.
+      // (A failed/malformed read is NOT a disable — leave the UI alone.)
+      // Publish the disabled config first so any later debouncedInject()
+      // bails at its own enabled check instead of re-rendering from the
+      // stale in-memory copy.
+      config = stored;
+      teardownInjectedUI();
+      return;
+    }
+    const changed = !!config && JSON.stringify(stored) !== JSON.stringify(config);
     config = stored;
+    if (changed) {
+      // A profile was added/removed/disabled or a setting changed: notice
+      // it AND act on it — without this re-render, removed controls and
+      // shortcut bindings would stay active until the next navigation.
+      debouncedInject();
+    }
     if (stored.globalSettings.liveUpdates !== true) {
       // Opted out mid-session: drop any applied overrides and repaint once.
       if (appliedLiveLogicVersion !== null || Object.keys(liveLogic).length > 0) {
@@ -3952,6 +4339,19 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   }, 60 * 1000);
 
   // SPA navigation listeners
+  // Real navigation supersedes any dialog request still awaiting its job
+  // list: a fetch that started on the previous PR would otherwise pass its
+  // generation check here (nothing else bumps the generation), and with its
+  // anchor gone, attachOverlay falls back to THIS page's command bar — the
+  // picker's command then lands in the new PR's comment box (auto-submits
+  // there too). Bumped ONLY on these navigation events, never in inject()
+  // or the MutationObserver: those fire on routine DOM updates, and bumping
+  // there would cancel valid pickers mid-render.
+  function supersedeDialogsOnNavigation() { dialogGeneration++; }
+  document.addEventListener('turbo:load', supersedeDialogsOnNavigation);
+  document.addEventListener('pjax:end', supersedeDialogsOnNavigation);
+  window.addEventListener('popstate', supersedeDialogsOnNavigation);
+
   document.addEventListener('turbo:load', debouncedInject);
   document.addEventListener('pjax:end', debouncedInject);
   window.addEventListener('popstate', debouncedInject);

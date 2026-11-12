@@ -61,6 +61,10 @@ const GHBCP_PROW_PLUGIN_MAP = {
       '/payload-aggregate', '/payload-aggregate-with-prs', '/payload-abort'],
     description: 'Release payload testing'
   },
+  'pj-rehearse-plugin': {
+    commands: ['/pj-rehearse'],
+    description: 'Rehearse CI config changes (openshift/release)'
+  },
   'publicize': {
     commands: ['/publicize'],
     description: 'Publish private repo changes upstream'

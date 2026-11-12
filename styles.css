@@ -236,6 +236,45 @@ html[data-color-mode="dark"] {
   margin-bottom: 0;
 }
 
+/* Collapse toggle: chevron + label as one button, so collapsing a section
+   is a single click and a single Tab stop. */
+.ghbcp-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  margin: 0 0 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+
+.ghbcp-group-toggle:hover .ghbcp-group-label,
+.ghbcp-group-toggle:focus-visible .ghbcp-group-label {
+  color: var(--ghbcp-text);
+}
+
+.ghbcp-group-chevron {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ghbcp-text-muted);
+  transition: transform 0.12s ease;
+}
+
+.ghbcp-collapsed .ghbcp-group-chevron {
+  transform: rotate(-90deg);
+}
+
+.ghbcp-group-toggle .ghbcp-group-label {
+  margin-bottom: 0;
+}
+
+.ghbcp-collapsed .ghbcp-btn-wrap {
+  display: none;
+}
+
 .ghbcp-group-label {
   display: inline-block;
   font-size: 11px;

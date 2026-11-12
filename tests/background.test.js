@@ -1147,3 +1147,50 @@ test('fetchLiveLogic: an unparseable (but HTTP-200) response on the first URL fa
   assert.equal(result.source, 'network');
   assert.equal(result.logic.version, 4);
 });
+
+// ── getPluginsFromSource: cache key covers the full source configuration ──────
+// Regression: the cache keyed entries by source id alone, so editing a source
+// in Settings (same id, new configRepo/branch/path) kept serving the pre-edit
+// plugins until the TTL expired.
+test('getPluginsFromSource: editing a source (same id) bypasses the stale cache entry', async () => {
+  const store = {};
+  const fetchCalls = [];
+  // Override the storage and network seams the function resolves at call time.
+  ctx.getCache = async () => store;
+  ctx.setCache = async () => {};
+  ctx.fetch = async (url) => {
+    fetchCalls.push(url);
+    const yaml = url.includes('org/one')
+      ? 'plugins:\n  org/repo:\n    plugins:\n    - approve\n'
+      : 'plugins:\n  org/repo:\n    plugins:\n    - lgtm\n';
+    return { ok: true, text: async () => yaml };
+  };
+
+  const sourceOne = {
+    id: 'src-edit', enabled: true, format: 'monolithic',
+    configRepo: 'org/one', branch: 'main', pathTemplate: '',
+    filePath: 'prow/plugins.yaml', cacheTTLMinutes: 60
+  };
+  const sourceTwo = { ...sourceOne, configRepo: 'org/two' }; // edited in Settings
+
+  // First lookup fetches and caches under the full-configuration key.
+  const r1 = await ctx.getPluginsFromSource(sourceOne, 'org', 'repo', 'org/repo', false);
+  assert.deepEqual([...r1.plugins], ['approve']);
+  assert.equal(fetchCalls.length, 1);
+
+  // Fresh cache hit: no new fetch.
+  const r2 = await ctx.getPluginsFromSource(sourceOne, 'org', 'repo', 'org/repo', false);
+  assert.deepEqual([...r2.plugins], ['approve']);
+  assert.equal(fetchCalls.length, 1, 'a fresh cache entry must be served without refetching');
+
+  // The edited source (same id, new configRepo) must NOT hit that entry.
+  const r3 = await ctx.getPluginsFromSource(sourceTwo, 'org', 'repo', 'org/repo', false);
+  assert.deepEqual([...r3.plugins], ['lgtm'],
+    'an edited source must fetch the new configuration, not serve the stale cache');
+  assert.equal(fetchCalls.length, 2, 'the edited source must trigger a refetch');
+
+  // Both entries coexist: the original source still hits its own cache.
+  const r4 = await ctx.getPluginsFromSource(sourceOne, 'org', 'repo', 'org/repo', false);
+  assert.deepEqual([...r4.plugins], ['approve']);
+  assert.equal(fetchCalls.length, 2);
+});

@@ -121,6 +121,8 @@ Releases are cut automatically when the `version` in `manifest.json` changes on 
 ## Features
 
 - **Slash command buttons** — one-click `/lgtm`, `/approve`, `/retest`, `/hold`, etc.
+- **Collapsible sections** — click a section's header to collapse it (e.g. hide OpenShift Payload Testing); the state is remembered across sessions and devices
+- **Dynamic section relevance** — sections are checked against the repo's actual Prow plugin config (seeded OpenShift CI source, editable in Settings → Plugin config sources); e.g. the Rehearse section only shows where `pj-rehearse-plugin` is enabled
 - **Profile system** — configure commands per bot system (Prow, Mergify, Changesets, etc.)
 - **Repo pattern matching** — glob patterns like `openshift/*` to scope profiles
 - **Inline check buttons** — retest buttons next to failed CI checks
@@ -137,7 +139,7 @@ Releases are cut automatically when the `version` in `manifest.json` changes on 
 | Profile | Match Pattern | Commands |
 |---------|--------------|----------|
 | Tide/Prow — Universal | `*` (all repos) | `/lgtm`, `/lgtm cancel`, `/approve`, `/approve cancel`, `/hold`, `/hold cancel`, `/retest`, `/retest-required`, `/test …` (job picker), `/override …` (job picker), `/cherry-pick …` (branch picker; Chain picks toggle: parallel picks or a single sequential chain command, with drag/↑↓ reordering of the chain order), `/cc @user`, `/uncc @user`, `/ok-to-test`, `/verified by/later/bypass/remove`, `/jira refresh/backport/cherrypick` |
-| Prow — OpenShift Release | `openshift/release` | `/pj-rehearse ack`, `/pj-rehearse <tests>…` (job picker), `/pj-rehearse` (all) |
+| Prow — OpenShift Release | `openshift/release` (+ requires `pj-rehearse-plugin` when plugin data is available) | `/pj-rehearse ack`, `/pj-rehearse <tests>…` (job picker), `/pj-rehearse` (all) |
 | OpenShift Payload Testing | `openshift/*` | `/payload`, `/payload-job`, `/payload-aggregate`, `/payload-with-prs`, `/payload-job-with-prs`, `/payload-aggregate-with-prs`, `/payload-abort` |
 | OpenShift Labels | `openshift/*`, `openshift-priv/*` | `/label` shortcuts: `cherry-pick-approved`, `backport-risk-assessed`, `qe-approved`, `docs-approved`, `px-approved`, `staff-eng-approved`, `tide/merge-method-*`, `jira/skip-dependent-bug-check` |
 | OpenShift Private (embargoed CVE) | `openshift-priv/*` | `/publicize` |
