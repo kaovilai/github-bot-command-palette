@@ -4023,7 +4023,12 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     ).forEach(el => el.remove());
     document.removeEventListener('keydown', handleShortcut);
     shortcutMap = {};
-    lastInjectedProfiles = [];
+    // null, not []: debouncedCheckButtonsRefresh()'s queued timer guards on
+    // truthiness, and an empty array would let it repaint check controls
+    // over the teardown. Cancel the queued timer outright too.
+    clearTimeout(checkButtonsRefreshTimer);
+    checkButtonsRefreshTimer = null;
+    lastInjectedProfiles = null;
     if (checkRowStateObserver) {
       checkRowStateObserver.disconnect();
       checkRowStateObserver = null;

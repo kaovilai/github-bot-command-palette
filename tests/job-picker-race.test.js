@@ -539,6 +539,7 @@ test('a failed branch fetch falls back to the input popover only when not supers
       handleShortcut: () => {},
       shortcutMap: { x: 1 },
       lastInjectedProfiles: [{}],
+      checkButtonsRefreshTimer: { tag: 'refresh-timer' },
       checkRowStateObserver: { disconnect: () => { sandbox.observerDisconnected = true; } },
       injectGeneration: 5,
       checkButtonsGeneration: 5,
@@ -547,13 +548,15 @@ test('a failed branch fetch falls back to the input popover only when not supers
     vm.runInNewContext(tdSnippet, sandbox);
     sandbox.teardownInjectedUI();
     assert.ok(sandbox.closeOpenDialogsCalls === 1, 'open dialogs are closed');
-    assert.deepEqual(clearedTimers, [{ tag: 'combo-timer' }],
-      'the pending auto-submit timer is cancelled');
+    assert.deepEqual(clearedTimers, [{ tag: 'combo-timer' }, { tag: 'refresh-timer' }],
+      'the pending auto-submit timer and the queued check refresh are cancelled');
     assert.deepEqual([...sandbox.pendingComboLines], [], 'queued combo lines cleared');
     assert.deepEqual([...sandbox.pendingComboButtons], [], 'queued combo buttons cleared');
     assert.equal(sandbox.pendingComboBase, '', 'combo draft base cleared');
     assert.ok(removed.length > 0, 'injected surfaces removed');
     assert.ok(sandbox.observerDisconnected, 'checks observer disconnected');
+    assert.equal(sandbox.lastInjectedProfiles, null,
+      'lastInjectedProfiles must be null (truthy [] would let a queued refresh repaint)');
     assert.ok(sandbox.injectGeneration > 5, 'inject passes invalidated');
     assert.ok(sandbox.checkButtonsGeneration > 5, 'check-button passes invalidated');
     assert.ok(sandbox.dialogGeneration > 5, 'pending picker/popover requests invalidated');
