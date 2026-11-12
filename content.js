@@ -4082,13 +4082,23 @@ function mergeCollapsedState(storedKeys, recentToggles) {
           // Fetch unavailable — fall through to the last known state below
           // instead of flashing filtered sections back on.
         }
-        if (!pluginData && lastPluginData && lastPluginDataRepo === currentRepo &&
-            lastPluginData.plugins) {
-          // Transient fetch failure (rate limit, offline): reuse the last
-          // known plugin state for THIS repo rather than failing open —
-          // otherwise every plugin-ineligible section and command would
-          // flicker back into the bar until the fetch succeeds again.
-          pluginData = lastPluginData;
+        if (!pluginData && lastPluginData && lastPluginData.plugins) {
+          if (lastPluginDataRepo === currentRepo) {
+            // Transient fetch failure (rate limit, offline): reuse the last
+            // known plugin state for THIS repo rather than failing open —
+            // otherwise every plugin-ineligible section and command would
+            // flicker back into the bar until the fetch succeeds again.
+            pluginData = lastPluginData;
+          } else {
+            // The cached data belongs to a DIFFERENT repo (navigated). It
+            // must not be reused for filtering — and it must not survive:
+            // the bar header renders the refresh button and edit-config
+            // link from lastPluginData, and Prow auto-detect counts its
+            // plugins, so the previous repo's Prow commands and link
+            // would show here. Drop it.
+            lastPluginData = null;
+            lastPluginDataRepo = null;
+          }
         }
         if (pluginData) {
           profiles = CM.filterCommandsByPlugins(profiles, pluginData.plugins, filterMode);
