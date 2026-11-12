@@ -4032,9 +4032,11 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     // bump, a pass parked on the token/presubmit fetches would pass its
     // remaining generation checks and re-render the bar and shortcuts over
     // the teardown. Same for in-flight check-button passes (their own
-    // generation mechanism aborts on a newer pass).
+    // generation mechanism aborts on a newer pass) and pending picker/popover
+    // requests still awaiting their job list.
     injectGeneration++;
     checkButtonsGeneration++;
+    dialogGeneration++;
   }
 
   function registerShortcuts(profiles) {

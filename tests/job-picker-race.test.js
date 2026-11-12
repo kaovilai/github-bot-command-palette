@@ -506,3 +506,56 @@ test('a failed branch fetch falls back to the input popover only when not supers
       'the disabled config must be published so later injects bail');
   });
 }
+
+// teardownInjectedUI() must invalidate EVERY async surface: inject passes,
+// check-button passes, and pending picker/popover requests, plus cancel a
+// queued auto-submit combo — anything left valid can recreate clickable UI
+// after the extension is disabled mid-session.
+{
+  const tdStart = contentJs.indexOf('function teardownInjectedUI()');
+  const tdEnd = contentJs.indexOf('\n  function registerShortcuts', tdStart);
+  assert.ok(tdStart !== -1 && tdEnd !== -1, 'expected teardownInjectedUI()');
+  const tdSnippet = contentJs.slice(tdStart, tdEnd);
+
+  test('teardown invalidates every async generation and cancels pending combos', () => {
+    const removed = [];
+    const clearedTimers = [];
+    const sandbox = {
+      closeOpenDialogsCalls: 0,
+      closeOpenDialogs: () => { sandbox.closeOpenDialogsCalls++; },
+      clearTimeout: t => { clearedTimers.push(t); },
+      pendingComboTimer: { tag: 'combo-timer' },
+      pendingComboLines: ['/lgtm'],
+      pendingComboButtons: [{ tag: 'btn' }],
+      pendingComboBase: 'draft',
+      document: {
+        querySelectorAll: sel => {
+          assert.ok(sel.includes('.ghbcp-command-bar') && sel.includes('.ghbcp-claude-icon'),
+            'teardown selector list must cover all injected surfaces');
+          return [{ remove: () => removed.push(sel) }];
+        },
+        removeEventListener: () => {}
+      },
+      handleShortcut: () => {},
+      shortcutMap: { x: 1 },
+      lastInjectedProfiles: [{}],
+      checkRowStateObserver: { disconnect: () => { sandbox.observerDisconnected = true; } },
+      injectGeneration: 5,
+      checkButtonsGeneration: 5,
+      dialogGeneration: 5
+    };
+    vm.runInNewContext(tdSnippet, sandbox);
+    sandbox.teardownInjectedUI();
+    assert.ok(sandbox.closeOpenDialogsCalls === 1, 'open dialogs are closed');
+    assert.deepEqual(clearedTimers, [{ tag: 'combo-timer' }],
+      'the pending auto-submit timer is cancelled');
+    assert.deepEqual([...sandbox.pendingComboLines], [], 'queued combo lines cleared');
+    assert.deepEqual([...sandbox.pendingComboButtons], [], 'queued combo buttons cleared');
+    assert.equal(sandbox.pendingComboBase, '', 'combo draft base cleared');
+    assert.ok(removed.length > 0, 'injected surfaces removed');
+    assert.ok(sandbox.observerDisconnected, 'checks observer disconnected');
+    assert.ok(sandbox.injectGeneration > 5, 'inject passes invalidated');
+    assert.ok(sandbox.checkButtonsGeneration > 5, 'check-button passes invalidated');
+    assert.ok(sandbox.dialogGeneration > 5, 'pending picker/popover requests invalidated');
+  });
+}
