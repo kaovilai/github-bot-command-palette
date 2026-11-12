@@ -483,6 +483,17 @@ GHBCP.ConfigManager = (() => {
     // v14 configs reach v15 through the same edit-preserving path: the only
     // built-in delta in v15 is the rehearse profile's requiredPlugins gate.
     const surgicalV15 = config.version === 14;
+    // The v15 delta, shared by both surgical paths: v13 configs hop straight
+    // to v15 in one migrateConfig() call, so they need it just as much as
+    // v14 configs. A stored profile that already declares requiredPlugins
+    // (user-set) keeps its value.
+    const mergeV15Delta = p => {
+      const updated = defaultMap.get(p.id);
+      if (updated && Array.isArray(updated.requiredPlugins) &&
+          !Array.isArray(p.requiredPlugins)) {
+        p.requiredPlugins = JSON.parse(JSON.stringify(updated.requiredPlugins));
+      }
+    };
     for (let i = 0; i < config.profiles.length; i++) {
       const p = config.profiles[i];
       if (BUILTIN_PROFILE_IDS.has(p.id) && defaultMap.has(p.id)) {
@@ -515,15 +526,11 @@ GHBCP.ConfigManager = (() => {
               }
             }
           }
+          // v13 configs jump straight to v15 here — apply the v15 delta too.
+          mergeV15Delta(p);
         } else if (surgicalV15) {
-          // Keep the stored profile; merge in only the v15 delta. A user who
-          // edited (or deliberately deleted) requiredPlugins keeps their
-          // value — only a missing field is filled from the new default.
-          const updated = defaultMap.get(p.id);
-          if (Array.isArray(updated.requiredPlugins) &&
-              !Array.isArray(p.requiredPlugins)) {
-            p.requiredPlugins = JSON.parse(JSON.stringify(updated.requiredPlugins));
-          }
+          // Keep the stored profile; merge in only the v15 delta.
+          mergeV15Delta(p);
         } else {
           const updated = defaultMap.get(p.id);
           updated.enabled = p.enabled;

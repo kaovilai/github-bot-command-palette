@@ -1927,6 +1927,38 @@ test('migrateConfig: v14 keeps user edits to built-in profiles (surgical v15)', 
     'the v15 delta (requiredPlugins) should still be merged in');
 });
 
+test('migrateConfig: v13 hopping straight to v15 still gains the requiredPlugins gate', async () => {
+  // v13 configs migrate to v15 in one call through the v13 surgical path;
+  // the v15 delta must merge there too, or the profile-level gate is
+  // silently absent for users who skipped v14 entirely.
+  const CM = makeContext();
+  const v13 = {
+    version: 13,
+    profiles: [{
+      id: 'profile-prow-openshift-release',
+      name: 'My Rehearse Buttons',
+      enabled: true,
+      repoPatterns: ['openshift/release'],
+      globalCommands: [{ id: 'cmd-mine', label: 'Rehearse Mine', command: '/pj-rehearse mine' }],
+      checkCommands: [],
+      dynamicCommands: []
+    }],
+    repoOverrides: [],
+    globalSettings: JSON.parse(JSON.stringify(CM.DEFAULT_CONFIG.globalSettings)),
+    pluginConfigSources: []
+  };
+  const CM2 = makeContextWithStorage(v13);
+  const config = await CM2.getConfig();
+  assert.equal(config.version, CM.DEFAULT_CONFIG.version);
+  const p = config.profiles.find(x => x.id === 'profile-prow-openshift-release');
+  assert.ok(p, 'rehearse profile should exist after migration');
+  assert.equal(p.name, 'My Rehearse Buttons', 'v13 surgical path must still preserve edits');
+  assert.deepEqual(p.globalCommands.map(c => c.command), ['/pj-rehearse mine'],
+    'v13 surgical path must still preserve commands');
+  assert.deepEqual([...p.requiredPlugins], ['pj-rehearse-plugin'],
+    'the v15 gate must merge on the v13 one-hop path too');
+});
+
 test('migrateConfig: v14 keeps a user-set requiredPlugins untouched', async () => {
   const CM = makeContext();
   const customized = makeV14Config(CM);
