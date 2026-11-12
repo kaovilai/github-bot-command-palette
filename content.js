@@ -4162,6 +4162,13 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     // Re-read the stored config: the in-memory copy is from the last inject,
     // so a Settings change made on an idle tab (enable or disable) would
     // otherwise never be noticed here.
+    // Snapshot the injection generation first: an inject pass that ran while
+    // this read was in flight published a config read at least as recently —
+    // assigning this older snapshot over it could re-enable the extension or
+    // autoSubmit against a settings change the user just made. When that
+    // happens, leave the newer config in place (a debouncedInject below, if
+    // any, re-reads everything properly).
+    const generationAtRead = injectGeneration;
     let stored = null;
     try {
       stored = await CM.getConfig();
@@ -4169,7 +4176,9 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       return;
     }
     if (!stored || !stored.globalSettings || !stored.globalSettings.enabled) return;
-    config = stored;
+    if (generationAtRead === injectGeneration) {
+      config = stored;
+    }
     if (stored.globalSettings.liveUpdates !== true) {
       // Opted out mid-session: drop any applied overrides and repaint once.
       if (appliedLiveLogicVersion !== null || Object.keys(liveLogic).length > 0) {

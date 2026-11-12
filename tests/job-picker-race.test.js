@@ -398,3 +398,50 @@ test('a failed branch fetch falls back to the input popover only when not supers
       'hashchange must not supersede pending dialogs');
   });
 }
+
+// The 60s settings poll must not clobber a fresher inject-published config
+// with its older snapshot (could re-enable autoSubmit against a mid-session
+// settings change). Slice: the poll callback body.
+{
+  const pollStart = contentJs.indexOf("if (document.visibilityState !== 'visible') return;");
+  const pollEnd = contentJs.indexOf('}, 60 * 1000);', pollStart);
+  assert.ok(pollStart !== -1 && pollEnd !== -1,
+    'expected to find the settings-poll callback');
+  const pollSnippet = '(async () => {\n' + contentJs.slice(pollStart, pollEnd) + '\n})()';
+
+  function pollSandbox({ bumpDuringRead }) {
+    const state = { config: { tag: 'fresh-inject-config' } };
+    const sandbox = {
+      document: { visibilityState: 'visible' },
+      injectGeneration: 7,
+      config: state.config,
+      appliedLiveLogicVersion: null,
+      liveLogic: {},
+      CM: {
+        getConfig: () => new Promise(resolve => {
+          // An inject pass runs while the poll's read is in flight.
+          if (bumpDuringRead) sandbox.injectGeneration++;
+          resolve({ tag: 'older-poll-config', globalSettings: { enabled: true, liveUpdates: false } });
+        })
+      },
+      refreshLiveLogic: () => Promise.resolve(false),
+      debouncedInject: () => {}
+    };
+    return { sandbox, state };
+  }
+
+  test('settings poll assigns its read when no inject raced it', async () => {
+    const { sandbox } = pollSandbox({ bumpDuringRead: false });
+    await vm.runInNewContext(pollSnippet, sandbox);
+    assert.equal(sandbox.config.tag, 'older-poll-config',
+      'with no racing inject, the poll read is the freshest and should publish');
+  });
+
+  test('settings poll must not clobber a fresher inject-published config', async () => {
+    const { sandbox, state } = pollSandbox({ bumpDuringRead: true });
+    await vm.runInNewContext(pollSnippet, sandbox);
+    assert.equal(sandbox.config.tag, 'fresh-inject-config',
+      'an older poll snapshot must not overwrite the newer inject config');
+    assert.equal(state.config.tag, 'fresh-inject-config');
+  });
+}
