@@ -3452,6 +3452,16 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   let checkRowStateObserverTarget = null;
   let lastInjectedProfiles = null;
   let checkButtonsRefreshTimer = null;
+  // Bumped by every injectCheckButtons() pass. That function awaits network
+  // fetches (rehearsal job-name resolution) between its cleanup phase and
+  // its render phase, and nothing serializes callers — a second trigger
+  // (turbo:load, the global MutationObserver, the check-row-state repaint)
+  // landing inside that await window cleaned up nothing (the older pass
+  // hadn't rendered yet) and then both passes rendered, stacking duplicate
+  // Test/Override buttons on every check row. Each pass captures the
+  // generation at start and aborts its render if a newer pass has begun,
+  // because that newer pass owns the DOM by then.
+  let checkButtonsGeneration = 0;
   /**
    * Repaint only the inline check-row controls after a live state change.
    * Deliberately not debouncedInject(): a full inject() rebuilds the command
@@ -3482,6 +3492,7 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @param {Object[]} profiles - Matched, enabled profile objects.
    */
   async function injectCheckButtons(profiles) {
+    const generation = ++checkButtonsGeneration;
     // Clear any previously injected check buttons so that a plugin refresh or
     // re-inject picks up the latest command set instead of skipping processed rows.
     document.querySelectorAll('.ghbcp-check-btns').forEach(el => el.remove());
@@ -3545,6 +3556,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     const rehearsalResolutions = rehearsalCheckNames.size > 0
       ? await resolveRehearsalJobNames(Array.from(rehearsalCheckNames))
       : new Map();
+
+    // A newer pass started while this one awaited rehearsal resolution — it
+    // has already run its cleanup and will render. Rendering here too would
+    // stack a second .ghbcp-check-btns set on every row (the duplicate
+    // Test/Override buttons bug), so the stale pass bails.
+    if (generation !== checkButtonsGeneration) return;
 
     for (const { row, checkName, status, detailsHref, overriddenBy } of rows) {
       // Tide's own "tide" status context is a live-recomputed summary of
