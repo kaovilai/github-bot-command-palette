@@ -464,13 +464,14 @@ GHBCP.ConfigManager = (() => {
    * Migrate a stored config object to the current schema version.
    * Refreshes built-in profiles from DEFAULT_CONFIG while preserving user's `enabled` state,
    * and appends any new built-in profiles not yet in the stored config —
-   * except the v13 → v14 step, which instead keeps each stored built-in
-   * profile's saved edits (the settings editor edits built-ins in place, so
-   * a wholesale refresh would silently revert them) and applies only the
-   * Cherry-pick merge: the removed "Cherry-pick Chain..." entry is dropped
-   * and the `/cherry-pick` branch picker moves to the new 'choose' joinMode
-   * unless the user set a custom one. Older stored shapes keep the
-   * wholesale refresh.
+   * except the v13 → v14 and v14 → v15 steps, which instead keep each stored
+   * built-in profile's saved edits (the settings editor edits built-ins in
+   * place, so a wholesale refresh would silently revert them) and apply only
+   * that step's delta: v14 merges the Cherry-pick change (the removed
+   * "Cherry-pick Chain..." entry is dropped and the `/cherry-pick` branch
+   * picker moves to the new 'choose' joinMode unless the user set a custom
+   * one); v15 merges the new `requiredPlugins` gate onto the rehearse
+   * profile. Older stored shapes keep the wholesale refresh.
    * @param {Object} config - Stored config object (mutated in place).
    * @returns {Object} The mutated config with `version` bumped and `_migrated: true`.
    */
@@ -479,6 +480,9 @@ GHBCP.ConfigManager = (() => {
     const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     const defaultMap = new Map(defaults.profiles.map(p => [p.id, p]));
     const surgicalV14 = config.version === 13;
+    // v14 configs reach v15 through the same edit-preserving path: the only
+    // built-in delta in v15 is the rehearse profile's requiredPlugins gate.
+    const surgicalV15 = config.version === 14;
     for (let i = 0; i < config.profiles.length; i++) {
       const p = config.profiles[i];
       if (BUILTIN_PROFILE_IDS.has(p.id) && defaultMap.has(p.id)) {
@@ -510,6 +514,15 @@ GHBCP.ConfigManager = (() => {
                 }
               }
             }
+          }
+        } else if (surgicalV15) {
+          // Keep the stored profile; merge in only the v15 delta. A user who
+          // edited (or deliberately deleted) requiredPlugins keeps their
+          // value — only a missing field is filled from the new default.
+          const updated = defaultMap.get(p.id);
+          if (Array.isArray(updated.requiredPlugins) &&
+              !Array.isArray(p.requiredPlugins)) {
+            p.requiredPlugins = JSON.parse(JSON.stringify(updated.requiredPlugins));
           }
         } else {
           const updated = defaultMap.get(p.id);
@@ -598,35 +611,67 @@ GHBCP.ConfigManager = (() => {
     });
   }
 
-  // Collapsed command-bar sections, stored under its own sync key (not part
-  // of the Export/Import config schema) so the preference follows the user
-  // across sessions and devices without touching their command config.
-  const COLLAPSED_GROUPS_KEY = 'ghbcp_collapsed_groups';
+  /**
+   * Promise wrapper over `chrome.storage.sync.remove` that rejects on lastError.
+   * @param {string|string[]} keys
+   * @returns {Promise<void>}
+   */
+  function syncRemove(keys) {
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.storage.sync.remove(keys, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  // Collapsed command-bar sections, stored as one sync key per group
+  // (profile ids, or 'repo-overrides') rather than one key holding the whole
+  // set: two tabs collapsing different sections then never overwrite each
+  // other's change, and the preference stays out of the Export/Import config
+  // schema so it follows the user across sessions and devices without
+  // touching their command config.
+  const COLLAPSED_GROUP_KEY_PREFIX = 'ghbcp_collapsed_group:';
 
   /**
-   * Read the set of collapsed command-bar group keys (profile ids, or
-   * 'repo-overrides' for the Repo Overrides group).
-   * @returns {Promise<string[]>} Collapsed keys; empty array on any failure.
+   * Read the group keys (profile ids / 'repo-overrides') whose sections are
+   * remembered as collapsed.
+   * @returns {Promise<string[]>} Collapsed group keys; empty array on any failure.
    */
   async function getCollapsedGroups() {
     try {
-      const res = await syncGet(COLLAPSED_GROUPS_KEY);
-      return Array.isArray(res[COLLAPSED_GROUPS_KEY]) ? res[COLLAPSED_GROUPS_KEY] : [];
+      const all = await syncGet(null);
+      return Object.keys(all)
+        .filter(k => k.startsWith(COLLAPSED_GROUP_KEY_PREFIX))
+        .map(k => k.slice(COLLAPSED_GROUP_KEY_PREFIX.length));
     } catch (e) {
       return [];
     }
   }
 
   /**
-   * Persist the full set of collapsed group keys. Fire-and-forget safe:
+   * Persist or clear one group's collapsed state. Fire-and-forget safe:
    * storage failures resolve rather than reject (a collapse preference is
-   * not worth an error toast).
-   * @param {Iterable<string>} keys
+   * not worth an error toast). Writing only this group's own key is what
+   * makes concurrent tabs safe — see COLLAPSED_GROUP_KEY_PREFIX.
+   * @param {string}  groupKey  - Group key (profile id or 'repo-overrides').
+   * @param {boolean} collapsed - True to remember collapsed, false to clear.
    * @returns {Promise<void>}
    */
-  async function setCollapsedGroups(keys) {
+  async function setGroupCollapsed(groupKey, collapsed) {
     try {
-      await syncSet({ [COLLAPSED_GROUPS_KEY]: Array.from(keys) });
+      if (collapsed) {
+        await syncSet({ [COLLAPSED_GROUP_KEY_PREFIX + groupKey]: true });
+      } else {
+        await syncRemove(COLLAPSED_GROUP_KEY_PREFIX + groupKey);
+      }
     } catch (e) { /* best effort */ }
   }
 
@@ -634,15 +679,17 @@ GHBCP.ConfigManager = (() => {
    * Drop profiles whose `requiredPlugins` aren't all enabled for the repo.
    * The dynamic section-relevance gate: a profile declaring requiredPlugins
    * (e.g. Rehearse → pj-rehearse-plugin) hides entirely on repos whose
-   * plugin config doesn't enable it. Profiles without the field always pass,
-   * and so does everything when plugin data is unavailable (the static
-   * repoPatterns remain the floor in that case).
+   * plugin config doesn't enable it. Profiles without the field always pass.
+   * An empty plugin ARRAY is a successful lookup that enabled nothing —
+   * such profiles hide; only non-array data (null/undefined, lookup
+   * unavailable) skips filtering, leaving the static repoPatterns as the
+   * floor in that case.
    * @param {Object[]}   profiles       - Matched profile objects.
-   * @param {string[]|null} enabledPlugins - Plugin names active for the repo, or null/empty when unknown.
+   * @param {string[]|null} enabledPlugins - Plugin names active for the repo, or null/undefined when unknown.
    * @returns {Object[]} Filtered profiles array (same reference when nothing drops).
    */
   function filterProfilesByRequiredPlugins(profiles, enabledPlugins) {
-    if (!profiles || !Array.isArray(enabledPlugins) || enabledPlugins.length === 0) return profiles;
+    if (!profiles || !Array.isArray(enabledPlugins)) return profiles;
     const enabled = new Set(enabledPlugins);
     return profiles.filter(p => !Array.isArray(p.requiredPlugins) ||
       p.requiredPlugins.length === 0 ||
@@ -672,6 +719,10 @@ GHBCP.ConfigManager = (() => {
    * unless `opts.strict` is set — then a storage read error rejects instead, so
    * a caller that writes the result back (the Settings page) can't overwrite
    * the user's real config with defaults after a transient read failure.
+   * On a genuinely EMPTY store (fresh install) the defaults are persisted
+   * best-effort: the background worker reads stored config only, so until
+   * something saves, it would otherwise never see the seeded plugin-config
+   * source that dynamic section relevance depends on.
    * @param {{strict?: boolean}} [opts]
    * @returns {Promise<Object>} Resolved configuration object.
    */
@@ -683,11 +734,24 @@ GHBCP.ConfigManager = (() => {
       return defaults();
     }
     let config;
+    let hadStored = true;
     try {
-      config = (await readStoredConfig()) || defaults();
+      const stored = await readStoredConfig();
+      if (stored) {
+        config = stored;
+      } else {
+        hadStored = false;
+        config = defaults();
+      }
     } catch (e) {
       if (strict) throw e;
       return defaults();
+    }
+    if (!hadStored) {
+      // First run: seed storage so every reader (background worker, popup,
+      // options page) sees the same config. Best-effort — a failure just
+      // means the next empty read tries again.
+      saveConfig(config).catch(() => {});
     }
     // Defensive: fill in missing top-level keys so callers never crash on
     // partial or manually-edited stored configs.
@@ -959,7 +1023,7 @@ GHBCP.ConfigManager = (() => {
     filterCommandsByPlugins,
     filterProfilesByRequiredPlugins,
     getCollapsedGroups,
-    setCollapsedGroups,
+    setGroupCollapsed,
     globMatch,
     isRepoExcluded,
     getOverrideContext,

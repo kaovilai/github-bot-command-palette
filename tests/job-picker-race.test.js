@@ -138,6 +138,17 @@ function buildSandbox() {
   document.querySelectorAll = sel =>
     [...liveEls].filter(e => e.className === sel.replace(/^\./, '') && isAttached(e));
 
+  // Stand-in checks section + recording MutationObserver, for the
+  // live-status-observer cases (non-rehearsal job sources).
+  const checksSection = el('DIV');
+  document.querySelector = sel => (sel === '#checks' ? checksSection : null);
+  const observerInstances = [];
+  class RecordingMutationObserver {
+    constructor(callback) { this.callback = callback; this.disconnectCalls = 0; observerInstances.push(this); }
+    observe() {}
+    disconnect() { this.disconnectCalls++; }
+  }
+
   // Manually-released per-call gates standing in for the network round trip
   // inside fetchFullRehearsalJobs() — the window in which a second click
   // races the first. Each showTestJobPicker() call parks on its own gate.
@@ -164,32 +175,41 @@ function buildSandbox() {
     requestAnimationFrame: () => {},
     setTimeout,
     clearTimeout,
+    // Module-level state the dialog-generation guard reads/mutates. The
+    // snippet's `++dialogGeneration` and `dialogGeneration !== generation`
+    // resolve to this sandbox property.
+    dialogGeneration: 0,
+    MutationObserver: RecordingMutationObserver,
+    checksSectionSelector: () => '#checks',
+    // Referenced (short-circuit-protected) by the usePresubmits branch.
+    lastPresubmitJobs: null,
     console: { error: () => {} }
   };
   vm.runInNewContext(snippet, sandbox);
 
   // Release the fetch gate of the i-th showTestJobPicker() call.
   const releaseCall = i => fetchGates[i].release();
-  return { sandbox, anchorBtn, anchorParent, releaseCall };
+  return { sandbox, anchorBtn, anchorParent, releaseCall, observerInstances };
 }
 
 function attachedPickers(anchorParent) {
   return anchorParent.children.filter(c => c.className === 'ghbcp-job-picker');
 }
 
-test('overlapping showTestJobPicker() calls attach exactly one picker', async () => {
+test('overlapping showTestJobPicker() calls: the newest request wins, the stale one bails', async () => {
   const { sandbox, anchorBtn, anchorParent, releaseCall } = buildSandbox();
 
   // First click parks on the rehearsal-list fetch; the second click lands
   // inside that await window (the interleaving a slow fetch + impatient
-  // double-click produces). The first picker attaches, then the second call
-  // resumes — it must close the first picker before attaching its own.
+  // double-click produces) and claims the newer dialog generation. When the
+  // stale first call then resumes it must bail without attaching; the newer
+  // call attaches the one surviving picker.
   const first = sandbox.showTestJobPicker(COMMAND, {}, anchorBtn);
   const second = sandbox.showTestJobPicker(COMMAND, {}, anchorBtn);
   releaseCall(0);
   await first;
-  assert.equal(attachedPickers(anchorParent).length, 1,
-    'first call should have attached its picker');
+  assert.equal(attachedPickers(anchorParent).length, 0,
+    'a superseded (stale) continuation must not attach its picker');
 
   releaseCall(1);
   await second;
@@ -198,6 +218,31 @@ test('overlapping showTestJobPicker() calls attach exactly one picker', async ()
     `expected exactly one attached .ghbcp-job-picker, found ${pickers.length}`);
   assert.ok(pickers[0].children.length > 0,
     'the surviving picker should contain UI, not be empty');
+});
+
+test('a stale picker continuation must not close a newer dialog opened mid-fetch', async () => {
+  const { sandbox, anchorBtn, anchorParent, releaseCall } = buildSandbox();
+
+  // The user clicks Rehearse (slow fetch), then opens a newer dialog (an
+  // input popover — modeled here by the generation bump showInputPopover
+  // performs) while the fetch is still in flight. The stale continuation
+  // must neither close that newer dialog nor attach on top of it.
+  const stale = sandbox.showTestJobPicker(COMMAND, {}, anchorBtn);
+
+  // Stand-in for the newer dialog: a picker element already attached, plus
+  // the generation claim showInputPopover()/showPayloadPicker() make.
+  const newer = sandbox.document.createElement('DIV');
+  newer.className = 'ghbcp-job-picker';
+  anchorParent.appendChild(newer);
+  sandbox.dialogGeneration++;
+
+  releaseCall(0);
+  await stale;
+  const pickers = attachedPickers(anchorParent);
+  assert.equal(pickers.length, 1,
+    'the stale continuation must not attach a second picker');
+  assert.equal(pickers[0], newer,
+    'the newer dialog must survive untouched (not closed, not replaced)');
 });
 
 test('both calls attaching after the fetch still leave one picker', async () => {
@@ -245,4 +290,25 @@ test('closeExistingDialog() removes every stacked picker, not just the first', (
   sandbox.closeOpenDialogs();
   assert.equal(attachedPickers(anchorParent).length, 0,
     'all stacked pickers should have been swept');
+});
+
+test('replacing a checks-backed picker disconnects the old picker\'s live-status observer', async () => {
+  const { sandbox, anchorBtn, anchorParent, observerInstances } = buildSandbox();
+  // No jobSource: the picker scrapes check names and (unlike the rehearsals
+  // source) attaches a live-status MutationObserver on the checks section.
+  const cmd = { commandTemplate: '/test {input}', label: 'Test' };
+
+  await sandbox.showTestJobPicker(cmd, {}, anchorBtn);
+  assert.equal(observerInstances.length, 1,
+    'a checks-backed picker should have created a live-status observer');
+  const oldObserver = observerInstances[0];
+
+  await sandbox.showTestJobPicker(cmd, {}, anchorBtn);
+  assert.equal(observerInstances.length, 2,
+    'the replacement picker gets its own observer');
+  assert.ok(oldObserver.disconnectCalls >= 1,
+    'closing the old picker through closeOpenDialogs() must disconnect its observer');
+  assert.equal(observerInstances[1].disconnectCalls, 0,
+    'the new picker\'s observer must still be live');
+  assert.equal(attachedPickers(anchorParent).length, 1);
 });

@@ -502,8 +502,15 @@ function shouldHandleShortcutKey(e, overlayOpen) {
   // Collapsed command-bar section keys (profile ids / 'repo-overrides'),
   // loaded once per inject() from synced storage so a user's collapsed
   // sections survive sessions and devices. Mutated by the group toggle and
-  // persisted through CM.setCollapsedGroups().
+  // persisted per key through CM.setGroupCollapsed().
   let collapsedGroupKeys = new Set();
+  // Monotonic generation of dialog-open requests (job picker, payload
+  // picker, input popover). Each opener increments it and captures the
+  // value; an async opener (the job picker fetches its job list over the
+  // network before attaching) bails if the generation moved on — a newer
+  // dialog request superseded it, and the stale continuation must neither
+  // attach its own dialog nor close the newer one.
+  let dialogGeneration = 0;
   // The text of the most recent combo we submitted. While GitHub hasn't
   // cleared the textarea yet (post still in flight), that text is still in
   // the box; snapshotting it as a "draft" for the next combo would duplicate
@@ -1623,6 +1630,11 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @returns {Promise<void>}
    */
   async function showTestJobPicker(command, context, anchorBtn) {
+    // Claim this dialog slot synchronously, before any await: a newer
+    // picker/popover opening while this request fetches its job list bumps
+    // the generation past `generation`, and the continuation below bails
+    // instead of attaching on top of (or closing) the newer dialog.
+    const generation = ++dialogGeneration;
     closeOpenDialogs();
 
     const usePresubmits = (command.commandTemplate || '').startsWith('/test');
@@ -2316,6 +2328,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
     // instead of leaving it refreshing a detached dialog forever.
     picker._ghbcpClose = closePicker;
 
+    // Superseded while awaiting the job list (a newer picker or popover
+    // opened): bail — attaching now would stack this stale dialog on top of
+    // the newer one, and closing first would discard the newer dialog's
+    // selections/input. The newer dialog owns the slot.
+    if (generation !== dialogGeneration) return;
+
     // The closeOpenDialogs() at the top of this function ran before the
     // awaits above (rehearsal/branch lists are fetched over the network), so
     // a second click that landed inside that await window also found nothing
@@ -2530,6 +2548,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the picker, or null.
    */
   function showPayloadPicker(command, context, anchorBtn) {
+    // Claim the dialog slot (see dialogGeneration): supersedes any in-flight
+    // job-picker continuation still awaiting its job list.
+    ++dialogGeneration;
     // Commands are user-editable, so resolve the form as an own property only —
     // a command named e.g. "toString" must not pick up an Object.prototype
     // member. A command with no known form gets the free-form popover instead
@@ -2751,6 +2772,9 @@ function shouldHandleShortcutKey(e, overlayOpen) {
    * @param {HTMLButtonElement|null} anchorBtn - Button that triggered the popover, or null.
    */
   function showInputPopover(command, context, anchorBtn) {
+    // Claim the dialog slot (see dialogGeneration): supersedes any in-flight
+    // job-picker continuation still awaiting its job list.
+    ++dialogGeneration;
     closeOpenDialogs();
 
     const popover = document.createElement('div');
@@ -3324,9 +3348,12 @@ function shouldHandleShortcutKey(e, overlayOpen) {
       btnWrap.appendChild(createButton(cmd, ctx));
     }
 
+    // Every toggle announces its state (expanded by default); keyed groups
+    // re-apply the remembered state right after.
+    applyCollapsed(false);
+
     if (groupKey) {
-      const remembered = collapsedGroupKeys.has(groupKey);
-      applyCollapsed(remembered);
+      applyCollapsed(collapsedGroupKeys.has(groupKey));
       addTapListener(toggle, () => {
         const nowCollapsed = !group.classList.contains('ghbcp-collapsed');
         if (nowCollapsed) collapsedGroupKeys.add(groupKey);
@@ -3340,8 +3367,10 @@ function shouldHandleShortcutKey(e, overlayOpen) {
           const t = g.querySelector('.ghbcp-group-toggle');
           if (t) t.setAttribute('aria-expanded', String(!nowCollapsed));
         });
-        // Fire-and-forget: setCollapsedGroups swallows storage failures.
-        CM.setCollapsedGroups(collapsedGroupKeys);
+        // Fire-and-forget, one key per group: two tabs collapsing different
+        // sections never overwrite each other's remembered state.
+        // setGroupCollapsed swallows storage failures.
+        CM.setGroupCollapsed(groupKey, nowCollapsed);
       });
     }
 

@@ -114,7 +114,12 @@ function buildSandbox(collapsed = []) {
     getPRNumber: () => 1,
     createButton: () => el('BUTTON', { className: 'ghbcp-btn' }),
     addTapListener: (elm, handler) => { elm._tapHandler = handler; },
-    CM: { setCollapsedGroups: keys => { savedCalls.push(Array.from(keys)); return Promise.resolve(); } },
+    CM: {
+      setGroupCollapsed: (key, isCollapsed) => {
+        savedCalls.push({ key, collapsed: isCollapsed });
+        return Promise.resolve();
+      }
+    },
     CSS: { escape: s => s },
     console: { error: () => {} }
   };
@@ -163,12 +168,14 @@ test('clicking the toggle collapses, persists, and undoes on the next click', ()
   toggle._tapHandler();
   assert.equal(group.classList.contains('ghbcp-collapsed'), true, 'first click collapses');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false');
-  assert.deepEqual(savedCalls.at(-1), ['profile-payload-openshift'], 'collapsed key persisted');
+  assert.deepEqual(savedCalls.at(-1), { key: 'profile-payload-openshift', collapsed: true },
+    'collapse persisted for this group key only');
 
   toggle._tapHandler();
   assert.equal(group.classList.contains('ghbcp-collapsed'), false, 'second click expands');
   assert.equal(toggle.getAttribute('aria-expanded'), 'true');
-  assert.deepEqual(savedCalls.at(-1), [], 'key removed from the persisted set');
+  assert.deepEqual(savedCalls.at(-1), { key: 'profile-payload-openshift', collapsed: false },
+    'expand cleared this group key only');
 });
 
 test('toggling one group syncs every bar showing the same key', () => {
