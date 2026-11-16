@@ -4,6 +4,24 @@
 // to keep status detection and DOM queries consistent in one place.
 const CHECKS_SECTION_SELECTOR = 'section[aria-label="Checks"]';
 
+// New GitHub Overview UI (Labs "new PR experience"): checks are no longer in
+// section[aria-label="Checks"] — they live inside expandable groups under the
+// "Merge status" card. Each group is a [role="group"] with heading
+// "failing checks" / "successful checks", containing [role="listitem"] rows
+// with a heading link. This selector is deliberately broad: the groups are
+// lazy-mounted only after the user expands the card, so every candidate is
+// scraped when present and deduped by name.
+const NEW_OVERVIEW_CHECK_ROW_SELECTOR =
+  'region [role="listitem"], ' +
+  '[role="group"] [role="listitem"], ' +
+  '[aria-label="failing checks"] [role="listitem"], ' +
+  '[aria-label="successful checks"] [role="listitem"], ' +
+  'region li, ' +
+  '[data-testid="check-row"], ' +
+  '[data-testid="merge-status-check"]';
+const NEW_OVERVIEW_CHECK_NAME_SELECTOR =
+  'h4 a, h3 a, [role="heading"] a, a.Link--primary, a[href*="prow.ci.openshift.org"], a[href*="check_run_id"]';
+
 // Monotonic counter for generating unique ARIA label IDs within the page,
 // avoiding the (unlikely but non-zero) collision risk of Math.random().
 let _ghbcpGroupIdCounter = 0;
@@ -803,7 +821,60 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     // cancelled = manually stopped (should be re-run); stale = deadline exceeded without result
     const isPending = element.querySelector('.octicon-dot-fill') !== null ||
                       element.querySelector('.color-fg-attention, [data-conclusion="pending"], [data-conclusion="cancelled"], [data-conclusion="stale"]') !== null;
-    return isPending ? 'pending' : 'passed';
+    if (isPending) return 'pending';
+    // New Overview UI fallback: status is conveyed as inline text like
+    // "— Job failed." / "— Job succeeded." / "— Pipeline dispatch" rather
+    // than via Primer octicon classes. Check text when icon heuristics miss.
+    const text = (element.textContent || '').toLowerCase();
+    if (text.includes('job failed') || text.includes('not mergeable') || text.includes('— job failed')) return 'failed';
+    if (text.includes('job succeeded') || text.includes('pipeline dispatch')) return 'passed';
+    return 'passed';
+  }
+
+  /** Extract the display name of a check from a row/cell, handling both
+   * the legacy Primer row (h4 a span) and the new Overview row (h4 a).
+   * @param {Element} row
+   * @returns {string}
+   */
+  function getCheckNameFromRow(row) {
+    let el = row.querySelector('h4 a span');
+    if (el && el.textContent.trim()) return el.textContent.trim();
+    el = row.querySelector(NEW_OVERVIEW_CHECK_NAME_SELECTOR);
+    if (el && el.textContent.trim()) return el.textContent.trim();
+    // Fallback: any link whose text looks like a CI context (contains slash)
+    const links = row.querySelectorAll('a');
+    for (const a of links) {
+      const t = a.textContent.trim();
+      if (t && (t.startsWith('ci/') || t === 'tide' || t === 'CodeRabbit' || t.includes('/'))) return t;
+    }
+    return '';
+  }
+
+  /** Return the href of the details link for a check row.
+   * @param {Element} row
+   * @returns {string|null}
+   */
+  function getCheckLinkFromRow(row) {
+    const nameEl = row.querySelector('h4 a span') || row.querySelector(NEW_OVERVIEW_CHECK_NAME_SELECTOR);
+    const link = nameEl && (nameEl.tagName === 'A' ? nameEl : nameEl.closest('a'));
+    return link ? link.href : null;
+  }
+
+  /** Collect new-Overview check rows (lazy-mounted inside the Merge status card).
+   * Filters out non-check listitems (e.g. comment entries) by requiring a
+   * prow/checks link or a ci/-like name.
+   * @returns {Element[]}
+   */
+  function findNewOverviewCheckRows() {
+    const candidates = document.querySelectorAll(NEW_OVERVIEW_CHECK_ROW_SELECTOR);
+    const out = [];
+    for (const row of candidates) {
+      const txt = row.textContent || '';
+      const hasCheckLink = !!row.querySelector('a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], a[href*="/checks?"]');
+      const looksLikeCheck = /ci\//.test(txt) || txt.includes('tide') || txt.includes('pipeline-gate') || txt.includes('CodeRabbit') || hasCheckLink;
+      if (looksLikeCheck) out.push(row);
+    }
+    return out;
   }
 
   /**
@@ -818,7 +889,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    * @returns {string|null} The overriding login, or null when not overridden.
    */
   function getCheckOverriddenBy(element) {
-    const link = element.querySelector('h4 a, .status-actions a, .merge-status-item a, a.Link--primary');
+    const link = element.querySelector('h4 a, h3 a, [role="heading"] a, .status-actions a, .merge-status-item a, a.Link--primary');
     return parseOverrideDescription(element.textContent || '') ||
       parseOverrideDescription(link ? link.getAttribute('title') : '') ||
       parseOverrideDescription(element.getAttribute('aria-label')) ||
@@ -940,7 +1011,8 @@ function mergeCollapsedState(storedKeys, recentToggles) {
 
   /**
    * Scrape CI check names and statuses from the current PR page.
-   * Supports both the modern Primer React UI and the legacy merge-status UI.
+   * Supports the modern Primer React UI, the new Overview "Merge status" card,
+   * and the legacy merge-status UI.
    * @returns {{name: string, status: 'failed'|'pending'|'passed', overriddenBy: string|null, isProwManaged: boolean, runId: string|null, jobId: string|null}[]}
    */
   function scrapeCheckNames() {
@@ -963,6 +1035,26 @@ function mergeCollapsedState(storedKeys, recentToggles) {
           name,
           status: getCheckStatus(item),
           overriddenBy: getCheckOverriddenBy(item),
+          isProwManaged: isProwManagedCheck(name),
+          runId: ids ? ids.runId : null,
+          jobId: ids ? ids.jobId : null
+        });
+      }
+    }
+
+    // New Overview UI: expandable "Checks" groups inside the Merge status card.
+    if (names.length === 0) {
+      const overviewRows = findNewOverviewCheckRows();
+      for (const row of overviewRows) {
+        const name = getCheckNameFromRow(row);
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        const href = getCheckLinkFromRow(row);
+        const ids = href ? parseActionsRunJobIds(href) : null;
+        names.push({
+          name,
+          status: getCheckStatus(row),
+          overriddenBy: getCheckOverriddenBy(row),
           isProwManaged: isProwManagedCheck(name),
           runId: ids ? ids.runId : null,
           jobId: ids ? ids.jobId : null
@@ -3669,10 +3761,11 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       });
     }, 150);
   }
-  // Rows in either supported checks UI; used to attribute a mutation to the
-  // check row it belongs to.
+  // Rows in any supported checks UI; used to attribute a mutation to the
+  // check row it belongs to. New Overview UI rows are [role="listitem"] inside
+  // the Merge status card; they carry the check link and status description.
   const CHECK_STATE_ROW_SELECTOR =
-    'li[aria-label], .merge-status-item, .js-merge-status-check-item, .merge-status-list li';
+    'li[aria-label], .merge-status-item, .js-merge-status-check-item, .merge-status-list li, [role="listitem"]';
 
   /**
    * Inject "Test" and "Override" buttons next to CI check rows.
@@ -3697,20 +3790,41 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     });
 
     let checkRowEls = [];
+    let checksContainer = null;
 
-    // Modern GitHub UI
+    // Modern GitHub UI (legacy section[aria-label="Checks"])
     const checksSection = document.querySelector(checksSectionSelector());
     if (checksSection) {
-      checkRowEls = checksSection.querySelectorAll('li[aria-label]');
+      checkRowEls = [...checksSection.querySelectorAll('li[aria-label]')];
+      checksContainer = checksSection;
+    }
+
+    // New Overview UI: lazy-mounted Merge status card groups
+    if (checkRowEls.length === 0) {
+      const overviewCandidates = document.querySelectorAll(
+        'region [role="listitem"], [role="group"] [role="listitem"], [aria-label="failing checks"] [role="listitem"], [aria-label="successful checks"] [role="listitem"], region li, [data-testid="check-row"], [data-testid="merge-status-check"]'
+      );
+      const overviewRows = [...overviewCandidates].filter(row => {
+        const txt = row.textContent || '';
+        const hasCheckLink = !!row.querySelector('a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], a[href*="/checks?"]');
+        return /ci\//.test(txt) || txt.includes('tide') || txt.includes('pipeline-gate') || txt.includes('CodeRabbit') || hasCheckLink;
+      });
+      if (overviewRows.length > 0) {
+        checkRowEls = overviewRows;
+        // Find the common ancestor to observe (the expanded Checks region)
+        const first = overviewRows[0];
+        checksContainer = (first.closest && (first.closest('region') || first.closest('[data-testid="checks-summary"]') || first.closest('main'))) || null;
+      }
     }
 
     // Legacy fallback
     if (checkRowEls.length === 0) {
-      checkRowEls = document.querySelectorAll(legacyCheckRowSelector());
+      checkRowEls = [...document.querySelectorAll(legacyCheckRowSelector())];
+      if (!checksContainer) checksContainer = document.querySelector('.merge-status-list');
     }
 
     // Keep inline controls in step with in-place override/status changes.
-    observeCheckRowStates(checksSection || document.querySelector('.merge-status-list'));
+    observeCheckRowStates(checksContainer || checksSection || document.querySelector('.merge-status-list') || document.querySelector('main'));
 
     // Single pass: derive checkName once per row, and collect distinct
     // non-passed "ci/rehearse/..." check names needing async job-name
@@ -3734,13 +3848,41 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       // Override) for it.
       if (config.globalSettings.showOnlyFailedTests && status === 'passed' && !overriddenBy) continue;
 
-      const nameEl = row.querySelector('h4 a span') ||
-                     row.querySelector('.status-actions a, .merge-status-item a, a.Link--primary, .text-bold');
-      const checkName = nameEl ? nameEl.textContent.trim() : '';
+      // Resolve name + link for either legacy Primer or new Overview row.
+    // Inline to keep the check-buttons-race vm snippet self-contained.
+      let checkName = '';
+      let detailsHref = null;
+      {
+        const spanEl = row.querySelector('h4 a span');
+        if (spanEl && spanEl.textContent.trim()) {
+          checkName = spanEl.textContent.trim();
+          const a = spanEl.closest ? spanEl.closest('a') : null;
+          detailsHref = a ? a.href : (spanEl.parentElement && spanEl.parentElement.href) || null;
+        } else {
+          const altEl = row.querySelector('h4 a, h3 a, [role="heading"] a, a.Link--primary, a[href*="prow.ci.openshift.org"], a[href*="check_run_id"]');
+          if (altEl && altEl.textContent.trim()) {
+            checkName = altEl.textContent.trim();
+            detailsHref = altEl.href || (altEl.closest && altEl.closest('a') ? altEl.closest('a').href : null);
+          } else {
+            // Last resort: any link whose text looks like a CI context
+            for (const a of row.querySelectorAll('a')) {
+              const t = (a.textContent || '').trim();
+              if (t && (t.startsWith('ci/') || t === 'tide' || t === 'CodeRabbit' || t.includes('/'))) {
+                checkName = t;
+                detailsHref = a.href;
+                break;
+              }
+            }
+          }
+          // Normalise detailsHref via closest anchor when altEl was a span
+          if (!detailsHref && altEl) {
+            const anchor = altEl.tagName === 'A' ? altEl : (altEl.closest && altEl.closest('a'));
+            detailsHref = anchor ? anchor.href : null;
+          }
+        }
+      }
       if (!checkName) continue;
 
-      const detailsLink = nameEl && (nameEl.tagName === 'A' ? nameEl : nameEl.closest('a'));
-      const detailsHref = detailsLink ? detailsLink.href : null;
 
       rows.push({ row, checkName, status, detailsHref, overriddenBy });
       if (checkName.startsWith('ci/rehearse/') && (status !== 'passed' || overriddenBy)) {
@@ -4376,6 +4518,8 @@ function mergeCollapsedState(storedKeys, recentToggles) {
           if (node.querySelector && (
             node.querySelector('textarea') ||
             node.querySelector('.merge-status-list') ||
+            node.querySelector('region') ||
+            node.querySelector(NEW_OVERVIEW_CHECK_ROW_SELECTOR) ||
             // Use the live-logic selector helpers for descendant queries and
             // direct-node matches too, or an override that only wraps the
             // checks section would never schedule a re-injection.
@@ -4384,6 +4528,9 @@ function mergeCollapsedState(storedKeys, recentToggles) {
             node.matches && (
               node.matches(legacyCheckRowSelector()) ||
               node.matches(checksSectionSelector()) ||
+              node.matches(NEW_OVERVIEW_CHECK_ROW_SELECTOR) ||
+              node.matches('region') ||
+              node.matches('[role="listitem"]') ||
               node.matches('div[role="dialog"]')
             ) ||
             node.querySelector('div[role="dialog"]')

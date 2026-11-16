@@ -369,6 +369,7 @@ html[data-color-mode="dark"] {
 .ghbcp-check-btns {
   display: inline-flex;
   gap: 4px;
+  flex-wrap: wrap;
   margin-left: 8px;
   vertical-align: middle;
 }
@@ -377,6 +378,15 @@ html[data-color-mode="dark"] {
   font-size: 11px;
   padding: 1px 8px;
   min-height: 24px;
+}
+
+/* New GitHub Overview UI (Merge status card): rows are Primer React
+   flex rows with tight spacing. Allow buttons to wrap and keep a small
+   top margin when they flow onto a second line, so they never clip
+   under the "Required" badge or overflow the card. */
+[role="listitem"] .ghbcp-check-btns,
+region li .ghbcp-check-btns {
+  margin-top: 4px;
 }
 
 /* Review toolbar */
