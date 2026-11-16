@@ -20,7 +20,8 @@ const NEW_OVERVIEW_CHECK_ROW_SELECTOR =
   '[data-testid="check-row"], ' +
   '[data-testid="merge-status-check"]';
 const NEW_OVERVIEW_CHECK_NAME_SELECTOR =
-  'h4 a, h3 a, [role="heading"] a, a.Link--primary, a[href*="prow.ci.openshift.org"], a[href*="check_run_id"]';
+  'h4 a, h3 a, [role="heading"] a, a.Link--primary, a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], ' +
+  '.status-actions a, .merge-status-item a, .text-bold';
 
 // Monotonic counter for generating unique ARIA label IDs within the page,
 // avoiding the (unlikely but non-zero) collision risk of Math.random().
@@ -845,7 +846,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     const links = row.querySelectorAll('a');
     for (const a of links) {
       const t = a.textContent.trim();
-      if (t && (t.startsWith('ci/') || t === 'tide' || t === 'CodeRabbit' || t.includes('/'))) return t;
+      if (t && (t.startsWith('ci/') || t === 'tide' || t === 'CodeRabbit' || t === 'build' || t === 'lint' || t.includes('/') || t.includes('-'))) return t;
     }
     return '';
   }
@@ -869,10 +870,32 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     const candidates = document.querySelectorAll(NEW_OVERVIEW_CHECK_ROW_SELECTOR);
     const out = [];
     for (const row of candidates) {
-      const txt = row.textContent || '';
-      const hasCheckLink = !!row.querySelector('a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], a[href*="/checks?"]');
-      const looksLikeCheck = /ci\//.test(txt) || txt.includes('tide') || txt.includes('pipeline-gate') || txt.includes('CodeRabbit') || hasCheckLink;
-      if (looksLikeCheck) out.push(row);
+      // Validate via the check heading or its details link rather than the
+      // entire item body — prevents a discussion item mentioning `ci/prow/unit`
+      // from being scraped as a check.
+      const headingEl = row.querySelector('h4 a span') || row.querySelector(NEW_OVERVIEW_CHECK_NAME_SELECTOR);
+      const headingName = headingEl ? (headingEl.textContent || '').trim() : '';
+      const plausibleName = headingName && (
+        headingName.startsWith('ci/') ||
+        headingName === 'tide' ||
+        headingName.includes('pipeline-gate') ||
+        headingName.includes('CodeRabbit') ||
+        headingName.includes('/') ||
+        headingName === 'build' ||
+        headingName === 'lint'
+      );
+      const hasCheckLink = !!row.querySelector(
+        'a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], a[href*="/checks?"], a[href*="/actions/runs/"]'
+      );
+      // Also allow Actions run/job links to count even if heading text is
+      // generic (e.g. `unit-tests` with title `build`) — the details href
+      // confirms it is a check row.
+      const hasActionsLink = (() => {
+        const a = row.querySelector('a[href*="/actions/runs/"]');
+        if (!a) return false;
+        try { return ACTIONS_RUN_JOB_HREF_RE.test(a.getAttribute('href') || a.href || ''); } catch (_) { return false; }
+      })();
+      if (plausibleName || hasCheckLink || hasActionsLink) out.push(row);
     }
     return out;
   }
@@ -3805,9 +3828,18 @@ function mergeCollapsedState(storedKeys, recentToggles) {
         'region [role="listitem"], [role="group"] [role="listitem"], [aria-label="failing checks"] [role="listitem"], [aria-label="successful checks"] [role="listitem"], region li, [data-testid="check-row"], [data-testid="merge-status-check"]'
       );
       const overviewRows = [...overviewCandidates].filter(row => {
-        const txt = row.textContent || '';
-        const hasCheckLink = !!row.querySelector('a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], a[href*="/checks?"]');
-        return /ci\//.test(txt) || txt.includes('tide') || txt.includes('pipeline-gate') || txt.includes('CodeRabbit') || hasCheckLink;
+        const headingEl = row.querySelector('h4 a span') || row.querySelector('h4 a, h3 a, [role="heading"] a, a.Link--primary, a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], .status-actions a, .merge-status-item a, .text-bold');
+        const headingName = headingEl ? (headingEl.textContent || '').trim() : '';
+        const plausibleName = headingName && (
+          headingName.startsWith('ci/') || headingName === 'tide' || headingName.includes('pipeline-gate') || headingName.includes('CodeRabbit') || headingName.includes('/') || headingName === 'build' || headingName === 'lint'
+        );
+        const hasCheckLink = !!row.querySelector('a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], a[href*="/checks?"], a[href*="/actions/runs/"]');
+        const hasActionsLink = !!(() => {
+          const a = row.querySelector('a[href*="/actions/runs/"]');
+          if (!a) return false;
+          try { return ACTIONS_RUN_JOB_HREF_RE.test(a.getAttribute('href') || a.href || ''); } catch (_) { return false; }
+        })();
+        return plausibleName || hasCheckLink || hasActionsLink;
       });
       if (overviewRows.length > 0) {
         checkRowEls = overviewRows;
@@ -3859,7 +3891,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
           const a = spanEl.closest ? spanEl.closest('a') : null;
           detailsHref = a ? a.href : (spanEl.parentElement && spanEl.parentElement.href) || null;
         } else {
-          const altEl = row.querySelector('h4 a, h3 a, [role="heading"] a, a.Link--primary, a[href*="prow.ci.openshift.org"], a[href*="check_run_id"]');
+          const altEl = row.querySelector('h4 a, h3 a, [role="heading"] a, a.Link--primary, a[href*="prow.ci.openshift.org"], a[href*="check_run_id"], a[href*="/actions/runs/"], .status-actions a, .merge-status-item a, .text-bold');
           if (altEl && altEl.textContent.trim()) {
             checkName = altEl.textContent.trim();
             detailsHref = altEl.href || (altEl.closest && altEl.closest('a') ? altEl.closest('a').href : null);
@@ -3867,7 +3899,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
             // Last resort: any link whose text looks like a CI context
             for (const a of row.querySelectorAll('a')) {
               const t = (a.textContent || '').trim();
-              if (t && (t.startsWith('ci/') || t === 'tide' || t === 'CodeRabbit' || t.includes('/'))) {
+              if (t && (t.startsWith('ci/') || t === 'tide' || t === 'CodeRabbit' || t === 'build' || t === 'lint' || t.includes('/') || t.includes('-'))) {
                 checkName = t;
                 detailsHref = a.href;
                 break;
