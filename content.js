@@ -3341,10 +3341,25 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    */
   function findCommentTextarea({ skipDialog = false } = {}) {
     // If a modal review dialog is open, prefer its textarea
-    const reviewDialog = skipDialog ? null : document.querySelector('div[role="dialog"][aria-modal="true"]');
-    if (reviewDialog) {
-      const ta = reviewDialog.querySelector('textarea');
-      if (ta) return ta;
+    if (!skipDialog) {
+      const reviewDialog = document.querySelector('div[role="dialog"][aria-modal="true"]') ||
+                           document.querySelector('div[role="dialog"]') ||
+                           document.querySelector('[aria-label*="Finish your review" i]');
+      if (reviewDialog) {
+        const ta = reviewDialog.querySelector('textarea');
+        if (ta) return ta;
+      }
+      // New Files changed review panel (slide-over) — not a classic modal,
+      // identified by its heading text + textarea
+      const header = Array.from(document.querySelectorAll('h1, h2, h3, h4, [role="heading"]'))
+        .find(h => (h.textContent || '').includes('Finish your review'));
+      if (header) {
+        const container = header.closest('div, aside, section, form') || header.parentElement;
+        if (container) {
+          const ta = container.querySelector('textarea');
+          if (ta) return ta;
+        }
+      }
     }
 
     // Prefer the main bottom-of-PR comment field
@@ -3356,11 +3371,17 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       '.js-new-comment-form textarea[name="comment[body]"]',
       '.discussion-timeline-actions textarea[name="comment[body]"]',
       'textarea.js-comment-field',
-      'file-attachment textarea'
+      'file-attachment textarea',
+      'textarea[placeholder*="Leave a comment"]',
+      'textarea[name="comment[body]"]'
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) return el;
+    }
+    // Last resort: any visible textarea that looks like a review/comment field
+    for (const ta of document.querySelectorAll('textarea')) {
+      if (ta.offsetParent !== null && ta.placeholder && /comment/i.test(ta.placeholder)) return ta;
     }
     return null;
   }
@@ -3373,10 +3394,12 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    * @returns {HTMLButtonElement|null}
    */
   function findSubmitButton(textarea) {
-    // Review dialog submit button
-    const dialog = textarea.closest('div[role="dialog"][aria-modal="true"]');
+    // Review dialog submit button (supports both classic modal and new slide-over panel)
+    const dialog = textarea.closest('div[role="dialog"]') ||
+                   textarea.closest('[aria-label*="Finish your review" i]') ||
+                   textarea.closest('div[role="dialog"][aria-modal="true"]');
     if (dialog) {
-      const btn = dialog.querySelector('button[data-variant="primary"]:not([disabled])');
+      const btn = dialog.querySelector('button[data-variant="primary"]:not([disabled]), button[type="submit"]:not([disabled]), button:not([disabled]).btn-primary');
       if (btn) return btn;
     }
 
@@ -4067,6 +4090,36 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   }
 
   /**
+   * Locate the "Finish your review" panel/container on the Files changed tab.
+   * Supports both the classic `.js-reviews-container` modal and the new
+   * slide-over panel introduced in the 2025-2026 PR refresh (URL now uses
+   * `/changes` and the panel lives in a `div[role="dialog"]` or adjacent
+   * aside without the classic IDs).
+   * @returns {Element|null}
+   */
+  function findReviewPanelContainer() {
+    // Classic selectors
+    let el = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu');
+    if (el) return el;
+    // New UI: any dialog/panel that contains "Finish your review" and a textarea
+    const candidates = document.querySelectorAll('div[role="dialog"], aside, section, form, [aria-label*="Finish your review" i]');
+    for (const c of candidates) {
+      if (c.textContent && c.textContent.includes('Finish your review') && c.querySelector('textarea')) return c;
+    }
+    // Header-first fallback: find heading then walk up to container with textarea
+    const header = Array.from(document.querySelectorAll('h1, h2, h3, h4, [role="heading"]'))
+      .find(h => (h.textContent || '').includes('Finish your review'));
+    if (header) {
+      let container = header.closest('div, aside, section, form');
+      while (container) {
+        if (container.querySelector('textarea')) return container;
+        container = container.parentElement;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Inject a compact approve/LGTM toolbar into the review-changes panel on the
    * "Files changed" tab.  No-ops when the current page is not the files tab or
    * when no matching `/lgtm` or `/approve` commands exist in the active profiles
@@ -4076,7 +4129,8 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    */
   function injectReviewToolbar(profiles, extraCommands) {
     const isFilesTab = window.location.pathname.includes('/files') ||
-                       document.querySelector('.js-diff-progressive-container');
+                       window.location.pathname.includes('/changes') ||
+                       document.querySelector('.js-diff-progressive-container, [data-testid="files-changed-tab"], [data-testid="file-diff"], a[href*="/changes"]');
     if (!isFilesTab) return;
 
     // Replace a previous toolbar instead of skipping, so a config change
@@ -4089,7 +4143,7 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       existingToolbar.remove();
     }
 
-    const reviewForm = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu');
+    const reviewForm = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu') || findReviewPanelContainer();
     if (!reviewForm) return;
 
     const toolbar = document.createElement('div');
@@ -4132,7 +4186,11 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    * @param {Object[]} extraCommands - Additional commands from repo overrides.
    */
   function injectReviewDialogBar(profiles, extraCommands) {
-    const dialog = document.querySelector('div[role="dialog"][aria-modal="true"]');
+    // Support both classic modal (aria-modal=true) and new slide-over panel
+    const dialog = document.querySelector('div[role="dialog"][aria-modal="true"]') ||
+                   document.querySelector('div[role="dialog"]') ||
+                   document.querySelector('[aria-label*="Finish your review" i]') ||
+                   findReviewPanelContainer();
     if (!dialog) return;
     // Replace a previous bar instead of skipping: a config change
     // (settings-poll re-render) must refresh the dialog's commands, not
