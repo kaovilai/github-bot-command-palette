@@ -1134,11 +1134,37 @@ function mergeCollapsedState(storedKeys, recentToggles) {
   function detectProwSignals() {
     const checks = scrapeCheckNames();
     if (checks.some(c => PROW_CHECK_PATTERN.test(c.name))) return true;
-    const labels = document.querySelectorAll('.IssueLabel');
-    for (const el of labels) {
+    // New UI renders labels as links in the "Status and details" pane, not as
+    // `.IssueLabel` chips; match their visible text too.
+    for (const el of document.querySelectorAll('.IssueLabel, [data-testid="label-link"], a[href*="/labels/"]')) {
       if (PROW_LABEL_PATTERN.test(el.textContent.trim())) return true;
     }
     return false;
+  }
+
+  // ── Sticky Prow detection per PR ───────────────────────────────────────────
+  // Repos are either Prow-managed or not; the Overview tab shows the evidence
+  // (check contexts, labels) while the Files changed / Commits tabs show none.
+  // Remembering a positive result per PR keeps the Prow profile — and with it
+  // /lgtm and /approve, the whole point of the review drawer — available on
+  // every tab. sessionStorage scopes it to the tab and survives reloads.
+  const PROW_MEMORY_PREFIX = 'ghbcp_prow_pr:';
+
+  function prowMemoryKey() {
+    const pr = getPRNumber();
+    return pr ? `${PROW_MEMORY_PREFIX}${currentRepo}#${pr}` : null;
+  }
+
+  function readProwSignalsRemembered() {
+    const key = prowMemoryKey();
+    if (!key) return false;
+    try { return sessionStorage.getItem(key) === '1'; } catch (e) { return false; }
+  }
+
+  function rememberProwSignals() {
+    const key = prowMemoryKey();
+    if (!key) return;
+    try { sessionStorage.setItem(key, '1'); } catch (e) { /* private mode */ }
   }
 
   /**
@@ -3347,6 +3373,13 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       if (ta) return ta;
     }
 
+    // New (2025-2026) Primer React UI: the composer is a bare form with an
+    // accessible name and a placeholder-only textarea — no legacy IDs at all.
+    const newComposer = document.querySelector(
+      'form[aria-label="Add comment form"] textarea, form[aria-label*="comment form" i] textarea'
+    );
+    if (newComposer && newComposer.offsetParent !== null) return newComposer;
+
     // Prefer the main bottom-of-PR comment field
     const mainField = document.getElementById('new_comment_field');
     if (mainField) return mainField;
@@ -3356,13 +3389,34 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       '.js-new-comment-form textarea[name="comment[body]"]',
       '.discussion-timeline-actions textarea[name="comment[body]"]',
       'textarea.js-comment-field',
-      'file-attachment textarea'
+      'file-attachment textarea',
+      // New UI: placeholder/aria-label survive GitHub's React re-renders
+      'textarea[placeholder*="Leave a comment" i]',
+      'textarea[aria-label="Markdown value"]'
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) return el;
     }
     return null;
+  }
+
+  /**
+   * Locate the container the global command bar should attach to, given the
+   * composer textarea. Old UI: the comment form itself. New Primer React UI:
+   * the whole "Comments" panel `<section>` (the form sits inside it), so the
+   * bar reads as part of the comment area instead of being squeezed between
+   * the formatting toolbar and the textarea.
+   * @param {HTMLTextAreaElement} textarea
+   * @returns {Element|null}
+   */
+  function findCommandBarAnchor(textarea) {
+    if (!textarea) return null;
+    const newForm = textarea.closest('form[aria-label*="comment form" i]');
+    if (newForm) return newForm.parentElement || newForm;
+    return textarea.closest('.js-new-comment-form') ||
+           textarea.closest('form') ||
+           textarea.parentElement;
   }
 
   /**
@@ -3382,6 +3436,12 @@ function mergeCollapsedState(storedKeys, recentToggles) {
 
     const form = textarea.closest('form');
     if (form) {
+      // New Primer React UI: primary button is a type="button" carrying
+      // data-variant="primary" (and a submit action name), not a submit input.
+      const modern = form.querySelector(
+        'button[data-variant="primary"]:not([disabled]), button[data-dd-action-name$=".submit"]:not([disabled])'
+      );
+      if (modern) return modern;
       const btn = form.querySelector('button.btn-primary[type="submit"]:not([disabled])');
       if (btn) return btn;
     }
@@ -3688,6 +3748,19 @@ function mergeCollapsedState(storedKeys, recentToggles) {
     bar.appendChild(buildCommandGroups(profiles, extraCommands));
 
     if (textarea) {
+      // New Primer React UI: the composer is a <form> inside the Comments
+      // section. Insert the bar as a *sibling before* the form — never inside
+      // it — so the toolbar can't participate in form submission or be
+      // re-rendered away by React's form reconciliation.
+      const newComposer = textarea.closest('form[aria-label*="comment form" i]');
+      if (newComposer && newComposer.parentElement) {
+        if (config.globalSettings.buttonPosition === 'below-comment-box') {
+          newComposer.parentElement.insertBefore(bar, newComposer.nextSibling);
+        } else {
+          newComposer.parentElement.insertBefore(bar, newComposer);
+        }
+        return;
+      }
       const container = textarea.closest('.js-new-comment-form') ||
                         textarea.closest('form') ||
                         textarea.parentElement;
@@ -3703,6 +3776,11 @@ function mergeCollapsedState(storedKeys, recentToggles) {
         return;
       }
     }
+
+    // No page-level composer (e.g. the new Files tab, where commenting lives
+    // in the review drawer). injectReviewDialogBar() / injectReviewToolbar()
+    // own that surface — never dump a stray bar at the top of <body>.
+    if (document.querySelector('div[role="dialog"][aria-modal="true"]')) return;
 
     // Fallback: inject at top of discussion timeline or PR body
     const fallback = document.querySelector('.js-discussion, .pull-discussion-timeline, #discussion_bucket, .container-xl');
@@ -4074,9 +4152,35 @@ function mergeCollapsedState(storedKeys, recentToggles) {
    * @param {Object[]} profiles      - Matched, enabled profile objects.
    * @param {Object[]} extraCommands - Additional commands from repo overrides.
    */
+  /**
+   * Locate the review composer container on the Files changed tab. The new
+   * Primer React UI renders it as a slide-over `div[role="dialog"]` titled
+   * "Finish your review" with none of the legacy IDs; the classic UI used
+   * `.js-reviews-container` / `#review-changes-modal` inline.
+   * @returns {Element|null}
+   */
+  function findReviewPanelContainer() {
+    const classic = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu');
+    if (classic) return classic;
+    for (const c of document.querySelectorAll('div[role="dialog"], aside, section, form, [aria-label*="Finish your review" i]')) {
+      if ((c.textContent || '').includes('Finish your review') && c.querySelector('textarea')) return c;
+    }
+    const header = Array.from(document.querySelectorAll('h1, h2, h3, h4, [role="heading"]'))
+      .find(h => (h.textContent || '').includes('Finish your review'));
+    if (header) {
+      let container = header.closest('div, aside, section, form');
+      while (container) {
+        if (container.querySelector('textarea')) return container;
+        container = container.parentElement;
+      }
+    }
+    return null;
+  }
+
   function injectReviewToolbar(profiles, extraCommands) {
     const isFilesTab = window.location.pathname.includes('/files') ||
-                       document.querySelector('.js-diff-progressive-container');
+                       window.location.pathname.includes('/changes') ||
+                       document.querySelector('.js-diff-progressive-container, [data-testid="file-diff"], [role="grid"][aria-label^="Diff for:"]');
     if (!isFilesTab) return;
 
     // Replace a previous toolbar instead of skipping, so a config change
@@ -4089,8 +4193,12 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       existingToolbar.remove();
     }
 
-    const reviewForm = document.querySelector('.js-reviews-container, #review-changes-modal, .pull-request-review-menu');
+    const reviewForm = findReviewPanelContainer();
     if (!reviewForm) return;
+    // The new UI's review composer is itself a modal dialog, already owned by
+    // injectReviewDialogBar() (which carries the full command set). Adding the
+    // compact approve toolbar there too would stack two bot toolbars.
+    if (reviewForm.closest('div[role="dialog"][aria-modal="true"]')) return;
 
     const toolbar = document.createElement('div');
     toolbar.className = 'ghbcp-review-toolbar';
@@ -4397,9 +4505,17 @@ function mergeCollapsedState(storedKeys, recentToggles) {
       lastGithubToken = githubToken;
 
       if (config.globalSettings.prowAutoDetect !== false) {
-        const hasProwSignals = detectProwSignals() ||
+        const liveProwSignals = detectProwSignals() ||
           (lastPluginData && lastPluginData.plugins && lastPluginData.plugins.length > 0) ||
           (lastPresubmitJobs && lastPresubmitJobs.length > 0);
+        // Sticky per PR: the Files changed / Commits tabs render no check rows
+        // and no labels, so a repo that is plainly Prow-managed on the
+        // Overview would otherwise lose its whole Prow profile (including
+        // /lgtm and /approve — the commands the review drawer exists for) the
+        // moment the user navigates there. Once this PR has shown Prow
+        // signals anywhere in this tab, keep treating it as Prow-managed.
+        const hasProwSignals = liveProwSignals || readProwSignalsRemembered();
+        if (liveProwSignals) rememberProwSignals();
         if (!hasProwSignals) {
           profiles = profiles.filter(p => !CM.isProwProfile(p.id));
           if (profiles.length === 0) return;

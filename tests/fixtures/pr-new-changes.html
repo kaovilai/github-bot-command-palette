@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" data-color-mode="light">
+<head>
+<meta charset="utf-8">
+<title>New Changes UI fixture — Finish your review drawer</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; }
+  [role="dialog"] { border: 1px solid #d0d7de; border-radius: 8px; margin: 16px; padding: 16px; width: 520px; }
+  textarea { width: 100%; min-height: 120px; box-sizing: border-box; }
+  button { margin: 2px; }
+  fieldset { border: 1px solid #d0d7de; border-radius: 6px; margin: 8px 0; }
+  .diff-region { border: 1px solid #d0d7de; border-radius: 6px; margin: 16px; padding: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="diff-region" role="region" aria-label="pkg/restore/restore.go">
+    <h3>pkg/restore/restore.go</h3>
+    <table role="grid" aria-label="Diff for: pkg/restore/restore.go">
+      <tbody><tr><td>1013</td><td>- old line</td><td></td><td></td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- The review drawer exactly as the new UI renders it: a plain
+       div[role="dialog"][aria-modal="true"], no legacy IDs anywhere -->
+  <div role="dialog" aria-modal="true" class="prc-AnchoredOverlay-AnchoredOverlay-fYg9Z prc-Overlay-Overlay-jfs-T" aria-label="Finish your review">
+    <h1>Finish your review</h1>
+    <button type="button" aria-label="Close">×</button>
+    <fieldset>
+      <legend>Add review comment</legend>
+      <div role="tablist" aria-label="View mode">
+        <button type="button" class="tabNavLink__58OJcs active__1LHN62">Write</button>
+        <button type="button" class="tabNavLink__58OJcs">Preview</button>
+      </div>
+      <div role="toolbar" aria-label="Formatting tools">
+        <button type="button" aria-label="Bold ( command b )">B</button>
+      </div>
+      <span class="textArea__nu8suQ prc-components-TextInputBaseWrapper-wY-n0">
+        <textarea class="prc-Textarea-TextArea-snlco" id="_r_o_" placeholder="Leave a comment" aria-label="Markdown value"></textarea>
+      </span>
+      <button type="button">Paste, drop, or click to add files</button>
+    </fieldset>
+    <fieldset>
+      <legend>Review event</legend>
+      <label><input type="radio" name="reviewEvent" value="comment" checked> Comment</label>
+      <label><input type="radio" name="reviewEvent" value="approve"> Approve</label>
+      <label><input type="radio" name="reviewEvent" value="request changes"> Request changes</label>
+    </fieldset>
+    <button type="button">Cancel</button>
+    <button type="button" class="prc-Button-ButtonBase-9n-Xk" data-component="Button" data-variant="primary" data-dd-action-name="pull_requests.reviews.submit" data-inactive="true" aria-disabled="true">Submit review</button>
+  </div>
+</main>
+</body>
+</html>
