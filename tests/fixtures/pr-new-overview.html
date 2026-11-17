@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" data-color-mode="light">
+<head>
+<meta charset="utf-8">
+<title>New Overview UI fixture — Comments composer + Merge status checks</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; }
+  .container__-reUmk { border: 1px solid #d0d7de; border-radius: 6px; margin: 16px; padding: 8px; }
+  .commentBoxContainer__ENsp3V { border: 1px solid #d0d7de; border-radius: 6px; padding: 8px; }
+  textarea { width: 100%; min-height: 90px; box-sizing: border-box; }
+  button { margin: 2px; }
+  [role="group"] { border: 1px solid #d0d7de; border-radius: 6px; margin: 8px; padding: 8px; }
+  [role="listitem"] { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+  h4 { margin: 0; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="prc-PageLayout-PageLayoutRoot--KH-d wrapper__rjK5E1">
+    <div class="prc-PageLayout-PageLayoutWrapper-2BhU2">
+      <div class="prc-PageLayout-PageLayoutContent-BneH9">
+        <div class="prc-PageLayout-ContentWrapper-gR9eG content__Gga5Vm">
+          <div class="prc-PageLayout-Content-xWL-A">
+            <div class="d-flex gap-4 flex-column">
+
+              <!-- Merge status card with grouped checks (lazy-mounted content) -->
+              <region aria-label="Merge status">
+                <div role="group" aria-label="failing checks">
+                  <h3>failing checks</h3>
+                  <div role="list" aria-label="failing checks">
+                    <div role="listitem">
+                      <h4><a href="https://prow.ci.openshift.org/view/gs/test-platform-results-public/pr-logs/pull/openshift_oadp-operator/2542/pull-ci-openshift-oadp-operator-oadp-1.6-unit-test/2121045039835516928">ci/prow/unit-test</a></h4>
+                      <span>— Job failed. BaseSHA:80486a9860cc3fea5e1582a907dfcec83301514f</span>
+                      <button type="button" aria-label="More actions">…</button>
+                    </div>
+                    <div role="listitem">
+                      <h4><a href="https://prow.ci.openshift.org/pr?query=is%3Apr+repo%3Aopenshift%2Foadp-operator">tide</a></h4>
+                      <span>— Not mergeable. PR is blocked from merging by GitHub</span>
+                      <button type="button" aria-label="More actions">…</button>
+                    </div>
+                    <div role="listitem">
+                      <h4><a href="https://github.com/velero-io/velero/actions/runs/1/job/2?pr=10834">unit-tests</a></h4>
+                      <span>— Job failed.</span>
+                      <button type="button" aria-label="More actions">…</button>
+                    </div>
+                  </div>
+                </div>
+                <div role="group" aria-label="successful checks">
+                  <h3>successful checks</h3>
+                  <div role="list" aria-label="successful checks">
+                    <div role="listitem">
+                      <h4><a href="https://github.com/velero-io/velero/pull/10834/checks?check_run_id=129937502696">ci/pipeline-gate</a></h4>
+                      <span>— Pipeline dispatch</span>
+                    </div>
+                  </div>
+                </div>
+              </region>
+
+              <!-- Comments panel: the "usual place" the command bar must attach to -->
+              <section class="container__-reUmk">
+                <h2>Comments</h2>
+                <div class="controlsRow__XfPhtA">
+                  <button type="button">All</button>
+                  <button type="button">Unresolved</button>
+                  <button type="button">Mine</button>
+                </div>
+                <div class="prc-Stack-Stack-UQ9k6" data-component="Stack">
+                  <form class="prc-Stack-Stack-UQ9k6" aria-label="Add comment form" data-component="Stack" tabindex="-1">
+                    <div class="commentBoxContainer__ENsp3V">
+                      <div role="tablist" aria-label="View mode">
+                        <button type="button" class="tabNavLink__58OJcs active__1LHN62">Write</button>
+                        <button type="button" class="tabNavLink__58OJcs">Preview</button>
+                      </div>
+                      <div role="toolbar" aria-label="Formatting tools">
+                        <button type="button" aria-label="Bold ( command b )">B</button>
+                        <button type="button" aria-label="Italic ( command i )">I</button>
+                      </div>
+                      <span class="textArea__nu8suQ prc-components-TextInputBaseWrapper-wY-n0">
+                        <textarea class="prc-Textarea-TextArea-snlco" id="_r_8a_" placeholder="Leave a comment" aria-label="Markdown value"></textarea>
+                      </span>
+                      <button type="button">Paste, drop, or click to add files</button>
+                      <div>
+                        <button type="button">Close pull request</button>
+                        <button type="button" class="prc-Button-ButtonBase-9n-Xk" data-component="Button" data-variant="primary" data-dd-action-name="pull_requests.comments.submit" data-inactive="true" aria-disabled="true">Comment</button>
+                      </div>
+                    </div>
+                  </form>
+                  <div class="prc-Stack-Stack-UQ9k6" data-component="Stack">
+                    <article><h3>Lyndon-Li commented on Nov 16, 2026</h3><p>Approved.</p></article>
+                  </div>
+                </div>
+              </section>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
