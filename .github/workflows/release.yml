@@ -1,14 +1,21 @@
 name: Release
 
-# Publishes a GitHub Release (with the packaged zip) whenever manifest.json's
-# version on main has no matching tag yet. The extension's in-app update check
-# compares against this same manifest.json, and links to the release.
+# Publishes a GitHub Release (ZIP + signed CRX) whenever manifest.json's
+# version on main has no matching tag yet, and on updates.xml changes so the
+# hosted update manifest is re-verified against the release it points at.
+#
+# The signed CRX is what makes self-hosted auto-updates work: updates.xml's
+# `codebase` serves it at the stable URL
+#   /releases/latest/download/github-bot-command-palette.crx
+# and chromium-web-store (or Chrome's external-extension updater) installs it
+# once the advertised version beats the installed one.
 on:
   push:
     branches:
       - main
     paths:
       - manifest.json
+      - updates.xml
 
 permissions:
   contents: write
@@ -19,19 +26,48 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Verify update manifest matches manifest.json
+        run: |
+          # A drift here ships silently-broken updates: clients fetch
+          # updates.xml, see an appid that does not match their extension, or a
+          # version that is not newer, and quietly do nothing.
+          node --test tests/update-manifest.test.js
+
       - name: Publish release if this version is new
         env:
           GH_TOKEN: ${{ github.token }}
+          EXTENSION_PRIVATE_KEY: ${{ secrets.EXTENSION_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           VERSION=$(node -p "require('./manifest.json').version")
           if gh release view "v${VERSION}" >/dev/null 2>&1; then
             echo "v${VERSION} already released; nothing to do"
             exit 0
           fi
           ./scripts/package-extension.sh
+
           # Unversioned copy so /releases/latest/download/github-bot-command-palette.zip
           # is a stable URL for scripted updaters (e.g. Tasker on Android).
           cp "github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip
-          gh release create "v${VERSION}" \
-            "github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip \
+
+          ASSETS=("github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip)
+
+          if [ -z "${EXTENSION_PRIVATE_KEY:-}" ]; then
+            echo "::warning::EXTENSION_PRIVATE_KEY secret is not set — publishing without a CRX. users will NOT receive auto-updates."
+          else
+            printf '%s\n' "$EXTENSION_PRIVATE_KEY" > "$RUNNER_TEMP/extension-key.pem"
+            chmod 600 "$RUNNER_TEMP/extension-key.pem"
+            ./scripts/package-crx.sh "$RUNNER_TEMP/extension-key.pem"
+            # Stable URL updates.xml advertises; must be the newest build.
+            cp "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx
+            ASSETS+=("github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx)
+          fi
+
+          gh release create "v${VERSION}" "${ASSETS[@]}" \
             --target "$GITHUB_SHA" --generate-notes --title "v${VERSION}"

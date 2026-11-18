@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Chrome extension update manifest ("Omaha" gupdate format).
+
+  Hosted at:
+    https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml
+  which is what manifest.json's `update_url` points at.
+
+  chromium-web-store (and Chrome's own external-extension updater) fetch this
+  file, match `app@id` against the installed extension ID, compare `version`
+  with what is installed, and install `codebase` when it is newer.
+
+  `appid` is derived from the public key committed in manifest.json as `key`
+  (base64 DER SubjectPublicKeyInfo → SHA-256 → first 16 bytes → a-p), so every
+  install — unpacked folder, ZIP, or CRX — shares this one ID.
+
+  Keep BOTH values in sync with manifest.json. `npm test` fails when they drift:
+    - @version  == manifest.json "version"
+    - @appid    == ID derived from manifest.json "key"
+-->
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='ekdbcflnjpkfmcabblkkkojmeecjojeh'>
+    <updatecheck codebase='https://github.com/kaovilai/github-bot-command-palette/releases/latest/download/github-bot-command-palette.crx' version='1.2.0' status='ok' />
+  </app>
+</gupdate>

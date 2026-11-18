@@ -40,6 +40,41 @@ async function launchWithExtension() {
   return { context, userDataDir };
 }
 
+test('self-hosted update chain: Chromium gives the fixed ID that updates.xml advertises', async () => {
+  test.setTimeout(120000);
+  const { context } = await launchWithExtension();
+  try {
+    const page = await context.newPage();
+    await page.route(OVERVIEW_URL, route => route.fulfill({
+      status: 200, contentType: 'text/html; charset=utf-8', body: OVERVIEW_HTML,
+    }));
+    await page.goto(OVERVIEW_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    // The service worker URL carries the extension ID Chrome derived. With the
+    // committed "key" this must be the same on every machine, and equal to the
+    // appid in updates.xml — otherwise chromium-web-store never matches.
+    let sw = context.serviceWorkers()[0];
+    if (!sw) sw = await context.waitForEvent('serviceworker', { timeout: 30000 });
+    const installedId = new URL(sw.url()).host;
+
+    const expected = fs.readFileSync(path.join(__dirname, '..', 'updates.xml'), 'utf8')
+      .match(/appid='([^']+)'/)[1];
+    expect(installedId).toBe(expected);
+
+    const manifest = await sw.evaluate(() => chrome.runtime.getManifest());
+    expect(manifest.update_url).toBe(
+      'https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml'
+    );
+    const xml = fs.readFileSync(path.join(__dirname, '..', 'updates.xml'), 'utf8');
+    // Scope to <updatecheck>: the <?xml version='1.0'?> declaration would
+    // otherwise match /version='...'/.
+    const updatecheck = /<updatecheck\b[^>]*>/.exec(xml)[0];
+    expect(manifest.version).toBe(updatecheck.match(/version='([^']+)'/)[1]);
+  } finally {
+    await context.close();
+  }
+});
+
 test('new Overview: command bar tracks the Primer React comment composer', async () => {
   test.setTimeout(120000);
   const { context } = await launchWithExtension();
