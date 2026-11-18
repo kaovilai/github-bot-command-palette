@@ -193,8 +193,9 @@
 
   /**
    * Show the installed version and wire up "Check for updates" / "Reload extension".
-   * Side-loaded installs only: the background reports `managed` for Web Store
-   * installs (which auto-update), and the whole section is then hidden.
+   * Shown for every install: the extension self-hosts an update manifest, so a
+   * store-managed build is indistinguishable from a side-loaded one and users
+   * of either kind can always see the installed version and check manually.
    */
   function bindUpdateSection() {
     const section = document.getElementById('update-section');

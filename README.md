@@ -90,17 +90,33 @@ Bot profile detail view with all commands, styles, and shortcuts:
 
 ### Updating
 
-Side-loaded installs don't auto-update, so the extension checks `manifest.json` on `main`
-(on browser start, and when you open the popup or Settings) and tells you when a newer
-version exists: an `↑` badge on the toolbar icon, plus an **Update available** card in
-Settings with a **Reload extension** button. Web Store installs update themselves and
-skip the check.
+The extension hosts its own [update manifest](updates.xml), so installs that are **not** in the Chrome Web Store can still update automatically. `manifest.json` declares a fixed `key`, which gives every install type — unpacked folder, ZIP, CRX — the same extension ID (`ekdbcflnjpkfmcabblkkkojmeecjojeh`), so one hosted manifest covers everyone.
+
+#### Auto-updates with chromium-web-store (recommended)
+
+One-time setup, then updates are found automatically:
+
+1. Install [chromium-web-store](https://github.com/NeverDecaf/chromium-web-store) (it re-adds the old “update_url” behaviour to Chromium-based browsers).
+2. Install this extension from the signed CRX: download [`github-bot-command-palette.crx`](https://github.com/kaovilai/github-bot-command-palette/releases/latest/download/github-bot-command-palette.crx) and drag it onto `chrome://extensions` with **Developer mode** on.
+3. Done. chromium-web-store reads `update_url` from the installed extension and fetches [`updates.xml`](https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml) on its own schedule (default: hourly).
+
+When a newer build is published, chromium-web-store shows it in its toolbar badge; open the popup and click this extension to install it. Chrome does not install extensions unattended — the badge is the prompt, so nothing happens until you click it.
+
+Verify it is wired up: `chrome://extensions` → the extension shows the latest release version and **Update URL** pointing at `raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml`. In chromium-web-store's popup, the extension is listed as a non-store extension with auto-update available.
+
+**Migrating from an unpacked install?** The fixed `key` changes the extension ID for folders loaded with **Load unpacked** (that ID used to be derived from the folder path). Your old entry keeps its settings but stops receiving this extension's updates. Export your configuration first (**Settings → Import / Export → Export Config**), load the CRX (or the same folder again, which now reports the new ID), then **Import Config**. Delete the old entry from `chrome://extensions` afterwards.
+
+#### Manual updates
+
+Side-loaded installs that don't use chromium-web-store get a notification instead: the extension checks `manifest.json` on `main` (on browser start, and when you open the popup or Settings) and shows an `↑` badge on the toolbar icon plus an **Update available** card in Settings with a **Reload extension** button. Web Store and chromium-web-store installs update themselves and skip the check.
 
 - **Desktop (git checkout):** `git pull`, then **Reload extension** in Settings (or the reload icon on `chrome://extensions`).
 - **Desktop (zip):** download `github-bot-command-palette-vX.Y.Z.zip` from the [latest release](https://github.com/kaovilai/github-bot-command-palette/releases/latest), unzip it over the folder you loaded, then **Reload extension**.
 - **Android (Titanium, one-tap with Tasker):** see [below](#android-one-tap-updates-with-tasker).
+- **Android (auto):** chromium-web-store is desktop-only; use the Tasker recipe below.
 
-**Why not just unzip on Android?** **Reload extension** re-reads the folder you originally picked for **Load unpacked**. Most Android unzip tools extract into a *new* folder named after the zip, so the loaded folder stays on the old version. Picking the new folder creates a different extension (the ID comes from the folder path), and its settings start empty. The update has to land in the *same* folder, which is what the recipe below does.
+**Why not just unzip on Android?** **Reload extension** re-reads the folder you originally picked for **Load unpacked**. Most Android unzip tools extract into a *new* folder named after the zip, so the loaded folder stays on the old version. Picking the new folder creates a different extension ID, and its settings start empty. The update has to land in the *same* folder, which is what the recipe below does.
+
 
 #### Android: one-tap updates with Tasker
 
@@ -117,6 +133,38 @@ Tasker task `Update GHBCP` (grant Tasker "All files access" first; option labels
 Add it as a home-screen shortcut or widget. To finish, tap **Reload extension** in Settings (or the reload icon on `chrome://extensions`). Settings are kept because the folder, and therefore the extension ID, never changes. Files deleted in a newer release stay behind in the folder; they're unused and harmless.
 
 Releases are cut automatically when the `version` in `manifest.json` changes on `main`, so bump it in any PR you want users to be notified about.
+
+#### Maintaining the auto-update chain
+
+Two files must stay in sync — `npm test` (`tests/update-manifest.test.js`) and the release workflow both fail when they drift:
+
+| File | Field | Must match |
+|---|---|---|
+| `manifest.json` | `version` | `updates.xml` `updatecheck@version` |
+| `manifest.json` | `key` | `updates.xml` `app@appid` (ID is derived from the key) |
+| `manifest.json` | `update_url` | `https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml` |
+| `updates.xml` | `updatecheck@codebase` | `/releases/latest/download/github-bot-command-palette.crx` |
+
+Version bump checklist: raise `manifest.json` `version`, raise `updates.xml` `version` to the same number, push to `main`. The **Release** workflow then builds the ZIP, signs the CRX with the `EXTENSION_PRIVATE_KEY` repo secret, and attaches both (including the stable unversioned names) to the `v<version>` release.
+
+The signing key is an RSA keypair whose public half is committed as `manifest.json` `key`. It is not in the repo. To set it up from scratch:
+
+```sh
+openssl genrsa -out extension-key.pem 2048
+base64 -i <(openssl rsa -in extension-key.pem -pubout -outform DER) | tr -d '\n'   # → manifest.json "key"
+node -e 'const c=require("crypto"),fs=require("fs");const p=fs.readFileSync("extension-key.pem");const d=c.createPublicKey(p).export({type:"spki",format:"der"});console.log([...c.createHash("sha256").update(d).digest().subarray(0,16)].map(b=>b.toString(16).padStart(2,"0")).join("").split("").map(x=>String.fromCharCode(97+parseInt(x,16))).join(""))'   # → updates.xml appid
+gh secret set EXTENSION_PRIVATE_KEY < extension-key.pem
+```
+
+Test the chain locally without publishing:
+
+```sh
+./scripts/package-extension.sh
+./scripts/package-crx.sh extension-key.pem   # verifies the key's ID against updates.xml
+```
+
+**Rotating the key changes the extension ID**, so every install becomes a new extension and users must reinstall (and re-import settings). Treat the existing key as permanent; keep a backup somewhere you control.
+
 
 ## Features
 
