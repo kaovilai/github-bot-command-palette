@@ -111,6 +111,9 @@ jobs:
               exit 0
             fi
             echo "${TAG} exists but has no CRX — attaching it now"
+            # actions/checkout fetches one commit and no tags, so the tag must
+            # be fetched explicitly or this checkout fails before packaging.
+            git fetch --depth=1 origin "refs/tags/${TAG}:refs/tags/${TAG}"
             git checkout --force --detach "$TAG"
             RC=0
             build_crx || RC=$?
