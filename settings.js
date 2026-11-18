@@ -204,7 +204,7 @@
     const releaseLink = document.getElementById('update-release-link');
 
     const render = (info) => {
-      if (!info || info.managed) { section.hidden = true; return; }
+      if (!info) { section.hidden = true; return; }
       section.hidden = false;
       document.getElementById('ext-version').textContent = info.current;
       actionsEl.hidden = !info.updateAvailable;

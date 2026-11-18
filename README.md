@@ -108,7 +108,7 @@ Verify it is wired up: `chrome://extensions` → the extension shows the latest 
 
 #### Manual updates
 
-Side-loaded installs that don't use chromium-web-store get a notification instead: the extension checks `manifest.json` on `main` (on browser start, and when you open the popup or Settings) and shows an `↑` badge on the toolbar icon plus an **Update available** card in Settings with a **Reload extension** button. Web Store and chromium-web-store installs update themselves and skip the check.
+Side-loaded installs that don't use chromium-web-store get a notification instead: the extension checks `manifest.json` on `main` (on browser start, and when you open the popup or Settings) and shows an `↑` badge on the toolbar icon plus an **Update available** card in Settings with a **Reload extension** button. Every install runs this check, including chromium-web-store ones: between a release landing and the moment you install it from chromium-web-store's badge, the `↑` badge can still appear — it clears once the extension is on the current version.
 
 - **Desktop (git checkout):** `git pull`, then **Reload extension** in Settings (or the reload icon on `chrome://extensions`).
 - **Desktop (zip):** download `github-bot-command-palette-vX.Y.Z.zip` from the [latest release](https://github.com/kaovilai/github-bot-command-palette/releases/latest), unzip it over the folder you loaded, then **Reload extension**.
