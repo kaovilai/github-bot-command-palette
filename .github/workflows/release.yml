@@ -57,7 +57,19 @@ jobs:
           TAG="v${VERSION}"
 
           # Never let an older version take over `releases/latest`.
-          LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          # A failed lookup must NOT be read as "no release exists" — that
+          # would skip the guard and let an older version publish as latest.
+          RC=0
+          LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>"$RUNNER_TEMP/latest.err") || RC=$?
+          if [ "$RC" -ne 0 ]; then
+            if grep -qi "not found" "$RUNNER_TEMP/latest.err"; then
+              LATEST=""
+            else
+              echo "::error::could not determine the latest release; refusing to publish"
+              cat "$RUNNER_TEMP/latest.err"
+              exit 1
+            fi
+          fi
           if [ -n "$LATEST" ] && node -e '
               const parse = v => v.replace(/^v/, "").split(".").map(n => parseInt(n, 10) || 0);
               const [version, latest] = process.argv.slice(1).map(parse);
@@ -71,20 +83,27 @@ jobs:
             exit 0
           fi
 
+          # Exit codes: 0 = CRX ready, 1 = secret absent (publish ZIP-only),
+          # 2 = packaging failed (abort — never publish a half-built release).
+          # Every step needs its own `|| return 2`: this function is invoked
+          # from an `if`, which suspends `set -e` for its whole body.
           build_crx() {
             if [ -z "${EXTENSION_PRIVATE_KEY:-}" ]; then
               echo "::warning::EXTENSION_PRIVATE_KEY secret is not set — publishing without a CRX. users will NOT receive auto-updates."
               return 1
             fi
-            printf '%s\n' "$EXTENSION_PRIVATE_KEY" > "$RUNNER_TEMP/extension-key.pem"
-            chmod 600 "$RUNNER_TEMP/extension-key.pem"
-            ./scripts/package-crx.sh "$RUNNER_TEMP/extension-key.pem"
+            printf '%s\n' "$EXTENSION_PRIVATE_KEY" > "$RUNNER_TEMP/extension-key.pem" || return 2
+            chmod 600 "$RUNNER_TEMP/extension-key.pem" || return 2
+            # Rejects a key whose derived ID disagrees with updates.xml.
+            ./scripts/package-crx.sh "$RUNNER_TEMP/extension-key.pem" || return 2
             # Stable URL updates.xml advertises; must be the newest build.
-            cp "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx
+            cp "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx || return 2
             return 0
           }
 
-          # Repair path: release already exists.
+          # Repair path: release already exists. Build from the tagged commit —
+          # not from main — so a repaired CRX matches the ZIP already published
+          # for this version instead of quietly shipping different code.
           if gh release view "$TAG" >/dev/null 2>&1; then
             HAVE_CRX=$(gh release view "$TAG" --json assets --jq '[.assets[].name] | index("github-bot-command-palette.crx") != null')
             if [ "$HAVE_CRX" = "true" ]; then
@@ -92,7 +111,13 @@ jobs:
               exit 0
             fi
             echo "${TAG} exists but has no CRX — attaching it now"
-            if build_crx; then
+            git checkout --force --detach "$TAG"
+            RC=0
+            build_crx || RC=$?
+            if [ "$RC" -eq 2 ]; then
+              echo "::error::CRX packaging failed; refusing to leave a ZIP-only release advertising a CRX"
+              exit 1
+            elif [ "$RC" -eq 0 ]; then
               gh release upload "$TAG" \
                 "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx --clobber
             fi
@@ -106,7 +131,12 @@ jobs:
 
           ASSETS=("github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip)
 
-          if build_crx; then
+          RC=0
+          build_crx || RC=$?
+          if [ "$RC" -eq 2 ]; then
+            echo "::error::CRX packaging failed; refusing to publish a ZIP-only release while updates.xml advertises a CRX"
+            exit 1
+          elif [ "$RC" -eq 0 ]; then
             ASSETS+=("github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx)
           fi
 
