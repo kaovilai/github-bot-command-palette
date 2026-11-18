@@ -56,33 +56,6 @@ jobs:
           VERSION=$(node -p "require('./manifest.json').version")
           TAG="v${VERSION}"
 
-          # Never let an older version take over `releases/latest`.
-          # A failed lookup must NOT be read as "no release exists" — that
-          # would skip the guard and let an older version publish as latest.
-          RC=0
-          LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>"$RUNNER_TEMP/latest.err") || RC=$?
-          if [ "$RC" -ne 0 ]; then
-            if grep -qi "not found" "$RUNNER_TEMP/latest.err"; then
-              LATEST=""
-            else
-              echo "::error::could not determine the latest release; refusing to publish"
-              cat "$RUNNER_TEMP/latest.err"
-              exit 1
-            fi
-          fi
-          if [ -n "$LATEST" ] && node -e '
-              const parse = v => v.replace(/^v/, "").split(".").map(n => parseInt(n, 10) || 0);
-              const [version, latest] = process.argv.slice(1).map(parse);
-              for (let i = 0; i < Math.max(version.length, latest.length); i++) {
-                const d = (latest[i] || 0) - (version[i] || 0);
-                if (d !== 0) process.exit(d > 0 ? 0 : 1); // 0 = latest is newer
-              }
-              process.exit(1);
-            ' "$VERSION" "$LATEST"; then
-            echo "v${VERSION} is older than latest release ${LATEST}; refusing to publish it as latest"
-            exit 0
-          fi
-
           # Exit codes: 0 = CRX ready, 1 = secret absent (publish ZIP-only),
           # 2 = packaging failed (abort — never publish a half-built release).
           # Every step needs its own `|| return 2`: this function is invoked
@@ -101,9 +74,11 @@ jobs:
             return 0
           }
 
-          # Repair path: release already exists. Build from the tagged commit —
-          # not from main — so a repaired CRX matches the ZIP already published
-          # for this version instead of quietly shipping different code.
+          # Repair path comes FIRST, before the latest-version guard: a ZIP-only
+          # release stays repairable even after main has moved on to a newer
+          # version (otherwise it would remain CRX-less forever). Build from the
+          # tagged commit — not from main — so the repaired CRX matches the ZIP
+          # already published for this version instead of shipping different code.
           if gh release view "$TAG" >/dev/null 2>&1; then
             HAVE_CRX=$(gh release view "$TAG" --json assets --jq '[.assets[].name] | index("github-bot-command-palette.crx") != null')
             if [ "$HAVE_CRX" = "true" ]; then
@@ -125,6 +100,54 @@ jobs:
                 "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx --clobber
             fi
             exit 0
+          fi
+
+          # Nothing to repair. Never let an older version take over
+          # `releases/latest`. A failed lookup must NOT be read as "no release
+          # exists" — that would skip the guard and let an older version publish
+          # as latest.
+          RC=0
+          LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>"$RUNNER_TEMP/latest.err") || RC=$?
+          if [ "$RC" -ne 0 ]; then
+            if grep -qi "not found" "$RUNNER_TEMP/latest.err"; then
+              LATEST=""
+            else
+              echo "::error::could not determine the latest release; refusing to publish"
+              cat "$RUNNER_TEMP/latest.err"
+              exit 1
+            fi
+          fi
+          if [ -n "$LATEST" ]; then
+            # Exit codes from the comparison: 0 = latest is newer (refuse),
+            # 1 = this version is newer or equal (publish), anything else =
+            # comparison itself failed -> abort rather than guess.
+            RC=0
+            node -e '
+              const parse = v => v.replace(/^v/, "").split(".").map(n => parseInt(n, 10) || 0);
+              try {
+                const [version, latest] = process.argv.slice(1).map(parse);
+                for (let i = 0; i < Math.max(version.length, latest.length); i++) {
+                  const d = (latest[i] || 0) - (version[i] || 0);
+                  if (d !== 0) process.exit(d > 0 ? 0 : 1);
+                }
+                process.exit(1);
+              } catch (e) {
+                console.error(String(e));
+                process.exit(2);
+              }
+            ' "$VERSION" "$LATEST" || RC=$?
+            case "$RC" in
+              0)
+                echo "v${VERSION} is older than latest release ${LATEST}; refusing to publish it as latest"
+                exit 0
+                ;;
+              1)
+                ;;
+              *)
+                echo "::error::version comparison failed (exit ${RC}); refusing to publish"
+                exit 1
+                ;;
+            esac
           fi
 
           ./scripts/package-extension.sh
