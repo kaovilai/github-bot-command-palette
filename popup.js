@@ -4,7 +4,9 @@
   const addTapListener = GHBCP.addTapListener;
   const esc = CM.escapeHtml;
   const contentDiv = document.getElementById('content');
-  // Side-loaded installs only (cached for hours by the background; Web Store installs report no update).
+  // Every install checks: the self-hosted update manifest means a store-managed
+  // build no longer reports itself as managed, and the check is cached by the
+  // background for hours.
   chrome.runtime.sendMessage({ action: 'checkForUpdate' }).then(info => {
     if (!info || !info.updateAvailable) return;
     const banner = document.getElementById('update-banner');

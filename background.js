@@ -588,17 +588,26 @@ function compareVersions(a, b) {
 }
 
 /**
- * Compare the installed version against manifest.json on main. For side-loaded
- * (unpacked / zip) installs, which have no store auto-update. Web Store installs
- * carry an injected `update_url` and update themselves, so they skip the check.
- * Needs no new permission: raw.githubusercontent.com is already a host permission.
+ * Compare the installed version against manifest.json on main.
+ *
+ * History: this used to skip installs whose manifest carried `update_url`
+ * (Web Store injects one; those installs update themselves). This extension
+ * now self-hosts an update manifest and therefore always carries
+ * `update_url`, so that test can no longer distinguish a store-managed build
+ * from a side-loaded one — using it would silently disable the badge and the
+ * Settings "Update available" card for every unpacked install.
+ *
+ * The check runs for every install instead. It is cheap and idempotent:
+ * store-managed and chromium-web-store installs update on their own, so the
+ * fetched version soon equals the installed one and the badge clears.
+ * Needs no new permission: raw.githubusercontent.com is already a host
+ * permission (chrome.management, which would report installType, is not).
  * @param {boolean} force - Bypass the cached result.
- * @returns {Promise<{current: string, latest?: string, updateAvailable: boolean, managed?: boolean, checkedAt?: number, error?: string}>}
+ * @returns {Promise<{current: string, latest?: string, updateAvailable: boolean, checkedAt?: number, error?: string}>}
  */
 async function handleCheckForUpdate(force) {
   const manifest = chrome.runtime.getManifest();
   const current = manifest.version;
-  if (manifest.update_url) return { current, updateAvailable: false, managed: true };
 
   const cached = await storageGet('local', UPDATE_CACHE_KEY, null);
   if (!force && cached && cached.current === current && Date.now() - cached.checkedAt < UPDATE_CHECK_TTL_MS) {

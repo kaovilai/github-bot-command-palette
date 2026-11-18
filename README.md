@@ -94,11 +94,13 @@ The extension hosts its own [update manifest](updates.xml), so installs that are
 
 #### Auto-updates with chromium-web-store (recommended)
 
-One-time setup, then updates happen in the background:
+One-time setup, then updates are found automatically:
 
 1. Install [chromium-web-store](https://github.com/NeverDecaf/chromium-web-store) (it re-adds the old “update_url” behaviour to Chromium-based browsers).
 2. Install this extension from the signed CRX: download [`github-bot-command-palette.crx`](https://github.com/kaovilai/github-bot-command-palette/releases/latest/download/github-bot-command-palette.crx) and drag it onto `chrome://extensions` with **Developer mode** on.
-3. Done. chromium-web-store reads `update_url` from the installed extension, fetches [`updates.xml`](https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml), and installs the newer release automatically.
+3. Done. chromium-web-store reads `update_url` from the installed extension and fetches [`updates.xml`](https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml) on its own schedule (default: hourly).
+
+When a newer build is published, chromium-web-store shows it in its toolbar badge; open the popup and click this extension to install it. Chrome does not install extensions unattended — the badge is the prompt, so nothing happens until you click it.
 
 Verify it is wired up: `chrome://extensions` → the extension shows the latest release version and **Update URL** pointing at `raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml`. In chromium-web-store's popup, the extension is listed as a non-store extension with auto-update available.
 

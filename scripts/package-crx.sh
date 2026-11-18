@@ -10,9 +10,16 @@
 # The key's public half must match manifest.json "key" — that is what fixes the
 # extension ID (`updates.xml` appid). `npm test` enforces that pairing.
 set -euo pipefail
+# Resolve a supplied relative key path against the caller's directory first —
+# this script cd's to the repo root, so a path like ./key.pem from elsewhere
+# would otherwise be looked up in the wrong place.
+INVOCATION_DIR="$PWD"
+KEY_PATH="${1:-${EXTENSION_PRIVATE_KEY_PATH:-}}"
+if [ -n "$KEY_PATH" ] && [ "${KEY_PATH#/}" = "$KEY_PATH" ]; then
+  KEY_PATH="$INVOCATION_DIR/$KEY_PATH"
+fi
 cd "$(dirname "$0")/.."
 
-KEY_PATH="${1:-${EXTENSION_PRIVATE_KEY_PATH:-}}"
 if [ -z "$KEY_PATH" ] || [ ! -f "$KEY_PATH" ]; then
   echo "error: private key not found. Pass it as \$1 or set EXTENSION_PRIVATE_KEY_PATH." >&2
   echo "       Generate a throwaway pair for local testing with:" >&2
@@ -24,11 +31,10 @@ VERSION=$(node -p "require('./manifest.json').version")
 ZIP="github-bot-command-palette-v${VERSION}.zip"
 CRX="github-bot-command-palette-v${VERSION}.crx"
 
-# Reuse the whitelist ZIP as the CRX payload so tests, screenshots,
-# node_modules and other unpackaged files can never ship.
-if [ ! -f "$ZIP" ]; then
-  ./scripts/package-extension.sh
-fi
+# Always rebuild the payload from the current tree. Reusing a ZIP that happens
+# to exist (an earlier version bump, a stale artifact left in the worktree)
+# would sign a CRX whose manifest differs from the one being released.
+./scripts/package-extension.sh
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT

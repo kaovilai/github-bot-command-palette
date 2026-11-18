@@ -68,15 +68,19 @@ test('checkForUpdate: same version clears the badge', async () => {
   assert.deepEqual(JSON.stringify(calls.badge), '[""]');
 });
 
-test('checkForUpdate: Web Store install (update_url) skips the network', async () => {
+test('checkForUpdate: a manifest update_url does not disable the check', async () => {
+  // Regression: the extension self-hosts an update manifest, so every install
+  // carries update_url. Treating that as "store-managed" silently disabled the
+  // badge and the Settings card for side-loaded users, who have no other way
+  // to learn about a release.
   const { ctx, calls } = load({
-    manifest: { version: '1.0.0', update_url: 'https://clients2.google.com/service/update2/crx' },
-    fetchImpl: ok({ version: '9.9.9' })
+    manifest: { version: '1.0.0', update_url: 'https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml' },
+    fetchImpl: ok({ version: '1.2.0' })
   });
   const r = await ctx.handleCheckForUpdate(true);
-  assert.equal(r.managed, true);
-  assert.equal(r.updateAvailable, false);
-  assert.equal(calls.fetch.length, 0);
+  assert.equal(calls.fetch.length, 1);
+  assert.equal(r.updateAvailable, true);
+  assert.equal(r.managed, undefined);
 });
 
 test('checkForUpdate: fresh cache is reused, force bypasses it', async () => {

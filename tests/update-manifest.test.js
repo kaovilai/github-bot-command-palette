@@ -71,10 +71,14 @@ test('updates.xml serves the release-latest signed CRX', () => {
 });
 
 test('manifest version is a valid Chrome extension version', () => {
-  // 1-4 dot-separated integers, 0-65535 each.
+  // Chrome: 1-4 dot-separated integers, 0-65535 each, no leading zeros, and
+  // not all zero (Chrome rejects the package).
   assert.match(manifest.version, /^\d+(\.\d+){0,3}$/);
-  for (const part of manifest.version.split('.')) {
+  const parts = manifest.version.split('.');
+  for (const part of parts) {
+    assert.doesNotMatch(part, /^0\d/, `leading zero in version segment: ${part}`);
     const n = Number(part);
     assert.ok(Number.isInteger(n) && n >= 0 && n <= 65535, `version segment out of range: ${part}`);
   }
+  assert.ok(parts.some(p => Number(p) > 0), 'version must not be all zeros');
 });

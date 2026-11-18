@@ -1,14 +1,17 @@
 name: Release
 
-# Publishes a GitHub Release (ZIP + signed CRX) whenever manifest.json's
-# version on main has no matching tag yet, and on updates.xml changes so the
-# hosted update manifest is re-verified against the release it points at.
+# Publishes/repairs a GitHub Release whenever manifest.json or updates.xml
+# lands on main.
 #
-# The signed CRX is what makes self-hosted auto-updates work: updates.xml's
-# `codebase` serves it at the stable URL
-#   /releases/latest/download/github-bot-command-palette.crx
-# and chromium-web-store (or Chrome's external-extension updater) installs it
-# once the advertised version beats the installed one.
+# Assets: versioned ZIP + CRX, plus stable-name copies (`…/latest/download/`)
+# that updates.xml points at. The signed CRX is what makes self-hosted
+# auto-updates work: chromium-web-store (or Chrome's external-extension
+# updater) installs it once the advertised version beats the installed one.
+#
+# This job is also the repair path: if a release went out while
+# EXTENSION_PRIVATE_KEY was unavailable, a later run attaches the missing CRX
+# to that existing release instead of doing nothing (updates.xml would
+# otherwise advertise a 404 forever).
 on:
   push:
     branches:
@@ -19,6 +22,11 @@ on:
 
 permissions:
   contents: write
+
+# Two pushes close together must not race on release creation.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -39,35 +47,68 @@ jobs:
           # version that is not newer, and quietly do nothing.
           node --test tests/update-manifest.test.js
 
-      - name: Publish release if this version is new
+      - name: Publish or repair the release
         env:
           GH_TOKEN: ${{ github.token }}
           EXTENSION_PRIVATE_KEY: ${{ secrets.EXTENSION_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./manifest.json').version")
-          if gh release view "v${VERSION}" >/dev/null 2>&1; then
-            echo "v${VERSION} already released; nothing to do"
+          TAG="v${VERSION}"
+
+          # Never let an older version take over `releases/latest`.
+          LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          if [ -n "$LATEST" ] && node -e '
+              const parse = v => v.replace(/^v/, "").split(".").map(n => parseInt(n, 10) || 0);
+              const [version, latest] = process.argv.slice(1).map(parse);
+              for (let i = 0; i < Math.max(version.length, latest.length); i++) {
+                const d = (latest[i] || 0) - (version[i] || 0);
+                if (d !== 0) process.exit(d > 0 ? 0 : 1); // 0 = latest is newer
+              }
+              process.exit(1);
+            ' "$VERSION" "$LATEST"; then
+            echo "v${VERSION} is older than latest release ${LATEST}; refusing to publish it as latest"
             exit 0
           fi
-          ./scripts/package-extension.sh
 
+          build_crx() {
+            if [ -z "${EXTENSION_PRIVATE_KEY:-}" ]; then
+              echo "::warning::EXTENSION_PRIVATE_KEY secret is not set — publishing without a CRX. users will NOT receive auto-updates."
+              return 1
+            fi
+            printf '%s\n' "$EXTENSION_PRIVATE_KEY" > "$RUNNER_TEMP/extension-key.pem"
+            chmod 600 "$RUNNER_TEMP/extension-key.pem"
+            ./scripts/package-crx.sh "$RUNNER_TEMP/extension-key.pem"
+            # Stable URL updates.xml advertises; must be the newest build.
+            cp "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx
+            return 0
+          }
+
+          # Repair path: release already exists.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            HAVE_CRX=$(gh release view "$TAG" --json assets --jq '[.assets[].name] | index("github-bot-command-palette.crx") != null')
+            if [ "$HAVE_CRX" = "true" ]; then
+              echo "${TAG} already released with a CRX; nothing to do"
+              exit 0
+            fi
+            echo "${TAG} exists but has no CRX — attaching it now"
+            if build_crx; then
+              gh release upload "$TAG" \
+                "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx --clobber
+            fi
+            exit 0
+          fi
+
+          ./scripts/package-extension.sh
           # Unversioned copy so /releases/latest/download/github-bot-command-palette.zip
           # is a stable URL for scripted updaters (e.g. Tasker on Android).
           cp "github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip
 
           ASSETS=("github-bot-command-palette-v${VERSION}.zip" github-bot-command-palette.zip)
 
-          if [ -z "${EXTENSION_PRIVATE_KEY:-}" ]; then
-            echo "::warning::EXTENSION_PRIVATE_KEY secret is not set — publishing without a CRX. users will NOT receive auto-updates."
-          else
-            printf '%s\n' "$EXTENSION_PRIVATE_KEY" > "$RUNNER_TEMP/extension-key.pem"
-            chmod 600 "$RUNNER_TEMP/extension-key.pem"
-            ./scripts/package-crx.sh "$RUNNER_TEMP/extension-key.pem"
-            # Stable URL updates.xml advertises; must be the newest build.
-            cp "github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx
+          if build_crx; then
             ASSETS+=("github-bot-command-palette-v${VERSION}.crx" github-bot-command-palette.crx)
           fi
 
-          gh release create "v${VERSION}" "${ASSETS[@]}" \
-            --target "$GITHUB_SHA" --generate-notes --title "v${VERSION}"
+          gh release create "$TAG" "${ASSETS[@]}" \
+            --target "$GITHUB_SHA" --generate-notes --title "$TAG"
