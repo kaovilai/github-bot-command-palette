@@ -100,7 +100,7 @@ One-time setup, then updates happen in the background:
 2. Install this extension from the signed CRX: download [`github-bot-command-palette.crx`](https://github.com/kaovilai/github-bot-command-palette/releases/latest/download/github-bot-command-palette.crx) and drag it onto `chrome://extensions` with **Developer mode** on.
 3. Done. chromium-web-store reads `update_url` from the installed extension, fetches [`updates.xml`](https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml), and installs the newer release automatically.
 
-Verify it is wired up: `chrome://extensions` → the extension shows version `1.2.0` and **Update URL** pointing at `raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml`. In chromium-web-store's popup, the extension is listed as a non-store extension with auto-update available.
+Verify it is wired up: `chrome://extensions` → the extension shows the latest release version and **Update URL** pointing at `raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml`. In chromium-web-store's popup, the extension is listed as a non-store extension with auto-update available.
 
 **Migrating from an unpacked install?** The fixed `key` changes the extension ID for folders loaded with **Load unpacked** (that ID used to be derived from the folder path). Your old entry keeps its settings but stops receiving this extension's updates. Export your configuration first (**Settings → Import / Export → Export Config**), load the CRX (or the same folder again, which now reports the new ID), then **Import Config**. Delete the old entry from `chrome://extensions` afterwards.
 

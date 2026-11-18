@@ -20,6 +20,6 @@
 -->
 <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
   <app appid='ekdbcflnjpkfmcabblkkkojmeecjojeh'>
-    <updatecheck codebase='https://github.com/kaovilai/github-bot-command-palette/releases/latest/download/github-bot-command-palette.crx' version='1.2.0' status='ok' />
+    <updatecheck codebase='https://github.com/kaovilai/github-bot-command-palette/releases/latest/download/github-bot-command-palette.crx' version='1.2.1' status='ok' />
   </app>
 </gupdate>

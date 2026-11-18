@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GitHub Bot Command Palette",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Inject contextual action buttons for CI/bot slash commands on GitHub PR pages",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArcr1BWT1nb+E6zjJ2F3qbROPQUTNXrHkyAxxrTDHSLnDyGki3Rm/EhiaRX/tgBXCTcYzdq6JBfYKbLf/uAgjNOrj6XN/fWJID+h/sseLNyshDHbt46Lr0HSFvHkbRPro5f4ZtRKZbtK8pIaUlyqsaYaGwx6CKvAjuqGLv95H+mDzAJK8++NdCwD9xAi+YO7avR9rJ8ImNIA5kfVCszcjZ82YW9pZN6KhKGIoSYe88tFbVwcfUmKhWQd6LpT6s5T/z9HI4JAQ9w4usKJtb5QXbbw7jG4calW8rWiwWRqYZjGCc2ALg7LnIsmz7CBy8OUQIr6k6fXSrpq2LLHlnHcgNQIDAQAB",
   "update_url": "https://raw.githubusercontent.com/kaovilai/github-bot-command-palette/main/updates.xml",
